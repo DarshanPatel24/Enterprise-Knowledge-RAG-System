@@ -1,0 +1,90 @@
+"""Document Intelligence Framework (EKIE handbook Chapter 8)."""
+
+from domain.intelligence.analysis import (
+    AnalyzedDocument,
+    build_analyzed_document,
+    count_tokens,
+    reading_time_seconds,
+)
+from domain.intelligence.analyzers import (
+    Analyzer,
+    ClassificationAnalyzer,
+    CodeAnalyzer,
+    FigureAnalyzer,
+    IntelligenceReportBuilder,
+    LanguageAnalyzer,
+    QualityAnalyzer,
+    SensitiveContentAnalyzer,
+    StructureAnalyzer,
+    TableAnalyzer,
+    default_analyzers,
+)
+from domain.intelligence.engine import (
+    DocumentIntelligenceEngine,
+    IntelligenceError,
+    IntelligenceErrorType,
+    IntelligenceResult,
+)
+from domain.intelligence.events import IntelligenceEvent, IntelligenceEventType
+from domain.intelligence.markdown_ast import (
+    MarkdownBlock,
+    ParsedMarkdown,
+    parse_markdown,
+)
+from domain.intelligence.models import (
+    BlockType,
+    CodeBlockInfo,
+    DocumentCategory,
+    DocumentComplexity,
+    DocumentIntelligenceReport,
+    FigureInfo,
+    QualityScore,
+    SectionIntelligence,
+    SectionNode,
+    SemanticMetadata,
+    SensitiveContentType,
+    SensitiveFinding,
+    TableInfo,
+)
+from domain.intelligence.policy import IntelligencePolicy
+
+__all__ = [
+    "AnalyzedDocument",
+    "Analyzer",
+    "BlockType",
+    "ClassificationAnalyzer",
+    "CodeAnalyzer",
+    "CodeBlockInfo",
+    "DocumentCategory",
+    "DocumentComplexity",
+    "DocumentIntelligenceEngine",
+    "DocumentIntelligenceReport",
+    "FigureAnalyzer",
+    "FigureInfo",
+    "IntelligenceError",
+    "IntelligenceErrorType",
+    "IntelligenceEvent",
+    "IntelligenceEventType",
+    "IntelligencePolicy",
+    "IntelligenceReportBuilder",
+    "IntelligenceResult",
+    "LanguageAnalyzer",
+    "MarkdownBlock",
+    "ParsedMarkdown",
+    "QualityAnalyzer",
+    "QualityScore",
+    "SectionIntelligence",
+    "SectionNode",
+    "SemanticMetadata",
+    "SensitiveContentAnalyzer",
+    "SensitiveContentType",
+    "SensitiveFinding",
+    "StructureAnalyzer",
+    "TableAnalyzer",
+    "TableInfo",
+    "build_analyzed_document",
+    "count_tokens",
+    "default_analyzers",
+    "parse_markdown",
+    "reading_time_seconds",
+]

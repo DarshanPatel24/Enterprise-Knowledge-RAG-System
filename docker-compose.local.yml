@@ -1,0 +1,74 @@
+# Minimal local-first infrastructure for development only.
+# All services are self-hosted; enterprise data never leaves the local environment.
+# The PostgreSQL instance below exists SOLELY as Langfuse's internal tracing store.
+# It is not an application database. The EK-RAG control plane is Microsoft SQL Server.
+# Usage: docker compose -f docker-compose.local.yml up -d
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+
+  mssql:
+    # EK-RAG control plane (enterprise-ready). Local container only.
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    ports:
+      - "${MSSQL_PORT:-1433}:1433"
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      MSSQL_PID: Developer
+    volumes:
+      - mssql_data:/var/opt/mssql
+
+  langfuse-db:
+    # Internal store for Langfuse ONLY. Not an application database. Local-only.
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${LANGFUSE_DB_USER}
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD}
+      POSTGRES_DB: ${LANGFUSE_DB_NAME:-langfuse}
+    volumes:
+      - langfuse_db_data:/var/lib/postgresql/data
+
+  langfuse:
+    # Self-hosted observability (LLM and agent tracing). No data leaves the machine.
+    image: langfuse/langfuse:latest
+    depends_on:
+      - langfuse-db
+    ports:
+      - "${LANGFUSE_PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgresql://${LANGFUSE_DB_USER}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
+      SALT: ${LANGFUSE_SALT}
+      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3000}
+      TELEMETRY_ENABLED: "false"
+
+volumes:
+  qdrant_data:
+  redis_data:
+  minio_data:
+  mssql_data:
+  langfuse_db_data:

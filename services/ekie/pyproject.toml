@@ -1,0 +1,33 @@
+[project]
+name = "ekie"
+version = "0.1.0"
+description = "Enterprise Knowledge Ingestion Engine (EKIE) - platform foundations"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.111.0",
+  "pydantic>=2.7.0",
+  "pydantic-settings>=2.3.0",
+  "sqlalchemy>=2.0.30",
+]
+
+[project.optional-dependencies]
+mssql = [
+  "pyodbc>=5.1.0",
+]
+dev = [
+  "pytest>=8.2.0",
+  "pytest-asyncio>=0.23.0",
+  "httpx>=0.27.0",
+  "mypy>=1.10.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "../../packages/contracts/src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
+mypy_path = "src:../../packages/contracts/src"

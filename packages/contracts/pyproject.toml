@@ -1,0 +1,23 @@
+[project]
+name = "ekrag-contracts"
+version = "1.0.0"
+description = "Shared cross-engine Pydantic v2 contracts for EK-RAG"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2.0",
+  "mypy>=1.10.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
