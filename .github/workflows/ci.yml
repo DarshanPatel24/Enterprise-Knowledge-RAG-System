@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - packages/contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install tooling
+        run: pip install ruff mypy pytest pydantic pydantic-settings
+      - name: Ruff lint (blocking)
+        run: ruff check ${{ matrix.target }}
+      - name: Mypy strict (blocking)
+        working-directory: ${{ matrix.target }}
+        run: mypy src
+      - name: Tests (blocking)
+        working-directory: ${{ matrix.target }}
+        run: pytest -q
