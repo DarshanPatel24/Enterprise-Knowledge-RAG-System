@@ -117,6 +117,12 @@ class SyncSettings(BaseSettings):
     delete_propagation_enabled: bool = True
     default_classification: str = "internal"
 
+    # Built-in production worker settings
+    target_directory: str = ""
+    tenant_id: str = "tenant-default"
+    poll_interval_seconds: int = 300
+    api_base_url: str = "http://localhost:8001"
+
     def parsed_extensions(self) -> frozenset[str]:
         """Return the allowed extensions as a normalized set (empty means all)."""
         return frozenset(

@@ -1606,4 +1606,107 @@ from domain.storage import InMemoryAssetStorage
 
 ---
 
+## 21. Real-World Ingestion & Deployment Guide (End-to-End)
+
+While the demo scripts in `services/ekie/scripts/` are great for understanding the architecture, deploying EKIE in a real production environment requires a slightly different approach. 
+
+In a live environment, EKIE runs as a continuously available API server. You then set up a separate "Sync Worker" (a background task like a cron job or a Celery worker) that polls your file system or SharePoint, detects changes, and sends requests to the EKIE API to perform the heavy lifting (chunking, embedding, publishing).
+
+This section covers exactly how to do that end-to-end.
+
+---
+
+### 21.1 Phase 1: Starting the Production API Server
+
+In development, we use `uvicorn --reload`. In production, you must use a robust WSGI/ASGI manager like `gunicorn` with multiple worker processes to handle concurrent document ingestions.
+
+1. Ensure your infrastructure (Qdrant, MinIO, MS SQL, Redis) is running.
+2. From your project root, start the EKIE API using `gunicorn`:
+
+```bash
+cd services/ekie
+gunicorn src.api.app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8001 --timeout 300
+```
+*Note: We set `--timeout 300` because embedding a massive PDF can take several minutes.*
+
+Your API is now live and waiting for requests at `http://localhost:8001`.
+
+---
+
+### 21.2 Phase 2: Configuring the Built-In Sync Worker
+
+EKIE comes with a built-in, out-of-the-box production worker that automatically polls a directory and ingests new documents. You do not need to write any code!
+
+Simply set these variables in your `services/ekie/.env` file:
+```dotenv
+# The folder you want EKIE to continuously watch and ingest
+EKIE_SYNC__TARGET_DIRECTORY=/mnt/shared_drive/enterprise_docs
+EKIE_SYNC__TENANT_ID=production-tenant
+# How often to check for new files (in seconds)
+EKIE_SYNC__POLL_INTERVAL_SECONDS=300
+EKIE_SYNC__API_BASE_URL=http://localhost:8001
+```
+
+Once your `.env` is configured, simply run the worker in a background terminal (or as a system service):
+```bash
+python services/ekie/scripts/production_sync.py
+```
+
+This worker will now run infinitely, acting as the bridge between your live file system and the EKIE backend!
+
+---
+
+### 21.3 Phase 3: What Happens During Ingestion? (Data Flow to Vector DB)
+
+When your worker calls `POST /v1/documents/{document_id}/ingest`, EKIE executes a complex LangGraph workflow in the background. Here is exactly how your raw file ends up as vectors in Qdrant:
+
+1. **Transformation:** The raw bytes are parsed (e.g. PDF text extraction) and converted into Canonical Markdown. This Markdown is saved permanently in MinIO as an immutable asset.
+2. **Intelligence:** The Markdown is analyzed (using heuristics or HuggingFace/Ollama if configured) to extract metadata like Language, Complexity, and document Topics.
+3. **Chunking:** The Markdown is split into chunks of roughly 512 tokens. EKIE's semantic chunker is smart enough to avoid breaking tables or code blocks in half.
+4. **Embedding:** Every chunk is passed to your configured Embedding model (e.g. `Qwen3-VL-Embedding-8B` via HuggingFace or `nomic-embed-text` via Ollama) to generate an array of floats (the vector).
+5. **Publishing:** The vectors, along with the extracted metadata and security classifications, are upserted into **Qdrant**.
+
+If the process fails at any point (e.g. Qdrant is temporarily down), EKIE marks the stage as failed and will automatically attempt to resume from the last successful checkpoint during the next replay!
+
+---
+
+### 21.4 Phase 4: Deploying to a Main Server
+
+When you are ready to move off your laptop and onto a dedicated main server, follow these steps:
+
+#### 1. Server Requirements
+Provision a Linux server (Ubuntu 22.04 LTS is recommended) with at least **8 CPU Cores** and **16GB RAM**. Install Docker and Docker Compose.
+
+#### 2. Secure Your `.env` (CRITICAL)
+Do **not** use the default passwords from `.env.example`.
+Create a new `.env` on the server and set highly secure passwords for:
+- `MINIO_ROOT_PASSWORD`
+- `MSSQL_SA_PASSWORD`
+- `EKIE_CONTROL_PLANE__PASSWORD`
+
+Set the environment to production:
+```dotenv
+EKIE_ENVIRONMENT=production
+```
+
+#### 3. Update the Qdrant and MinIO Paths
+In a production deployment, you must ensure your Docker volumes are mapped to highly durable storage (like an attached SSD or network block storage), rather than relying on ephemeral Docker storage. 
+Modify your `docker-compose.local.yml` (save it as `docker-compose.prod.yml`) to bind mount real directories:
+```yaml
+    volumes:
+      - /mnt/storage/qdrant_data:/qdrant/storage
+```
+
+#### 4. Run the Infrastructure
+Start the backend services:
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+#### 5. Start the API behind a Reverse Proxy
+Start the EKIE FastAPI server using the `gunicorn` command from Phase 1. 
+For a true production setup, you should place a reverse proxy like **Nginx** or **Traefik** in front of port `8001` to handle SSL/TLS termination, ensuring that all API traffic is encrypted.
+
+---
+
 > **For the detailed architecture handbook** (22 chapters covering enterprise architecture principles, repository synchronization, chunking algorithms, embedding mathematics, disaster recovery, and operations runbooks), see [EKIE-handbook.md](EKIE-handbook.md).
