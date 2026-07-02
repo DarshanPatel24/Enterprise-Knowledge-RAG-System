@@ -37,24 +37,42 @@ class LlmUnavailableError(RuntimeError):
 def build_chat_model(config: LlmConfigLike) -> ChatModel:
     """Build a chat model for the configured provider.
 
-    Only the local Ollama provider is supported. The ``langchain_ollama`` package
-    is imported lazily and translated into :class:`LlmUnavailableError` when
-    absent, so the default deterministic path never requires the dependency.
+    Supports 'ollama' and 'huggingface' providers. Dependency packages are
+    imported lazily and translated into :class:`LlmUnavailableError` when
+    absent, so the default deterministic path never requires them.
     """
-    if config.llm_provider != "ollama":
-        raise LlmUnavailableError(
-            f"unsupported llm provider '{config.llm_provider}'; expected 'ollama'"
+    if config.llm_provider == "ollama":
+        try:
+            from langchain_ollama import ChatOllama
+        except ImportError as exc:
+            raise LlmUnavailableError(
+                "langchain-ollama is not installed; install it to enable Ollama analysis"
+            ) from exc
+        client = ChatOllama(
+            model=config.llm_model,
+            base_url=config.llm_base_url,
+            temperature=config.llm_temperature,
+            client_kwargs={"timeout": config.llm_request_timeout_seconds},
         )
-    try:
-        from langchain_ollama import ChatOllama
-    except ImportError as exc:
+        return cast("ChatModel", client)
+    elif config.llm_provider == "huggingface":
+        try:
+            from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
+        except ImportError as exc:
+            raise LlmUnavailableError(
+                "langchain-huggingface is not installed; install it to enable HuggingFace analysis"
+            ) from exc
+        
+        # HuggingFaceEndpoint accesses locally-hosted TGI or remote API
+        endpoint = HuggingFaceEndpoint(
+            repo_id=config.llm_model,
+            huggingfacehub_api_token=None,
+            temperature=config.llm_temperature or 0.1,  # HF often requires > 0
+            task="text-generation",
+        )
+        client = ChatHuggingFace(llm=endpoint)
+        return cast("ChatModel", client)
+    else:
         raise LlmUnavailableError(
-            "langchain-ollama is not installed; install it to enable LLM analysis"
-        ) from exc
-    client = ChatOllama(
-        model=config.llm_model,
-        base_url=config.llm_base_url,
-        temperature=config.llm_temperature,
-        client_kwargs={"timeout": config.llm_request_timeout_seconds},
-    )
-    return cast("ChatModel", client)
+            f"unsupported llm provider {config.llm_provider!r}; expected 'ollama' or 'huggingface'"
+        )

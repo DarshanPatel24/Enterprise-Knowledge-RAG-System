@@ -130,6 +130,10 @@ async def ingest_document(
     tenant_id: TenantId,
     orchestrator: Orchestrator,
     mime_type: str | None = None,
+    intelligence_provider: str | None = None,
+    intelligence_model: str | None = None,
+    embedding_provider: str | None = None,
+    embedding_model: str | None = None,
 ) -> WorkflowResponse:
     """Run the full ingestion workflow for a synced document from raw bytes."""
     source_bytes = await request.body()
@@ -139,6 +143,10 @@ async def ingest_document(
         source_bytes=source_bytes,
         mime_type=mime_type,
         correlation_id=get_correlation_id(),
+        intelligence_provider=intelligence_provider,
+        intelligence_model=intelligence_model,
+        embedding_provider=embedding_provider,
+        embedding_model=embedding_model,
     )
     _apply_status(response, result.status)
     return _result_response(result)
@@ -151,6 +159,10 @@ async def replay_document(
     response: Response,
     tenant_id: TenantId,
     orchestrator: Orchestrator,
+    intelligence_provider: str | None = None,
+    intelligence_model: str | None = None,
+    embedding_provider: str | None = None,
+    embedding_model: str | None = None,
 ) -> WorkflowResponse:
     """Resume or replay a workflow from its checkpoint or Control Plane lineage."""
     body = await request.body()
@@ -160,6 +172,10 @@ async def replay_document(
         tenant_id,
         source_bytes=source_bytes,
         correlation_id=get_correlation_id(),
+        intelligence_provider=intelligence_provider,
+        intelligence_model=intelligence_model,
+        embedding_provider=embedding_provider,
+        embedding_model=embedding_model,
     )
     _apply_status(response, result.status)
     return _result_response(result)

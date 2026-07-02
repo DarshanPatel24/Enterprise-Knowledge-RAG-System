@@ -72,7 +72,12 @@ def _run_transform(engines: PipelineEngines, state: WorkflowState) -> StageOutco
 
 def _run_intelligence(engines: PipelineEngines, state: WorkflowState) -> StageOutcome:
     """Enrich the document into a versioned intelligence asset."""
-    result = engines.intelligence.enrich(state.document_id, state.tenant_id)
+    result = engines.intelligence.enrich(
+        state.document_id,
+        state.tenant_id,
+        provider_override=state.intelligence_provider,
+        model_override=state.intelligence_model,
+    )
     return StageOutcome(
         result.asset_id, result.version, result.content_hash, result.created
     )
@@ -88,7 +93,12 @@ def _run_chunk(engines: PipelineEngines, state: WorkflowState) -> StageOutcome:
 
 def _run_embed(engines: PipelineEngines, state: WorkflowState) -> StageOutcome:
     """Embed the chunk asset into a versioned embedding asset."""
-    result = engines.embedding.embed(state.document_id, state.tenant_id)
+    result = engines.embedding.embed(
+        state.document_id,
+        state.tenant_id,
+        provider_override=state.embedding_provider,
+        model_override=state.embedding_model,
+    )
     return StageOutcome(
         result.asset_id, result.version, result.content_hash, result.created
     )

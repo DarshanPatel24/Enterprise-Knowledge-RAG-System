@@ -1,0 +1,1899 @@
+{
+  "composition.py": [],
+  "api\\app.py": [],
+  "api\\dependencies.py": [
+    {
+      "name": "AppResources",
+      "methods": []
+    }
+  ],
+  "api\\health.py": [
+    {
+      "name": "HealthResponse",
+      "methods": []
+    }
+  ],
+  "api\\ingestion.py": [
+    {
+      "name": "StageRecordResponse",
+      "methods": []
+    },
+    {
+      "name": "FailureResponse",
+      "methods": []
+    },
+    {
+      "name": "WorkflowResponse",
+      "methods": []
+    }
+  ],
+  "api\\middleware.py": [
+    {
+      "name": "CorrelationMiddleware",
+      "methods": []
+    }
+  ],
+  "api\\__init__.py": [],
+  "config\\settings.py": [
+    {
+      "name": "ControlPlaneSettings",
+      "methods": [
+        "sqlalchemy_url"
+      ]
+    },
+    {
+      "name": "QdrantSettings",
+      "methods": []
+    },
+    {
+      "name": "RedisSettings",
+      "methods": []
+    },
+    {
+      "name": "StorageSettings",
+      "methods": []
+    },
+    {
+      "name": "ObservabilitySettings",
+      "methods": []
+    },
+    {
+      "name": "SyncSettings",
+      "methods": [
+        "parsed_extensions"
+      ]
+    },
+    {
+      "name": "TransformationSettings",
+      "methods": []
+    },
+    {
+      "name": "IntelligenceSettings",
+      "methods": []
+    },
+    {
+      "name": "ChunkingSettings",
+      "methods": []
+    },
+    {
+      "name": "EmbeddingSettings",
+      "methods": []
+    },
+    {
+      "name": "PublishingSettings",
+      "methods": []
+    },
+    {
+      "name": "OrchestrationSettings",
+      "methods": []
+    },
+    {
+      "name": "SecuritySettings",
+      "methods": []
+    },
+    {
+      "name": "GovernanceSettings",
+      "methods": []
+    },
+    {
+      "name": "PluginSettings",
+      "methods": [
+        "parsed_trusted_publishers"
+      ]
+    },
+    {
+      "name": "DeploymentSettings",
+      "methods": []
+    },
+    {
+      "name": "EkieSettings",
+      "methods": []
+    }
+  ],
+  "config\\__init__.py": [],
+  "domain\\__init__.py": [],
+  "domain\\chunking\\context.py": [
+    {
+      "name": "SectionView",
+      "methods": []
+    },
+    {
+      "name": "ChunkingContext",
+      "methods": []
+    }
+  ],
+  "domain\\chunking\\engine.py": [
+    {
+      "name": "ChunkingResult",
+      "methods": []
+    },
+    {
+      "name": "_AssetRef",
+      "methods": []
+    },
+    {
+      "name": "ChunkingEngine",
+      "methods": [
+        "__init__",
+        "chunk",
+        "_build_chunks",
+        "_validate",
+        "_to_chunk",
+        "_persist",
+        "_load_document",
+        "_load_asset",
+        "_missing_error",
+        "_existing_asset",
+        "_record_asset",
+        "_hash",
+        "_event"
+      ]
+    }
+  ],
+  "domain\\chunking\\errors.py": [
+    {
+      "name": "ChunkingErrorType",
+      "methods": []
+    },
+    {
+      "name": "ChunkingError",
+      "methods": [
+        "__init__"
+      ]
+    }
+  ],
+  "domain\\chunking\\events.py": [
+    {
+      "name": "ChunkingEventType",
+      "methods": []
+    },
+    {
+      "name": "ChunkingEvent",
+      "methods": []
+    }
+  ],
+  "domain\\chunking\\models.py": [
+    {
+      "name": "ChunkStrategy",
+      "methods": []
+    },
+    {
+      "name": "ChunkMetadata",
+      "methods": []
+    },
+    {
+      "name": "Chunk",
+      "methods": []
+    },
+    {
+      "name": "ChunkDocument",
+      "methods": [
+        "canonical_json"
+      ]
+    }
+  ],
+  "domain\\chunking\\policy.py": [
+    {
+      "name": "ChunkingSettingsLike",
+      "methods": []
+    },
+    {
+      "name": "ChunkingPolicy",
+      "methods": [
+        "from_settings"
+      ]
+    }
+  ],
+  "domain\\chunking\\rendering.py": [],
+  "domain\\chunking\\tokens.py": [],
+  "domain\\chunking\\validation.py": [
+    {
+      "name": "ChunkValidationErrorType",
+      "methods": []
+    },
+    {
+      "name": "ChunkValidationReport",
+      "methods": []
+    },
+    {
+      "name": "ChunkValidator",
+      "methods": [
+        "__init__",
+        "validate"
+      ]
+    }
+  ],
+  "domain\\chunking\\__init__.py": [],
+  "domain\\chunking\\strategies\\base.py": [
+    {
+      "name": "ChunkDraft",
+      "methods": []
+    },
+    {
+      "name": "ChunkStrategyPlugin",
+      "methods": [
+        "generate"
+      ]
+    }
+  ],
+  "domain\\chunking\\strategies\\semantic.py": [
+    {
+      "name": "SemanticChunkStrategy",
+      "methods": [
+        "generate",
+        "_chunk_section",
+        "_is_atomic",
+        "_only_headings",
+        "_draft"
+      ]
+    }
+  ],
+  "domain\\chunking\\strategies\\token.py": [
+    {
+      "name": "TokenWindowChunkStrategy",
+      "methods": [
+        "generate",
+        "_window_section",
+        "_draft"
+      ]
+    }
+  ],
+  "domain\\chunking\\strategies\\__init__.py": [
+    {
+      "name": "ChunkStrategyRegistry",
+      "methods": [
+        "__init__",
+        "select",
+        "register"
+      ]
+    }
+  ],
+  "domain\\control_plane\\database.py": [
+    {
+      "name": "ControlPlaneDatabase",
+      "methods": [
+        "__init__",
+        "engine",
+        "create_all",
+        "drop_all",
+        "session"
+      ]
+    }
+  ],
+  "domain\\control_plane\\models.py": [
+    {
+      "name": "Base",
+      "methods": []
+    },
+    {
+      "name": "RepositoryStatus",
+      "methods": []
+    },
+    {
+      "name": "DocumentStatus",
+      "methods": []
+    },
+    {
+      "name": "AssetType",
+      "methods": []
+    },
+    {
+      "name": "WorkflowStatus",
+      "methods": []
+    },
+    {
+      "name": "ProcessingStatus",
+      "methods": []
+    },
+    {
+      "name": "TimestampMixin",
+      "methods": []
+    },
+    {
+      "name": "Repository",
+      "methods": []
+    },
+    {
+      "name": "Document",
+      "methods": []
+    },
+    {
+      "name": "Asset",
+      "methods": []
+    },
+    {
+      "name": "Lineage",
+      "methods": []
+    },
+    {
+      "name": "Workflow",
+      "methods": []
+    },
+    {
+      "name": "ProcessingState",
+      "methods": []
+    }
+  ],
+  "domain\\control_plane\\__init__.py": [],
+  "domain\\embedding\\engine.py": [
+    {
+      "name": "EmbeddingResult",
+      "methods": []
+    },
+    {
+      "name": "_AssetRef",
+      "methods": []
+    },
+    {
+      "name": "EmbeddingEngine",
+      "methods": [
+        "__init__",
+        "embed",
+        "_select_model",
+        "_generate",
+        "_validate_tokens",
+        "_embed_batch",
+        "_validate_vector",
+        "_persist",
+        "_result",
+        "_load_document",
+        "_load_chunks",
+        "_existing_asset",
+        "_record_asset",
+        "_event"
+      ]
+    }
+  ],
+  "domain\\embedding\\errors.py": [
+    {
+      "name": "EmbeddingErrorType",
+      "methods": []
+    },
+    {
+      "name": "EmbeddingError",
+      "methods": [
+        "__init__"
+      ]
+    }
+  ],
+  "domain\\embedding\\events.py": [
+    {
+      "name": "EmbeddingEventType",
+      "methods": []
+    },
+    {
+      "name": "EmbeddingEvent",
+      "methods": []
+    }
+  ],
+  "domain\\embedding\\models.py": [
+    {
+      "name": "DistanceMetric",
+      "methods": []
+    },
+    {
+      "name": "ModelStatus",
+      "methods": []
+    },
+    {
+      "name": "EmbeddingStatus",
+      "methods": []
+    },
+    {
+      "name": "EmbeddingModelSpec",
+      "methods": []
+    },
+    {
+      "name": "EmbeddingRecord",
+      "methods": []
+    },
+    {
+      "name": "EmbeddingDocument",
+      "methods": [
+        "canonical_json"
+      ]
+    }
+  ],
+  "domain\\embedding\\model_registry.py": [
+    {
+      "name": "UnknownModelError",
+      "methods": []
+    },
+    {
+      "name": "EmbeddingModelRegistry",
+      "methods": [
+        "__init__",
+        "get",
+        "register",
+        "list_models"
+      ]
+    }
+  ],
+  "domain\\embedding\\policy.py": [
+    {
+      "name": "EmbeddingSettingsLike",
+      "methods": []
+    },
+    {
+      "name": "EmbeddingPolicy",
+      "methods": [
+        "from_settings"
+      ]
+    }
+  ],
+  "domain\\embedding\\retry.py": [],
+  "domain\\embedding\\selection.py": [
+    {
+      "name": "ModelSelectionError",
+      "methods": []
+    },
+    {
+      "name": "ModelSelector",
+      "methods": [
+        "__init__",
+        "select"
+      ]
+    }
+  ],
+  "domain\\embedding\\tokens.py": [],
+  "domain\\embedding\\validation.py": [
+    {
+      "name": "EmbeddingValidationErrorType",
+      "methods": []
+    },
+    {
+      "name": "EmbeddingValidationReport",
+      "methods": []
+    },
+    {
+      "name": "EmbeddingValidator",
+      "methods": [
+        "__init__",
+        "validate"
+      ]
+    }
+  ],
+  "domain\\embedding\\__init__.py": [],
+  "domain\\embedding\\providers\\base.py": [
+    {
+      "name": "EmbeddingProviderError",
+      "methods": []
+    },
+    {
+      "name": "EmbeddingProvider",
+      "methods": [
+        "embed"
+      ]
+    }
+  ],
+  "domain\\embedding\\providers\\huggingface.py": [
+    {
+      "name": "HuggingFaceEmbeddingProvider",
+      "methods": [
+        "__init__",
+        "embed"
+      ]
+    }
+  ],
+  "domain\\embedding\\providers\\local.py": [
+    {
+      "name": "LocalHashEmbeddingProvider",
+      "methods": [
+        "embed",
+        "_embed_one"
+      ]
+    }
+  ],
+  "domain\\embedding\\providers\\ollama.py": [
+    {
+      "name": "OllamaEmbeddingProvider",
+      "methods": [
+        "__init__",
+        "embed",
+        "_build_client",
+        "_embed_one",
+        "_normalize"
+      ]
+    },
+    {
+      "name": "_OllamaClient",
+      "methods": [
+        "embeddings"
+      ]
+    }
+  ],
+  "domain\\embedding\\providers\\__init__.py": [
+    {
+      "name": "EmbeddingProviderRegistry",
+      "methods": [
+        "__init__",
+        "get",
+        "register"
+      ]
+    },
+    {
+      "name": "EmbeddingProviderSettingsLike",
+      "methods": []
+    }
+  ],
+  "domain\\intelligence\\analysis.py": [
+    {
+      "name": "AnalyzedDocument",
+      "methods": [
+        "blocks_for_section"
+      ]
+    }
+  ],
+  "domain\\intelligence\\engine.py": [
+    {
+      "name": "IntelligenceErrorType",
+      "methods": []
+    },
+    {
+      "name": "IntelligenceError",
+      "methods": [
+        "__init__"
+      ]
+    },
+    {
+      "name": "IntelligenceResult",
+      "methods": []
+    },
+    {
+      "name": "_MarkdownRef",
+      "methods": []
+    },
+    {
+      "name": "DocumentIntelligenceEngine",
+      "methods": [
+        "__init__",
+        "analyze_markdown",
+        "enrich",
+        "_load_document",
+        "_load_markdown",
+        "_persist",
+        "_existing_asset",
+        "_record_asset",
+        "_event"
+      ]
+    }
+  ],
+  "domain\\intelligence\\events.py": [
+    {
+      "name": "IntelligenceEventType",
+      "methods": []
+    },
+    {
+      "name": "IntelligenceEvent",
+      "methods": []
+    }
+  ],
+  "domain\\intelligence\\llm.py": [
+    {
+      "name": "LlmConfigLike",
+      "methods": []
+    },
+    {
+      "name": "LlmUnavailableError",
+      "methods": []
+    },
+    {
+      "name": "ChatModel",
+      "methods": [
+        "invoke"
+      ]
+    }
+  ],
+  "domain\\intelligence\\markdown_ast.py": [
+    {
+      "name": "MarkdownBlock",
+      "methods": []
+    },
+    {
+      "name": "ParsedMarkdown",
+      "methods": []
+    }
+  ],
+  "domain\\intelligence\\models.py": [
+    {
+      "name": "BlockType",
+      "methods": []
+    },
+    {
+      "name": "DocumentCategory",
+      "methods": []
+    },
+    {
+      "name": "DocumentComplexity",
+      "methods": []
+    },
+    {
+      "name": "SensitiveContentType",
+      "methods": []
+    },
+    {
+      "name": "SectionNode",
+      "methods": []
+    },
+    {
+      "name": "TableInfo",
+      "methods": []
+    },
+    {
+      "name": "FigureInfo",
+      "methods": []
+    },
+    {
+      "name": "CodeBlockInfo",
+      "methods": []
+    },
+    {
+      "name": "SensitiveFinding",
+      "methods": []
+    },
+    {
+      "name": "SectionIntelligence",
+      "methods": []
+    },
+    {
+      "name": "QualityScore",
+      "methods": []
+    },
+    {
+      "name": "SemanticMetadata",
+      "methods": []
+    },
+    {
+      "name": "DocumentIntelligenceReport",
+      "methods": [
+        "canonical_json"
+      ]
+    }
+  ],
+  "domain\\intelligence\\policy.py": [
+    {
+      "name": "IntelligenceSettingsLike",
+      "methods": []
+    },
+    {
+      "name": "IntelligencePolicy",
+      "methods": [
+        "from_settings"
+      ]
+    }
+  ],
+  "domain\\intelligence\\prompts.py": [],
+  "domain\\intelligence\\__init__.py": [],
+  "domain\\intelligence\\analyzers\\base.py": [
+    {
+      "name": "IntelligenceReportBuilder",
+      "methods": [
+        "semantic_metadata"
+      ]
+    },
+    {
+      "name": "Analyzer",
+      "methods": [
+        "analyze"
+      ]
+    }
+  ],
+  "domain\\intelligence\\analyzers\\content.py": [
+    {
+      "name": "TableAnalyzer",
+      "methods": [
+        "analyze",
+        "_classify"
+      ]
+    },
+    {
+      "name": "FigureAnalyzer",
+      "methods": [
+        "analyze"
+      ]
+    },
+    {
+      "name": "CodeAnalyzer",
+      "methods": [
+        "analyze"
+      ]
+    }
+  ],
+  "domain\\intelligence\\analyzers\\language.py": [
+    {
+      "name": "LanguageAnalyzer",
+      "methods": [
+        "analyze",
+        "_detect"
+      ]
+    },
+    {
+      "name": "ClassificationAnalyzer",
+      "methods": [
+        "analyze"
+      ]
+    }
+  ],
+  "domain\\intelligence\\analyzers\\llm.py": [
+    {
+      "name": "LlmAnalyzer",
+      "methods": [
+        "analyze",
+        "_build_chain"
+      ]
+    },
+    {
+      "name": "_TopicChain",
+      "methods": [
+        "invoke"
+      ]
+    }
+  ],
+  "domain\\intelligence\\analyzers\\quality.py": [
+    {
+      "name": "QualityAnalyzer",
+      "methods": [
+        "analyze",
+        "_structure_score",
+        "_content_score",
+        "_table_score",
+        "_image_score"
+      ]
+    }
+  ],
+  "domain\\intelligence\\analyzers\\sensitive.py": [
+    {
+      "name": "SensitiveContentAnalyzer",
+      "methods": [
+        "analyze"
+      ]
+    }
+  ],
+  "domain\\intelligence\\analyzers\\structure.py": [
+    {
+      "name": "StructureAnalyzer",
+      "methods": [
+        "analyze",
+        "_primary_topic",
+        "_complexity",
+        "_contains_warning",
+        "_contains_procedure"
+      ]
+    }
+  ],
+  "domain\\intelligence\\analyzers\\__init__.py": [
+    {
+      "name": "AnalyzerSettingsLike",
+      "methods": []
+    }
+  ],
+  "domain\\observability\\context.py": [],
+  "domain\\observability\\logging.py": [
+    {
+      "name": "JsonLogFormatter",
+      "methods": [
+        "__init__",
+        "format"
+      ]
+    }
+  ],
+  "domain\\observability\\__init__.py": [],
+  "domain\\orchestration\\checkpointer.py": [
+    {
+      "name": "Checkpointer",
+      "methods": [
+        "save",
+        "load",
+        "delete"
+      ]
+    },
+    {
+      "name": "InMemoryCheckpointer",
+      "methods": [
+        "__init__",
+        "save",
+        "load",
+        "delete"
+      ]
+    }
+  ],
+  "domain\\orchestration\\engine.py": [
+    {
+      "name": "WorkflowResult",
+      "methods": []
+    },
+    {
+      "name": "WorkflowOrchestrator",
+      "methods": [
+        "__init__",
+        "run",
+        "resume",
+        "reconcile",
+        "checkpoint",
+        "_execute"
+      ]
+    }
+  ],
+  "domain\\orchestration\\errors.py": [
+    {
+      "name": "OrchestrationErrorType",
+      "methods": []
+    },
+    {
+      "name": "OrchestrationError",
+      "methods": [
+        "__init__"
+      ]
+    }
+  ],
+  "domain\\orchestration\\events.py": [
+    {
+      "name": "OrchestrationEventType",
+      "methods": []
+    },
+    {
+      "name": "OrchestrationEvent",
+      "methods": []
+    },
+    {
+      "name": "EventSink",
+      "methods": [
+        "__call__"
+      ]
+    }
+  ],
+  "domain\\orchestration\\pipeline.py": [
+    {
+      "name": "PipelineEngines",
+      "methods": []
+    },
+    {
+      "name": "StageOutcome",
+      "methods": []
+    },
+    {
+      "name": "Stage",
+      "methods": []
+    }
+  ],
+  "domain\\orchestration\\policy.py": [
+    {
+      "name": "OrchestrationSettingsLike",
+      "methods": []
+    },
+    {
+      "name": "OrchestrationPolicy",
+      "methods": [
+        "from_settings",
+        "retry_policy"
+      ]
+    }
+  ],
+  "domain\\orchestration\\runner.py": [
+    {
+      "name": "WorkflowRunner",
+      "methods": [
+        "run"
+      ]
+    },
+    {
+      "name": "SequentialWorkflowRunner",
+      "methods": [
+        "__init__",
+        "run"
+      ]
+    },
+    {
+      "name": "LangGraphWorkflowRunner",
+      "methods": [
+        "__init__",
+        "run"
+      ]
+    }
+  ],
+  "domain\\orchestration\\state.py": [
+    {
+      "name": "StageName",
+      "methods": []
+    },
+    {
+      "name": "WorkflowStatus",
+      "methods": []
+    },
+    {
+      "name": "StageRecord",
+      "methods": []
+    },
+    {
+      "name": "StageFailure",
+      "methods": []
+    },
+    {
+      "name": "WorkflowState",
+      "methods": [
+        "is_complete",
+        "with_record",
+        "marked"
+      ]
+    }
+  ],
+  "domain\\orchestration\\tracing.py": [
+    {
+      "name": "LangfuseSettingsLike",
+      "methods": []
+    }
+  ],
+  "domain\\orchestration\\__init__.py": [],
+  "domain\\plugins\\errors.py": [
+    {
+      "name": "PluginErrorType",
+      "methods": []
+    },
+    {
+      "name": "PluginError",
+      "methods": [
+        "__init__"
+      ]
+    }
+  ],
+  "domain\\plugins\\manifest.py": [
+    {
+      "name": "PluginType",
+      "methods": []
+    },
+    {
+      "name": "Compatibility",
+      "methods": []
+    },
+    {
+      "name": "SemVer",
+      "methods": [
+        "parse",
+        "__str__"
+      ]
+    },
+    {
+      "name": "PluginManifest",
+      "methods": []
+    }
+  ],
+  "domain\\plugins\\policy.py": [
+    {
+      "name": "PluginSettingsLike",
+      "methods": [
+        "parsed_trusted_publishers"
+      ]
+    },
+    {
+      "name": "PluginPolicy",
+      "methods": [
+        "from_settings"
+      ]
+    }
+  ],
+  "domain\\plugins\\registry.py": [
+    {
+      "name": "PluginStatus",
+      "methods": []
+    },
+    {
+      "name": "RegistrationResult",
+      "methods": []
+    },
+    {
+      "name": "PluginRegistry",
+      "methods": [
+        "__init__",
+        "register",
+        "status_of",
+        "is_active",
+        "execute"
+      ]
+    }
+  ],
+  "domain\\plugins\\sandbox.py": [
+    {
+      "name": "SandboxExecutor",
+      "methods": [
+        "run_validate",
+        "run_execute"
+      ]
+    },
+    {
+      "name": "InProcessSandbox",
+      "methods": [
+        "run_validate",
+        "run_execute"
+      ]
+    }
+  ],
+  "domain\\plugins\\sdk.py": [
+    {
+      "name": "PluginContext",
+      "methods": []
+    },
+    {
+      "name": "EKIEPlugin",
+      "methods": [
+        "metadata",
+        "validate",
+        "initialize",
+        "execute"
+      ]
+    }
+  ],
+  "domain\\plugins\\validation.py": [
+    {
+      "name": "CheckStatus",
+      "methods": []
+    },
+    {
+      "name": "ValidationCheck",
+      "methods": []
+    },
+    {
+      "name": "ValidationReport",
+      "methods": [
+        "failures"
+      ]
+    },
+    {
+      "name": "PluginValidator",
+      "methods": [
+        "__init__",
+        "validate",
+        "validate_for_activation",
+        "_check_manifest",
+        "_check_compatibility",
+        "_check_signature",
+        "_check_sandbox"
+      ]
+    }
+  ],
+  "domain\\plugins\\__init__.py": [],
+  "domain\\publishing\\collections.py": [
+    {
+      "name": "CollectionSpec",
+      "methods": []
+    },
+    {
+      "name": "CollectionResolver",
+      "methods": [
+        "__init__",
+        "resolve"
+      ]
+    }
+  ],
+  "domain\\publishing\\engine.py": [
+    {
+      "name": "PublishResult",
+      "methods": []
+    },
+    {
+      "name": "_AssetRef",
+      "methods": []
+    },
+    {
+      "name": "_ChunkFacts",
+      "methods": []
+    },
+    {
+      "name": "VectorPublishingEngine",
+      "methods": [
+        "__init__",
+        "publish",
+        "_resolve_provider",
+        "_ensure_collection",
+        "_build_points",
+        "_build_published_set",
+        "_publish_points",
+        "_upsert_batch",
+        "_persist",
+        "_result",
+        "_load_document",
+        "_load_embedding",
+        "_load_chunk_facts",
+        "_existing_asset",
+        "_record_asset",
+        "_event"
+      ]
+    }
+  ],
+  "domain\\publishing\\errors.py": [
+    {
+      "name": "PublishErrorType",
+      "methods": []
+    },
+    {
+      "name": "PublishError",
+      "methods": [
+        "__init__"
+      ]
+    }
+  ],
+  "domain\\publishing\\events.py": [
+    {
+      "name": "PublishEventType",
+      "methods": []
+    },
+    {
+      "name": "PublishEvent",
+      "methods": []
+    }
+  ],
+  "domain\\publishing\\identity.py": [],
+  "domain\\publishing\\metadata.py": [],
+  "domain\\publishing\\models.py": [
+    {
+      "name": "SyncState",
+      "methods": []
+    },
+    {
+      "name": "VectorMetadata",
+      "methods": []
+    },
+    {
+      "name": "VectorPoint",
+      "methods": []
+    },
+    {
+      "name": "VectorRecord",
+      "methods": []
+    },
+    {
+      "name": "PublishedVectorSet",
+      "methods": [
+        "canonical_json"
+      ]
+    }
+  ],
+  "domain\\publishing\\policy.py": [
+    {
+      "name": "PublishingSettingsLike",
+      "methods": []
+    },
+    {
+      "name": "PublishingPolicy",
+      "methods": [
+        "from_settings"
+      ]
+    }
+  ],
+  "domain\\publishing\\verification.py": [
+    {
+      "name": "VerificationErrorType",
+      "methods": []
+    },
+    {
+      "name": "VerificationReport",
+      "methods": []
+    },
+    {
+      "name": "PublishVerifier",
+      "methods": [
+        "__init__",
+        "verify"
+      ]
+    }
+  ],
+  "domain\\publishing\\__init__.py": [],
+  "domain\\publishing\\providers\\base.py": [
+    {
+      "name": "VectorProviderError",
+      "methods": []
+    },
+    {
+      "name": "VectorProvider",
+      "methods": [
+        "ensure_collection",
+        "upsert",
+        "fetch",
+        "delete",
+        "count"
+      ]
+    }
+  ],
+  "domain\\publishing\\providers\\local.py": [
+    {
+      "name": "InMemoryVectorProvider",
+      "methods": [
+        "__init__",
+        "ensure_collection",
+        "upsert",
+        "fetch",
+        "delete",
+        "count",
+        "_require_collection"
+      ]
+    }
+  ],
+  "domain\\publishing\\providers\\qdrant.py": [
+    {
+      "name": "QdrantVectorProvider",
+      "methods": [
+        "__init__",
+        "ensure_collection",
+        "upsert",
+        "fetch",
+        "delete",
+        "count",
+        "_client",
+        "_collection_exists",
+        "_verify_schema",
+        "_point_id"
+      ]
+    }
+  ],
+  "domain\\publishing\\providers\\__init__.py": [
+    {
+      "name": "VectorProviderRegistry",
+      "methods": [
+        "__init__",
+        "get",
+        "register"
+      ]
+    },
+    {
+      "name": "VectorProviderSettingsLike",
+      "methods": []
+    },
+    {
+      "name": "QdrantConnectionLike",
+      "methods": []
+    }
+  ],
+  "domain\\security\\audit.py": [
+    {
+      "name": "AuditAction",
+      "methods": []
+    },
+    {
+      "name": "AuditResult",
+      "methods": []
+    },
+    {
+      "name": "AuditRecord",
+      "methods": []
+    },
+    {
+      "name": "AuditSink",
+      "methods": [
+        "record"
+      ]
+    },
+    {
+      "name": "InMemoryAuditSink",
+      "methods": [
+        "__init__",
+        "record",
+        "history"
+      ]
+    },
+    {
+      "name": "LoggingAuditSink",
+      "methods": [
+        "record"
+      ]
+    }
+  ],
+  "domain\\security\\authentication.py": [
+    {
+      "name": "Authenticator",
+      "methods": [
+        "authenticate"
+      ]
+    },
+    {
+      "name": "AnonymousAuthenticator",
+      "methods": [
+        "__init__",
+        "authenticate"
+      ]
+    },
+    {
+      "name": "ApiKeyAuthenticator",
+      "methods": [
+        "__init__",
+        "authenticate"
+      ]
+    }
+  ],
+  "domain\\security\\authorization.py": [
+    {
+      "name": "Permission",
+      "methods": []
+    },
+    {
+      "name": "AccessRequest",
+      "methods": []
+    },
+    {
+      "name": "AccessDecision",
+      "methods": []
+    },
+    {
+      "name": "PolicyEngine",
+      "methods": [
+        "__init__",
+        "evaluate",
+        "authorize"
+      ]
+    }
+  ],
+  "domain\\security\\classification.py": [
+    {
+      "name": "Classification",
+      "methods": []
+    }
+  ],
+  "domain\\security\\enforcement.py": [
+    {
+      "name": "StagePolicyGuard",
+      "methods": [
+        "__init__",
+        "authorize_stage",
+        "propagate_classification",
+        "_audit"
+      ]
+    }
+  ],
+  "domain\\security\\errors.py": [
+    {
+      "name": "SecurityErrorType",
+      "methods": []
+    },
+    {
+      "name": "SecurityError",
+      "methods": [
+        "__init__"
+      ]
+    }
+  ],
+  "domain\\security\\identity.py": [
+    {
+      "name": "AuthMethod",
+      "methods": []
+    },
+    {
+      "name": "Role",
+      "methods": []
+    },
+    {
+      "name": "Principal",
+      "methods": [
+        "has_role"
+      ]
+    }
+  ],
+  "domain\\security\\policy.py": [
+    {
+      "name": "SecuritySettingsLike",
+      "methods": []
+    },
+    {
+      "name": "GovernanceSettingsLike",
+      "methods": []
+    },
+    {
+      "name": "SecurityPolicy",
+      "methods": [
+        "from_settings"
+      ]
+    }
+  ],
+  "domain\\security\\redaction.py": [
+    {
+      "name": "RedactionFilter",
+      "methods": [
+        "__init__",
+        "filter"
+      ]
+    }
+  ],
+  "domain\\security\\secrets.py": [
+    {
+      "name": "SecretRegistry",
+      "methods": [
+        "__init__",
+        "register",
+        "values"
+      ]
+    },
+    {
+      "name": "SecretMapLike",
+      "methods": [
+        "get"
+      ]
+    },
+    {
+      "name": "SecretProvider",
+      "methods": [
+        "resolve"
+      ]
+    },
+    {
+      "name": "EnvSecretProvider",
+      "methods": [
+        "__init__",
+        "registry",
+        "resolve"
+      ]
+    }
+  ],
+  "domain\\security\\__init__.py": [],
+  "domain\\storage\\base.py": [
+    {
+      "name": "AssetAlreadyExistsError",
+      "methods": []
+    },
+    {
+      "name": "AssetNotFoundError",
+      "methods": []
+    },
+    {
+      "name": "StoredAsset",
+      "methods": []
+    },
+    {
+      "name": "AssetStorage",
+      "methods": [
+        "put",
+        "get",
+        "head",
+        "latest_version",
+        "list_versions",
+        "put_next"
+      ]
+    },
+    {
+      "name": "InMemoryAssetStorage",
+      "methods": [
+        "__init__",
+        "put",
+        "get",
+        "head",
+        "latest_version",
+        "list_versions"
+      ]
+    }
+  ],
+  "domain\\storage\\__init__.py": [],
+  "domain\\sync\\change_detection.py": [
+    {
+      "name": "ChangeType",
+      "methods": []
+    },
+    {
+      "name": "InventoryItem",
+      "methods": []
+    },
+    {
+      "name": "TwinDocument",
+      "methods": []
+    },
+    {
+      "name": "DetectedChange",
+      "methods": []
+    },
+    {
+      "name": "ChangeDetector",
+      "methods": [
+        "__init__",
+        "detect"
+      ]
+    }
+  ],
+  "domain\\sync\\events.py": [
+    {
+      "name": "SyncEventType",
+      "methods": []
+    },
+    {
+      "name": "SyncEvent",
+      "methods": []
+    }
+  ],
+  "domain\\sync\\policy.py": [
+    {
+      "name": "ScanStrategy",
+      "methods": []
+    },
+    {
+      "name": "SyncSettingsLike",
+      "methods": [
+        "parsed_extensions"
+      ]
+    },
+    {
+      "name": "SyncPolicy",
+      "methods": [
+        "from_settings",
+        "is_included"
+      ]
+    }
+  ],
+  "domain\\sync\\retry.py": [
+    {
+      "name": "RetryPolicy",
+      "methods": []
+    }
+  ],
+  "domain\\sync\\service.py": [
+    {
+      "name": "SynchronizationError",
+      "methods": []
+    },
+    {
+      "name": "SyncResult",
+      "methods": [
+        "count"
+      ]
+    },
+    {
+      "name": "RepositorySynchronizer",
+      "methods": [
+        "__init__",
+        "synchronize",
+        "_advance",
+        "_build_inventory",
+        "_load_twins",
+        "_apply_changes",
+        "_apply_single",
+        "_apply_created",
+        "_apply_modified",
+        "_apply_relocation",
+        "_apply_deleted"
+      ]
+    }
+  ],
+  "domain\\sync\\state_machine.py": [
+    {
+      "name": "RepositorySyncState",
+      "methods": []
+    },
+    {
+      "name": "DocumentSyncState",
+      "methods": []
+    },
+    {
+      "name": "InvalidStateTransitionError",
+      "methods": []
+    }
+  ],
+  "domain\\sync\\__init__.py": [],
+  "domain\\sync\\connectors\\base.py": [
+    {
+      "name": "ConnectorCapabilities",
+      "methods": []
+    },
+    {
+      "name": "RepositoryConnectorConfig",
+      "methods": []
+    },
+    {
+      "name": "DiscoveredObject",
+      "methods": []
+    },
+    {
+      "name": "ConnectorError",
+      "methods": []
+    },
+    {
+      "name": "RepositoryConnector",
+      "methods": [
+        "__init__",
+        "config",
+        "capabilities",
+        "connect",
+        "discover",
+        "read_bytes"
+      ]
+    }
+  ],
+  "domain\\sync\\connectors\\local_fs.py": [
+    {
+      "name": "LocalFileSystemConnector",
+      "methods": [
+        "__init__",
+        "capabilities",
+        "connect",
+        "discover",
+        "read_bytes",
+        "_safe_resolve"
+      ]
+    }
+  ],
+  "domain\\sync\\connectors\\registry.py": [
+    {
+      "name": "ConnectorRegistry",
+      "methods": [
+        "__init__",
+        "register",
+        "create",
+        "registered_types"
+      ]
+    }
+  ],
+  "domain\\sync\\connectors\\__init__.py": [],
+  "domain\\transformation\\errors.py": [
+    {
+      "name": "TransformationErrorType",
+      "methods": []
+    },
+    {
+      "name": "TransformationError",
+      "methods": [
+        "__init__"
+      ]
+    }
+  ],
+  "domain\\transformation\\events.py": [
+    {
+      "name": "TransformationEventType",
+      "methods": []
+    },
+    {
+      "name": "TransformationEvent",
+      "methods": []
+    }
+  ],
+  "domain\\transformation\\markdown_document.py": [
+    {
+      "name": "FrontMatter",
+      "methods": [
+        "_ordered_items",
+        "render",
+        "required_keys"
+      ]
+    },
+    {
+      "name": "MarkdownDocument",
+      "methods": [
+        "render",
+        "render_bytes"
+      ]
+    }
+  ],
+  "domain\\transformation\\normalization.py": [],
+  "domain\\transformation\\pipeline.py": [
+    {
+      "name": "TransformationResult",
+      "methods": []
+    },
+    {
+      "name": "TransformationPipeline",
+      "methods": [
+        "__init__",
+        "transform",
+        "_load_document",
+        "_generate_markdown",
+        "_build_front_matter",
+        "_validate",
+        "_persist",
+        "_existing_asset",
+        "_record_asset",
+        "_event"
+      ]
+    },
+    {
+      "name": "_AssetRef",
+      "methods": []
+    }
+  ],
+  "domain\\transformation\\policy.py": [
+    {
+      "name": "ImageHandling",
+      "methods": []
+    },
+    {
+      "name": "TransformationSettingsLike",
+      "methods": []
+    },
+    {
+      "name": "TransformationPolicy",
+      "methods": [
+        "from_settings"
+      ]
+    }
+  ],
+  "domain\\transformation\\validation.py": [
+    {
+      "name": "ValidationError",
+      "methods": []
+    },
+    {
+      "name": "ValidationReport",
+      "methods": []
+    },
+    {
+      "name": "MarkdownValidator",
+      "methods": [
+        "validate",
+        "_missing_required"
+      ]
+    }
+  ],
+  "domain\\transformation\\__init__.py": [],
+  "domain\\transformation\\parsers\\base.py": [
+    {
+      "name": "ParserError",
+      "methods": []
+    },
+    {
+      "name": "UnsupportedFormatError",
+      "methods": []
+    },
+    {
+      "name": "ParserContext",
+      "methods": []
+    },
+    {
+      "name": "ExtractedMetadata",
+      "methods": []
+    },
+    {
+      "name": "ParsedContent",
+      "methods": []
+    },
+    {
+      "name": "DocumentParser",
+      "methods": [
+        "parse",
+        "decode"
+      ]
+    }
+  ],
+  "domain\\transformation\\parsers\\csv_parser.py": [
+    {
+      "name": "CsvParser",
+      "methods": [
+        "parse"
+      ]
+    }
+  ],
+  "domain\\transformation\\parsers\\html.py": [
+    {
+      "name": "_MarkdownHtmlParser",
+      "methods": [
+        "__init__",
+        "handle_starttag",
+        "handle_endtag",
+        "handle_data",
+        "_flush_paragraph",
+        "_emit_table",
+        "_collapse"
+      ]
+    },
+    {
+      "name": "HtmlParser",
+      "methods": [
+        "parse"
+      ]
+    }
+  ],
+  "domain\\transformation\\parsers\\registry.py": [
+    {
+      "name": "ParserRegistry",
+      "methods": [
+        "__init__",
+        "register",
+        "select",
+        "registered_extensions"
+      ]
+    }
+  ],
+  "domain\\transformation\\parsers\\text.py": [
+    {
+      "name": "PlainTextParser",
+      "methods": [
+        "parse"
+      ]
+    },
+    {
+      "name": "MarkdownParser",
+      "methods": [
+        "parse"
+      ]
+    },
+    {
+      "name": "SourceCodeParser",
+      "methods": [
+        "parse"
+      ]
+    }
+  ],
+  "domain\\transformation\\parsers\\__init__.py": [],
+  "domain\\validation\\assets.py": [
+    {
+      "name": "PipelineAssets",
+      "methods": []
+    }
+  ],
+  "domain\\validation\\errors.py": [
+    {
+      "name": "ValidationErrorType",
+      "methods": []
+    },
+    {
+      "name": "ValidationError",
+      "methods": [
+        "__init__"
+      ]
+    }
+  ],
+  "domain\\validation\\failure.py": [
+    {
+      "name": "InjectedStageFailure",
+      "methods": []
+    }
+  ],
+  "domain\\validation\\handoff.py": [
+    {
+      "name": "HandoffPackage",
+      "methods": []
+    }
+  ],
+  "domain\\validation\\load.py": [
+    {
+      "name": "DocumentLoadSpec",
+      "methods": []
+    },
+    {
+      "name": "LoadReport",
+      "methods": [
+        "meets_targets"
+      ]
+    }
+  ],
+  "domain\\validation\\pipeline.py": [
+    {
+      "name": "PipelineValidator",
+      "methods": [
+        "__init__",
+        "validate"
+      ]
+    }
+  ],
+  "domain\\validation\\readiness.py": [],
+  "domain\\validation\\report.py": [
+    {
+      "name": "Severity",
+      "methods": []
+    },
+    {
+      "name": "ValidationFinding",
+      "methods": []
+    },
+    {
+      "name": "ValidationReport",
+      "methods": [
+        "passed",
+        "errors",
+        "warnings",
+        "merge"
+      ]
+    }
+  ],
+  "domain\\validation\\validators.py": [],
+  "domain\\validation\\__init__.py": []
+}

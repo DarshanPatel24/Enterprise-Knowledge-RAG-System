@@ -88,6 +88,10 @@ class WorkflowOrchestrator:
         source_bytes: bytes,
         mime_type: str | None = None,
         correlation_id: str | None = None,
+        intelligence_provider: str | None = None,
+        intelligence_model: str | None = None,
+        embedding_provider: str | None = None,
+        embedding_model: str | None = None,
     ) -> WorkflowResult:
         """Run the full ingestion workflow for a freshly synced document."""
         cid = correlation_id or get_correlation_id() or str(uuid4())
@@ -97,6 +101,10 @@ class WorkflowOrchestrator:
             correlation_id=cid,
             source_bytes=source_bytes,
             mime_type=mime_type,
+            intelligence_provider=intelligence_provider,
+            intelligence_model=intelligence_model,
+            embedding_provider=embedding_provider,
+            embedding_model=embedding_model,
         )
         return self._execute(state)
 
@@ -107,6 +115,10 @@ class WorkflowOrchestrator:
         *,
         source_bytes: bytes | None = None,
         correlation_id: str | None = None,
+        intelligence_provider: str | None = None,
+        intelligence_model: str | None = None,
+        embedding_provider: str | None = None,
+        embedding_model: str | None = None,
     ) -> WorkflowResult:
         """Resume or replay a workflow from its checkpoint or Control Plane lineage.
 
@@ -118,16 +130,24 @@ class WorkflowOrchestrator:
         if saved is None:
             saved = self.reconcile(document_id, tenant_id)
         cid = correlation_id or saved.correlation_id or get_correlation_id() or str(uuid4())
-        state = saved.model_copy(
-            update={
-                "correlation_id": cid,
-                "status": WorkflowStatus.RUNNING,
-                "failure": None,
-                "source_bytes": source_bytes
-                if source_bytes is not None
-                else saved.source_bytes,
-            }
-        )
+        
+        updates: dict[str, object] = {
+            "correlation_id": cid,
+            "status": WorkflowStatus.RUNNING,
+            "failure": None,
+        }
+        if source_bytes is not None:
+            updates["source_bytes"] = source_bytes
+        if intelligence_provider is not None:
+            updates["intelligence_provider"] = intelligence_provider
+        if intelligence_model is not None:
+            updates["intelligence_model"] = intelligence_model
+        if embedding_provider is not None:
+            updates["embedding_provider"] = embedding_provider
+        if embedding_model is not None:
+            updates["embedding_model"] = embedding_model
+
+        state = saved.model_copy(update=updates)
         return self._execute(state)
 
     def reconcile(self, document_id: str, tenant_id: str) -> WorkflowState:

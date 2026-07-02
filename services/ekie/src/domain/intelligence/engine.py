@@ -84,14 +84,19 @@ class DocumentIntelligenceEngine:
         self._analyzers = analyzers or default_analyzers()
 
     def analyze_markdown(
-        self, document_id: str, document_version: int, markdown_text: str
+        self,
+        document_id: str,
+        document_version: int,
+        markdown_text: str,
+        policy: IntelligencePolicy | None = None,
     ) -> DocumentIntelligenceReport:
         """Run the analyzer pipeline over ``markdown_text`` and return the report."""
+        policy = policy or self._policy
         parsed = parse_markdown(markdown_text)
         analyzed = build_analyzed_document(parsed)
-        builder = IntelligenceReportBuilder(language=self._policy.default_language)
+        builder = IntelligenceReportBuilder(language=policy.default_language)
         for analyzer in self._analyzers:
-            analyzer.analyze(analyzed, builder, self._policy)
+            analyzer.analyze(analyzed, builder, policy)
         quality = builder.quality
         if quality is None:  # pragma: no cover - QualityAnalyzer always runs
             raise IntelligenceError(
@@ -112,13 +117,32 @@ class DocumentIntelligenceEngine:
             semantic_metadata=builder.semantic_metadata(len(analyzed.sections)),
         )
 
-    def enrich(self, document_id: str, tenant_id: str) -> IntelligenceResult:
+    def enrich(
+        self,
+        document_id: str,
+        tenant_id: str,
+        *,
+        provider_override: str | None = None,
+        model_override: str | None = None,
+    ) -> IntelligenceResult:
         """Enrich a document's latest Markdown into a versioned report asset."""
         events = [self._event(IntelligenceEventType.INTELLIGENCE_STARTED, document_id, tenant_id)]
+        
+        policy = self._policy
+        if provider_override or model_override:
+            updates: dict[str, object] = {"enable_llm_analysis": True}
+            if provider_override:
+                updates["llm_provider"] = provider_override
+            if model_override:
+                updates["llm_model"] = model_override
+            policy = policy.model_copy(update=updates)
+            
         try:
             document = self._load_document(document_id, tenant_id)
             markdown = self._load_markdown(document_id, tenant_id)
-            report = self.analyze_markdown(document_id, document.version, markdown.content)
+            report = self.analyze_markdown(
+                document_id, document.version, markdown.content, policy
+            )
             return self._persist(document_id, tenant_id, markdown, report, events)
         except IntelligenceError as exc:
             events.append(

@@ -72,6 +72,11 @@ class WorkflowState(BaseModel):
     correlation_id: str
     source_bytes: bytes | None = None
     mime_type: str | None = None
+    # Dynamic overrides supplied via the API
+    intelligence_provider: str | None = None
+    intelligence_model: str | None = None
+    embedding_provider: str | None = None
+    embedding_model: str | None = None
     status: WorkflowStatus = WorkflowStatus.PENDING
     completed_stages: tuple[StageName, ...] = ()
     records: tuple[StageRecord, ...] = ()

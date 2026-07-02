@@ -89,9 +89,31 @@ class EmbeddingEngine:
         self._models = model_registry or default_model_registry(policy)
         self._selector = ModelSelector(self._models)
 
-    def embed(self, document_id: str, tenant_id: str) -> EmbeddingResult:
+    def embed(
+        self,
+        document_id: str,
+        tenant_id: str,
+        *,
+        provider_override: str | None = None,
+        model_override: str | None = None,
+    ) -> EmbeddingResult:
         """Embed a document's latest chunk set into a versioned asset."""
         events = [self._event(EmbeddingEventType.EMBEDDING_STARTED, document_id, tenant_id)]
+        
+        policy = self._policy
+        selector = self._selector
+        if provider_override or model_override:
+            updates: dict[str, object] = {}
+            if provider_override:
+                updates["provider"] = provider_override
+            if model_override:
+                updates["default_model"] = model_override
+            policy = policy.model_copy(update=updates)
+            
+            # Generate a temporary registry for this execution so the overridden 
+            # model is discoverable by the selector.
+            selector = ModelSelector(default_model_registry(policy))
+
         try:
             document = self._load_document(document_id, tenant_id)
             chunks_ref = self._load_chunks(document_id, tenant_id)
@@ -101,7 +123,7 @@ class EmbeddingEngine:
                     EmbeddingErrorType.EMPTY_RESULT,
                     f"chunk set for document {document_id!r} is empty",
                 )
-            model = self._select_model(document, chunk_document)
+            model = self._select_model(document, chunk_document, policy, selector)
             events.append(
                 self._event(
                     EmbeddingEventType.MODEL_SELECTED,
@@ -145,12 +167,16 @@ class EmbeddingEngine:
             raise
 
     def _select_model(
-        self, document: Document, chunk_document: ChunkDocument
+        self, 
+        document: Document, 
+        chunk_document: ChunkDocument, 
+        policy: EmbeddingPolicy,
+        selector: ModelSelector
     ) -> EmbeddingModelSpec:
         language = chunk_document.chunks[0].metadata.language
         try:
-            return self._selector.select(
-                self._policy,
+            return selector.select(
+                policy,
                 language=language,
                 classification=document.classification_clearance,
             )

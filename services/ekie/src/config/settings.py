@@ -31,6 +31,7 @@ class ControlPlaneSettings(BaseSettings):
     driver: str = "ODBC Driver 18 for SQL Server"
     trust_server_certificate: bool = True
     encrypt: bool = True
+    trusted_connection: bool = False
 
     def sqlalchemy_url(self) -> str:
         """Return the SQLAlchemy connection URL for the control plane."""
@@ -41,9 +42,18 @@ class ControlPlaneSettings(BaseSettings):
             f"&Encrypt={'yes' if self.encrypt else 'no'}"
             f"&TrustServerCertificate={'yes' if self.trust_server_certificate else 'no'}"
         )
+        
+        if self.trusted_connection:
+            query += "&Trusted_Connection=yes"
+            auth = ""
+        elif self.user or self.password:
+            auth = f"{quote_plus(self.user)}:{quote_plus(self.password)}@"
+        else:
+            auth = ""
+
         return (
-            f"mssql+pyodbc://{quote_plus(self.user)}:{quote_plus(self.password)}"
-            f"@{self.host}:{self.port}/{self.database}?{query}"
+            f"mssql+pyodbc://{auth}"
+            f"{self.host}:{self.port}/{self.database}?{query}"
         )
 
 

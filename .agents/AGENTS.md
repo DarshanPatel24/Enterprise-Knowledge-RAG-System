@@ -29,12 +29,16 @@ Provide production-grade changes for EK-RAG while preserving strict engine bound
 - Place service runtime settings in a centralized settings module (for example `services/<engine>/src/config/settings.py`).
 - Keep user-editable defaults in configuration templates (for example `.env.example`) instead of source code constants.
 - Use structured logging and include tenant_id and correlation_id where applicable.
+- **Database Authentication**: Support Windows Authentication (Trusted Connection) for Microsoft SQL Server by prioritizing `Trusted_Connection=yes` in connection strings when configured by the user, rather than solely relying on username/password.
 
 ## Implementation Workflow For Agents
 - Prefer local-first development and validation flows.
 - Before coding, identify affected engine boundary and required contract updates.
 - If payloads cross services, define/update the schema in [packages/contracts](../packages/contracts) first, then consume it in each service.
 - Before adding a new constant, determine whether it is operationally tunable; if yes, add it to configuration instead of hardcoding.
+- **Dynamic Configuration Overrides**: When allowing per-request overrides of global settings (e.g., model or provider selection), expose these as query parameters on the relevant REST API endpoints. Thread these parameters through immutable `WorkflowState` objects to dynamically alter engine policy logic for that specific request, without modifying global state.
+- **Governed Registries & Overrides**: If a system uses a registry as a governed source of truth (e.g., `EmbeddingModelRegistry`), and a dynamic override is requested via the API, you must temporarily instantiate a localized registry seeded with the override parameters and pass it to the selector, rather than mutating the global registry or bypassing the selector entirely.
+- **Provider Pluggability**: When adding support for new AI providers (e.g., HuggingFace alongside Ollama), implement them behind the engine's provider abstraction layer. Support dynamic selection via the API and ensure third-party package dependencies are lazily loaded so the default offline path remains unbloated.
 - Keep edits minimal, explicit, and traceable.
 - Add concise docstrings for public classes and public methods.
 

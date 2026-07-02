@@ -47,9 +47,9 @@ def provider_registry_from_settings(
     """Build a registry from configuration.
 
     The deterministic local provider is always registered so the offline path
-    remains available. A real Ollama provider is added and bound to the
+    remains available. A real Ollama or HuggingFace provider is added and bound to the
     configured model only when it is the selected provider, keeping the default
-    path free of the optional ``ollama`` dependency.
+    path free of the optional dependencies.
     """
     providers: list[EmbeddingProvider] = [LocalHashEmbeddingProvider()]
     if settings.provider == OllamaEmbeddingProvider.name:
@@ -58,6 +58,13 @@ def provider_registry_from_settings(
                 model=settings.default_model,
                 base_url=settings.ollama_base_url,
                 request_timeout_seconds=settings.request_timeout_seconds,
+            )
+        )
+    elif settings.provider == "huggingface":
+        from domain.embedding.providers.huggingface import HuggingFaceEmbeddingProvider
+        providers.append(
+            HuggingFaceEmbeddingProvider(
+                model_name=settings.default_model,
             )
         )
     return EmbeddingProviderRegistry(providers)
