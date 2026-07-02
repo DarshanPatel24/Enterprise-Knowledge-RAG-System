@@ -1618,14 +1618,23 @@ This section covers exactly how to do that end-to-end.
 
 ### 21.1 Phase 1: Starting the Production API Server
 
-In development, we use `uvicorn --reload`. In production, you must use a robust WSGI/ASGI manager like `gunicorn` with multiple worker processes to handle concurrent document ingestions.
+In development, we use `uvicorn --reload`. In production on a Linux server, you must use a robust WSGI/ASGI manager like `gunicorn` with multiple worker processes.
 
 1. Ensure your infrastructure (Qdrant, MinIO, MS SQL, Redis) is running.
-2. From your project root, start the EKIE API using `gunicorn`:
+2. Start the EKIE API:
 
+**If deploying to a Linux Server (Production):**
 ```bash
 cd services/ekie
 gunicorn src.api.app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8001 --timeout 300
+```
+*Note: We set `--timeout 300` because embedding a massive PDF can take several minutes.*
+
+**If running on Windows (Local Testing):**
+`gunicorn` does not support Windows. Use `uvicorn` with multiple workers instead:
+```powershell
+cd services/ekie
+uvicorn src.api.app:app --host 0.0.0.0 --port 8001 --workers 4
 ```
 *Note: We set `--timeout 300` because embedding a massive PDF can take several minutes.*
 
