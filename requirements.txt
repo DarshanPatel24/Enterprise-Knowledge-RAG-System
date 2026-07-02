@@ -9,6 +9,11 @@ sqlalchemy>=2.0.0
 langchain>=0.2.0
 langchain-ollama>=0.2.0
 langgraph>=0.1.0
+# Local HuggingFace dependencies (for Embeddings & Intelligence)
+langchain-huggingface>=0.0.3
+torch>=2.0.0
+transformers>=4.0.0
+accelerate>=0.21.0
 
 # Observability (self-hosted, privacy-preserving).
 langfuse>=2.0.0
@@ -24,3 +29,4 @@ ollama>=0.3.0
 
 # Microsoft SQL Server control plane driver (local, enterprise-ready).
 pyodbc>=5.1.0
+

@@ -57,20 +57,22 @@ def build_chat_model(config: LlmConfigLike) -> ChatModel:
         return cast("ChatModel", client)
     elif config.llm_provider == "huggingface":
         try:
-            from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
+            from langchain_huggingface import ChatHuggingFace, HuggingFacePipeline
         except ImportError as exc:
             raise LlmUnavailableError(
-                "langchain-huggingface is not installed; install it to enable HuggingFace analysis"
+                "langchain-huggingface is not installed; install it to enable HuggingFace local analysis"
             ) from exc
         
-        # HuggingFaceEndpoint accesses locally-hosted TGI or remote API
-        endpoint = HuggingFaceEndpoint(
-            repo_id=config.llm_model,
-            huggingfacehub_api_token=None,
-            temperature=config.llm_temperature or 0.1,  # HF often requires > 0
+        # HuggingFacePipeline downloads the model and runs it in the Python process
+        pipeline = HuggingFacePipeline.from_model_id(
+            model_id=config.llm_model,
             task="text-generation",
+            pipeline_kwargs={
+                "max_new_tokens": 1024,
+                "temperature": config.llm_temperature or 0.1,
+            },
         )
-        client = ChatHuggingFace(llm=endpoint)
+        client = ChatHuggingFace(llm=pipeline)
         return cast("ChatModel", client)
     else:
         raise LlmUnavailableError(

@@ -297,6 +297,8 @@ brew install msodbcsql18
 
 ## 6. Configuration Reference
 
+> **Note:** This entire section is for **informational reference only**. For your initial setup, you only need to configure the critical variables mentioned in [Section 5.4](#54-configure-environment-variables). You do not need to perform any actions in this section unless you want to customize EKIE's default behavior.
+
 EKIE uses a hierarchical, environment-backed configuration system. All values use the `EKIE_` prefix with `__` as the nesting delimiter.
 
 ### 6.1 Settings Architecture
@@ -403,10 +405,12 @@ EkieSettings
 | `EKIE_INTELLIGENCE__DETECT_SENSITIVE_CONTENT` | `true` | Detect PII/sensitive data |
 | `EKIE_INTELLIGENCE__HIGH_COMPLEXITY_SECTION_THRESHOLD` | `12` | Section complexity threshold |
 | `EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS` | `false` | Enable LLM-based topic analysis |
-| `EKIE_INTELLIGENCE__LLM_PROVIDER` | `ollama` | LLM provider for analysis |
+| `EKIE_INTELLIGENCE__LLM_PROVIDER` | `ollama` | `ollama` or `huggingface` |
 | `EKIE_INTELLIGENCE__LLM_MODEL` | `llama3.1` | LLM model name |
 | `EKIE_INTELLIGENCE__LLM_BASE_URL` | `http://localhost:11434` | LLM endpoint |
 | `EKIE_INTELLIGENCE__LLM_TEMPERATURE` | `0.0` | LLM temperature (deterministic) |
+
+> **Note on using HuggingFace locally for Intelligence:** To use a HuggingFace LLM (e.g., `Qwen/Qwen2.5-7B-Instruct`) for topic analysis, install the dependencies (`pip install langchain-huggingface torch transformers accelerate`). Then set `EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS=true`, `EKIE_INTELLIGENCE__LLM_PROVIDER=huggingface`, and update `EKIE_INTELLIGENCE__LLM_MODEL` to your model ID. The model weights will be downloaded and cached in your `HF_HOME` directory.
 
 #### Intelligent Chunking
 
@@ -425,7 +429,7 @@ EkieSettings
 
 | Variable | Default | Description |
 |---|---|---|
-| `EKIE_EMBEDDING__PROVIDER` | `local` | `local` (deterministic hash) or `ollama` |
+| `EKIE_EMBEDDING__PROVIDER` | `local` | `local` (hash), `ollama`, or `huggingface` |
 | `EKIE_EMBEDDING__DEFAULT_MODEL` | `local-hash-256` | Model identifier |
 | `EKIE_EMBEDDING__DIMENSION` | `256` | Embedding dimensionality |
 | `EKIE_EMBEDDING__DISTANCE_METRIC` | `cosine` | `cosine`, `dot_product`, or `euclidean` |
@@ -434,6 +438,8 @@ EkieSettings
 | `EKIE_EMBEDDING__NORMALIZE_VECTORS` | `true` | L2-normalize output vectors |
 | `EKIE_EMBEDDING__MAX_RETRIES` | `3` | Retry count on provider failures |
 | `EKIE_EMBEDDING__OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API endpoint |
+
+> **Note on using HuggingFace locally:** To use HuggingFace embedding models locally without Ollama (e.g., `Qwen/Qwen3-VL-Embedding-8B`), you must first install the dependency (`pip install langchain-huggingface sentence-transformers`). Then set `EKIE_EMBEDDING__PROVIDER=huggingface`, update `EKIE_EMBEDDING__DEFAULT_MODEL` to your model ID, and ensure `EKIE_EMBEDDING__DIMENSION` matches the model's output size. To prevent re-downloading the model weights every time, set the `HF_HOME` environment variable to a persistent local directory (e.g., `HF_HOME=./.hf_cache`).
 
 #### Vector Publishing
 
