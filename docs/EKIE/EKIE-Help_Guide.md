@@ -567,10 +567,11 @@ GO
 
 ### 7.4 Create MinIO Bucket
 
-Access the MinIO Console at `http://localhost:9001` and create a bucket named `ekie-assets`, or use the MinIO client:
+Access the MinIO Console at `http://localhost:9001` and manually create a bucket named `ekie-assets`.
 
+*(Optional)* If you have the [MinIO Client (mc)](https://min.io/docs/minio/linux/reference/minio-mc.html) installed on your machine, you can do this via the command line instead:
 ```bash
-mc alias set local http://localhost:9000 minioadmin minioadmin
+mc alias set local http://localhost:9005 minioadmin minioadmin
 mc mb local/ekie-assets
 ```
 
