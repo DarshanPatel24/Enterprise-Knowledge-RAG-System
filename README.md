@@ -50,6 +50,36 @@ The architecture remains vendor-neutral (Technology Independence). The current r
 - **Vector DB:** Qdrant. **Cache:** Redis. **Object storage:** MinIO (self-hosted, local). **Control plane:** Microsoft SQL Server (no PostgreSQL, no cloud).
 - **Observability:** Langfuse (self-hosted) for LLM/agent tracing plus OpenTelemetry for traces/metrics, with structured JSON logging carrying `tenant_id` and `correlation_id`.
 
+## 🚀 Getting Started (Local Setup)
+
+Because the entire infrastructure (Qdrant, Redis, MinIO, MS SQL Server, Ollama) runs locally via containers, you must have Docker installed before you can start the system.
+
+### 1. Install Docker Desktop
+If you do not have Docker installed, please download and install **Docker Desktop**:
+- [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/)
+- [Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/)
+
+*Note for Windows users: Ensure that you have WSL 2 (Windows Subsystem for Linux) installed and enabled as your backend in Docker Desktop settings.*
+
+### 2. Start the Local Infrastructure
+Once Docker is installed and running, open your terminal in the root of this project and run:
+```bash
+docker compose -f docker-compose.local.yml up -d
+```
+This will download and start the local databases, vector stores, and caches in the background. You can verify they are running with:
+```bash
+docker compose -f docker-compose.local.yml ps
+```
+
+### 3. Setup the Python Environment
+Create a virtual environment and install the root dependencies to test all services locally:
+```bash
+python -m venv .venv
+# On Windows: .venv\Scripts\activate
+# On Mac/Linux: source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+```
+
 ## 🔒 Local-First & Data Privacy
 - **Local-first:** Development runs entirely on a local stack (Qdrant, Redis, MinIO, MS SQL Server) via containers; cloud/Kubernetes is deferred to each engine's deployment-readiness sprint.
 - **Data privacy:** Observability and model tooling must be self-hostable so enterprise data never leaves the environment; no data is sent to third-party managed services by default.

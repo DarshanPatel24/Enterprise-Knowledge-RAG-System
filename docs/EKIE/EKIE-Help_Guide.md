@@ -534,7 +534,11 @@ curl http://localhost:9000/minio/health/live
 
 # Verify MS SQL Server connectivity
 # (requires sqlcmd or equivalent client)
+# Option 1: SQL Server Authentication
 sqlcmd -S localhost,1433 -U sa -P "YourPassword" -Q "SELECT 1"
+
+# Option 2: Windows Authentication (Trusted Connection)
+sqlcmd -S localhost,1433 -E -Q "SELECT 1"
 ```
 
 ### 7.3 Create the Control Plane Database
