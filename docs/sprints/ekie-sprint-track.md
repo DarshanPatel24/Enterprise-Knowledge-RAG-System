@@ -341,6 +341,8 @@ Handbook mapping: Chapter 12 (Workflow Orchestration), Chapter 5 (workflow relat
 ### Sprint Objective
 Orchestrate the end-to-end ingestion workflow as a LangGraph graph with checkpoints, retries, and lineage-aware replay.
 
+> Status: Approved (validated: ruff, mypy --strict, 187 pytest green). Code in services/ekie/src/domain/orchestration (typed WorkflowState, pure-function stage nodes, checkpointer, sequential + LangGraph runners) and services/ekie/src/api (ingestion router wired to the composition root). The deterministic sequential runner is the offline/test default; the LangGraph runner and Langfuse tracing are additive behind a lazy import and selected only by configuration. Demo: services/ekie/scripts/demo_orchestration.py.
+
 ### Scope
 1. LangGraph orchestration engine: typed graph state, nodes as pure functions over state, a checkpointer for recovery, and Langfuse tracing.
 2. Workflow definition across sync, transform, intelligence, chunk, embed, publish.
@@ -377,6 +379,8 @@ Handbook mapping: Chapter 17 (Security and Governance), Chapter 18 (Plugin and E
 ### Sprint Objective
 Enforce zero-trust security, governance, and safe plugin extensibility across the pipeline.
 
+> Status: Approved (validated: ruff, mypy --strict, 239 pytest green). Code in services/ekie/src/domain/security (authentication, RBAC + ABAC authorization, ephemeral secrets with log redaction, append-only audit, monotonic classification propagation, per-stage StagePolicyGuard) and services/ekie/src/domain/plugins (manifest + semantic-version compatibility, sandboxed execution with error containment, mandatory pre-activation validation, controlled activation-gated registry). Composition builders (build_security_policy/build_secret_provider/build_stage_guard/build_plugin_registry) and log redaction wired in the API app factory. Deterministic and dependency-free; local-first defaults keep the offline path open. Demo: services/ekie/scripts/demo_security.py.
+
 ### Scope
 1. Authentication, authorization, encryption, and secret management.
 2. Audit logging and policy enforcement per stage.
@@ -411,6 +415,8 @@ Handbook mapping: Chapter 19 (Deployment), Chapter 20 (Testing and Validation), 
 
 ### Sprint Objective
 Prove correctness, resilience, and production readiness across the full ingestion pipeline and prepare EKRE handoff.
+
+> Status: Approved (validated: ruff, mypy --strict, 252 pytest green). Code in services/ekie/src/domain/validation (structured findings/reports, read-back asset loaders, per-facet validators for workflow/lineage/chunks/embeddings/vectors, end-to-end PipelineValidator, deterministic load harness with success-rate/throughput/latency percentiles, injectable failure simulation, deployment/HA/DR readiness assessment, and the EKRE HandoffPackage builder). DeploymentSettings adds env-driven NFR and RPO/RTO targets; build_pipeline_validator wired in the composition root. Deterministic and dependency-free; local-first readiness requires no Kubernetes. Demo: services/ekie/scripts/demo_validation.py.
 
 ### Scope
 1. Testing layers: unit, component, integration, pipeline, system, production validation.
@@ -520,27 +526,27 @@ Prove correctness, resilience, and production readiness across the full ingestio
 ### EKIE-S7 Workflow Orchestration
 | Story ID | Story Name | Priority | Owner | Estimate | Depends On | Done Evidence |
 | --- | --- | --- | --- | --- | --- | --- |
-| EKIE-S7-1 | Workflow definition and task graph | High | Workflow Owner | T-Shirt M | EKIE-S6 Exit | Approved LangGraph workflow model |
-| EKIE-S7-2 | Checkpoint and resume recovery | High | Reliability Owner | T-Shirt M | EKIE-S7-1 | LangGraph checkpointer recovery validation |
-| EKIE-S7-3 | Dead-letter and retry policy | Medium | Reliability Owner | T-Shirt S | EKIE-S7-1 | Retry policy approved |
-| EKIE-S7-4 | Lineage-aware replay and reconciliation | High | Data Governance Owner | T-Shirt M | EKIE-S7-2 | Replay evidence |
+| EKIE-S7-1 | Workflow definition and task graph | High | Workflow Owner | T-Shirt M | EKIE-S6 Exit | Approved: typed WorkflowState + pure-function stage graph, 187 pytest green |
+| EKIE-S7-2 | Checkpoint and resume recovery | High | Reliability Owner | T-Shirt M | EKIE-S7-1 | Approved: checkpointer + resume, idempotent replay verified |
+| EKIE-S7-3 | Dead-letter and retry policy | Medium | Reliability Owner | T-Shirt S | EKIE-S7-1 | Approved: per-stage retry + dead-letter, tested |
+| EKIE-S7-4 | Lineage-aware replay and reconciliation | High | Data Governance Owner | T-Shirt M | EKIE-S7-2 | Approved: Control Plane reconciliation replay, tested |
 
 ### EKIE-S8 Security And Extensibility
 | Story ID | Story Name | Priority | Owner | Estimate | Depends On | Done Evidence |
 | --- | --- | --- | --- | --- | --- | --- |
-| EKIE-S8-1 | AuthN, AuthZ, encryption, secrets | High | Security Owner | T-Shirt M | EKIE-S7 Exit | Security controls approved |
-| EKIE-S8-2 | Audit logging and policy enforcement | High | Governance Owner | T-Shirt M | EKIE-S8-1 | Audit evidence |
-| EKIE-S8-3 | Plugin SDK and sandbox validation | Medium | Platform Owner | T-Shirt M | EKIE-S8-1 | Plugin validation sign-off |
-| EKIE-S8-4 | Classification clearance propagation | High | Governance Owner | T-Shirt S | EKIE-S8-1 | Clearance evidence |
+| EKIE-S8-1 | AuthN, AuthZ, encryption, secrets | High | Security Owner | T-Shirt M | EKIE-S7 Exit | Approved: principal auth + RBAC/ABAC + ephemeral secrets/redaction, 239 pytest green |
+| EKIE-S8-2 | Audit logging and policy enforcement | High | Governance Owner | T-Shirt M | EKIE-S8-1 | Approved: append-only audit + per-stage StagePolicyGuard, tested |
+| EKIE-S8-3 | Plugin SDK and sandbox validation | Medium | Platform Owner | T-Shirt M | EKIE-S8-1 | Approved: SDK + sandbox + mandatory pre-activation validation gate, tested |
+| EKIE-S8-4 | Classification clearance propagation | High | Governance Owner | T-Shirt S | EKIE-S8-1 | Approved: monotonic no-downgrade propagation, tested |
 
 ### EKIE-S9 Testing And Deployment Readiness
 | Story ID | Story Name | Priority | Owner | Estimate | Depends On | Done Evidence |
 | --- | --- | --- | --- | --- | --- | --- |
-| EKIE-S9-1 | Pipeline end-to-end validation suite | High | Quality Lead | T-Shirt L | EKIE-S8 Exit | Pipeline results pack |
-| EKIE-S9-2 | Data, chunk, embedding, workflow validation | High | Quality Lead | T-Shirt M | EKIE-S9-1 | Validation evidence |
-| EKIE-S9-3 | Load, stress, and failure simulation | Medium | Reliability Owner | T-Shirt M | EKIE-S9-1 | Load and stress evidence |
-| EKIE-S9-4 | Deployment, HA, and DR readiness | High | DevOps Owner | T-Shirt M | EKIE-S9-1 | Deployment and DR evidence |
-| EKIE-S9-5 | EKRE handoff readiness package | High | EKIE Lead | T-Shirt M | EKIE-S9-1, EKIE-S9-4 | Signed EKRE handoff artifact |
+| EKIE-S9-1 | Pipeline end-to-end validation suite | High | Quality Lead | T-Shirt L | EKIE-S8 Exit | Approved: PipelineValidator over shared storage, end-to-end no data loss/broken lineage, 252 pytest green |
+| EKIE-S9-2 | Data, chunk, embedding, workflow validation | High | Quality Lead | T-Shirt M | EKIE-S9-1 | Approved: per-facet workflow/lineage/chunk/embedding/vector validators, tested |
+| EKIE-S9-3 | Load, stress, and failure simulation | Medium | Reliability Owner | T-Shirt M | EKIE-S9-1 | Approved: deterministic load harness (success rate/throughput/p50/p95) + injectable stage failure, tested |
+| EKIE-S9-4 | Deployment, HA, and DR readiness | High | DevOps Owner | T-Shirt M | EKIE-S9-1 | Approved: config-driven NFR + RPO/RTO readiness assessment, local-first (no K8s), tested |
+| EKIE-S9-5 | EKRE handoff readiness package | High | EKIE Lead | T-Shirt M | EKIE-S9-1, EKIE-S9-4 | Approved: validation-gated HandoffPackage with lineage + geometry proof, tested |
 
 ## Track Dependencies
 1. Must run after Foundation sprint.

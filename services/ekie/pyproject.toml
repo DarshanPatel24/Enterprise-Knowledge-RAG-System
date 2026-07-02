@@ -22,7 +22,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["src", "../../packages/contracts/src"]
+pythonpath = ["src", "../../packages/contracts/src", "tests"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 
@@ -41,5 +41,8 @@ module = [
   "langchain_ollama",
   "langchain_core.output_parsers",
   "langchain_core.prompts",
+  "langgraph.graph",
+  "langgraph.checkpoint.memory",
+  "langfuse.callback",
 ]
 ignore_missing_imports = true

@@ -193,6 +193,83 @@ class PublishingSettings(BaseSettings):
     verify_after_publish: bool = True
 
 
+class OrchestrationSettings(BaseSettings):
+    """Environment-backed defaults for the ingestion workflow orchestrator."""
+
+    model_config = SettingsConfigDict(env_prefix="EKIE_ORCHESTRATION__", extra="ignore")
+
+    runner: str = "sequential"
+    max_attempts_per_stage: int = 3
+    retry_backoff_base_seconds: float = 0.0
+    retry_backoff_multiplier: float = 2.0
+    enable_tracing: bool = False
+
+
+class SecuritySettings(BaseSettings):
+    """Environment-backed defaults for authentication and authorization.
+
+    Local-first defaults keep the offline path open: when authentication is
+    disabled the service authenticates a configured anonymous principal so the
+    pipeline runs without external identity infrastructure, while production
+    deployments enable API-key authentication and per-stage enforcement.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EKIE_SECURITY__", extra="ignore")
+
+    require_authentication: bool = False
+    enforce_authorization: bool = True
+    anonymous_role: str = "service_worker"
+    anonymous_clearance: str = "restricted"
+    minimum_clearance: str = "public"
+
+
+class GovernanceSettings(BaseSettings):
+    """Environment-backed defaults for audit logging and classification policy."""
+
+    model_config = SettingsConfigDict(env_prefix="EKIE_GOVERNANCE__", extra="ignore")
+
+    enable_audit: bool = True
+    audit_sink: str = "logging"
+    allow_classification_downgrade: bool = False
+
+
+class PluginSettings(BaseSettings):
+    """Environment-backed defaults for plugin activation and sandbox validation."""
+
+    model_config = SettingsConfigDict(env_prefix="EKIE_PLUGINS__", extra="ignore")
+
+    require_signature: bool = True
+    allow_unsigned: bool = False
+    trusted_publishers: str = ""
+    ekie_version: str = "1.0.0"
+    sandbox_timeout_seconds: float = 5.0
+
+    def parsed_trusted_publishers(self) -> frozenset[str]:
+        """Return the configured trusted publisher identities as a set."""
+        return frozenset(
+            item.strip()
+            for item in self.trusted_publishers.split(",")
+            if item.strip()
+        )
+
+
+class DeploymentSettings(BaseSettings):
+    """Deployment, non-functional, and disaster-recovery target settings.
+
+    Encodes the readiness targets validated in EKIE-S9: pipeline success rate,
+    per-stage latency budget, and disaster-recovery RPO/RTO objectives. Values
+    are configuration-driven so readiness criteria can vary per environment.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EKIE_DEPLOYMENT__", extra="ignore")
+
+    min_success_rate: float = 0.99
+    max_stage_latency_seconds: float = 5.0
+    rpo_seconds: float = 300.0
+    rto_seconds: float = 900.0
+    replicas: int = 1
+
+
 class EkieSettings(BaseSettings):
     """Top-level EKIE settings composed of engine subsystem settings."""
 
@@ -218,6 +295,11 @@ class EkieSettings(BaseSettings):
     chunking: ChunkingSettings = Field(default_factory=ChunkingSettings)
     embedding: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
     publishing: PublishingSettings = Field(default_factory=PublishingSettings)
+    orchestration: OrchestrationSettings = Field(default_factory=OrchestrationSettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
+    governance: GovernanceSettings = Field(default_factory=GovernanceSettings)
+    plugins: PluginSettings = Field(default_factory=PluginSettings)
+    deployment: DeploymentSettings = Field(default_factory=DeploymentSettings)
 
 
 @lru_cache(maxsize=1)
