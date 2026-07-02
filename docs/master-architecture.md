@@ -296,5 +296,19 @@ EKCP-S0 (SSE contract) → UI-S0 (scaffold + API client)
 ### 13.7 Standards
 Next.js/TypeScript coding conventions for `apps/**` are defined in `.github/instructions/nextjs.instructions.md`.
 
+## 14. Optional Dependencies and Lazy Importing
+
+### 14.1 Architectural Principle
+EK-RAG engines are designed to be fast, lightweight, and deterministic by default. Heavy machine learning frameworks (e.g., `langchain-huggingface`, `torch`, `transformers`) are strictly optional and must never be loaded into the default Python runtime unless explicitly enabled by configuration.
+
+### 14.2 The Seam Pattern
+When a provider plugin requires massive external dependencies, those imports must be performed **lazily** inside the provider factory functions (e.g., within `try/except ImportError` blocks). 
+- If the feature is enabled but the dependency is missing, the engine gracefully raises a domain-specific exception (like `LlmUnavailableError`).
+- If the feature is disabled (the default), the dependencies are never evaluated by the Python interpreter, preserving blazing fast startup times and a lean memory footprint.
+
+### 14.3 Dependency Management
+Because of this pattern, the inner `requirements.txt` of a service (e.g., `services/ekie/requirements.txt`) only contains the core deterministic dependencies needed to boot the engine in production.
+The root-level `requirements.txt` aggregates all core *and optional* dependencies so that local developers have a fully-featured, "batteries-included" `.venv` for testing all integrations.
+
 ---
 *End of Master Architecture Blueprint.*
