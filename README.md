@@ -61,8 +61,17 @@ If you do not have Docker installed, please download and install **Docker Deskto
 
 *Note for Windows users: Ensure that you have WSL 2 (Windows Subsystem for Linux) installed and enabled as your backend in Docker Desktop settings.*
 
-### 2. Start the Local Infrastructure
-Once Docker is installed and running, open your terminal in the root of this project and run:
+### 2. Configure Environment and Start Local Infrastructure
+First, you must create a `.env` file at the root of the project to provide credentials for the Docker containers. Copy the provided template:
+```bash
+# On Windows PowerShell
+Copy-Item .env.example .env
+# On Mac/Linux
+cp .env.example .env
+```
+Open the `.env` file and set strong passwords (e.g., `MINIO_ROOT_PASSWORD`, `MSSQL_SA_PASSWORD`).
+
+Once Docker is installed and your `.env` is configured, open your terminal in the root of this project and run:
 ```bash
 docker compose -f docker-compose.local.yml up -d
 ```
@@ -79,6 +88,12 @@ python -m venv .venv
 # On Mac/Linux: source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 ```
+
+### 4. Common Troubleshooting & Notes
+- **Qdrant Setup:** Qdrant is fully managed by Docker and stores its vector data in a managed Docker volume (`qdrant_data`). You do not need to manually install, copy, or paste any Qdrant files into the services directories.
+- **MinIO Port Conflicts:** If MinIO fails to start (e.g., `bind: An attempt was made to access a socket in a way forbidden`), port `9000` is likely reserved by a Windows system process. To fix this, change `MINIO_PORT=9005` in your root `.env` and update the `EKIE_STORAGE__ENDPOINT=localhost:9005` in `services/ekie/.env` (and any other services connecting to it).
+- **Connecting to Local SQL Server with Windows Authentication:** If you are using your own local SQL Server native instance instead of the Docker container, ensure you specify the named instance. Additionally, Microsoft ODBC Driver 18 strictly enforces encryption. When using `sqlcmd` with Windows Authentication (`-E`) against a local server with self-signed certificates, you must use the `-C` (Trust Server Certificate) flag to prevent connection errors.
+  Example test command: `sqlcmd -S "localhost\MSSQLSERVER2022" -E -C -Q "SELECT 1"`
 
 ## 🔒 Local-First & Data Privacy
 - **Local-first:** Development runs entirely on a local stack (Qdrant, Redis, MinIO, MS SQL Server) via containers; cloud/Kubernetes is deferred to each engine's deployment-readiness sprint.

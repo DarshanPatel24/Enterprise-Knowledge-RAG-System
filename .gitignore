@@ -84,3 +84,4 @@ logs/
 *.tmp
 tmp/
 temp/
+services/*/storage/

@@ -501,6 +501,15 @@ EkieSettings
 
 ### 7.1 Start Local Infrastructure Stack
 
+Before starting the infrastructure, ensure you have created a root `.env` file to provide credentials for the Docker containers. You can copy the template:
+```bash
+# On Windows PowerShell
+Copy-Item .env.example .env
+# On Mac/Linux
+cp .env.example .env
+```
+Ensure you set strong passwords (like `MINIO_ROOT_PASSWORD` and `MSSQL_SA_PASSWORD`) in this root `.env` file.
+
 The project provides a Docker Compose file that starts all required services:
 
 ```bash
@@ -519,6 +528,8 @@ This starts the following services:
 | **PostgreSQL 16** | *(internal)* | Langfuse internal store only |
 
 > **Important:** The PostgreSQL instance exists solely as Langfuse's internal store. It is NOT an application database. The EK-RAG control plane uses Microsoft SQL Server.
+> **Note on Qdrant:** Qdrant is fully managed by Docker and stores its data in a managed Docker volume. You do not need to manually install or paste any Qdrant files into the services directories.
+> **Note on MinIO Ports:** If MinIO fails to start due to port `9000` being used by a Windows system process, change `MINIO_PORT=9005` in your root `.env` and update the `EKIE_STORAGE__ENDPOINT=localhost:9005` in `services/ekie/.env`.
 
 ### 7.2 Verify Services
 
@@ -529,16 +540,18 @@ docker compose -f docker-compose.local.yml ps
 # Verify Qdrant
 curl http://localhost:6333/healthz
 
-# Verify MinIO
+# Verify MinIO (Use port 9005 if you changed it due to conflicts)
 curl http://localhost:9000/minio/health/live
 
 # Verify MS SQL Server connectivity
 # (requires sqlcmd or equivalent client)
-# Option 1: SQL Server Authentication
+
+# Option 1: SQL Server Authentication (Docker container)
 sqlcmd -S localhost,1433 -U sa -P "YourPassword" -Q "SELECT 1"
 
-# Option 2: Windows Authentication (Trusted Connection)
-sqlcmd -S localhost,1433 -E -Q "SELECT 1"
+# Option 2: Windows Authentication (Local Native Instance with ODBC 18)
+# Note: Do not append ',1433' when specifying a named instance. Use the -C flag to trust the self-signed certificate.
+sqlcmd -S "localhost\MSSQLSERVER2022" -E -C -Q "SELECT 1"
 ```
 
 ### 7.3 Create the Control Plane Database
@@ -574,6 +587,23 @@ ollama pull nomic-embed-text
 # EKIE_EMBEDDING__PROVIDER=ollama
 # EKIE_EMBEDDING__DEFAULT_MODEL=nomic-embed-text
 # EKIE_EMBEDDING__DIMENSION=768
+```
+
+### 7.6 Optional: Use HuggingFace for Real Embeddings
+
+Alternatively, you can run HuggingFace embedding models natively within the Python process without needing an external Ollama server:
+
+```bash
+# 1. Install the required HuggingFace dependencies
+pip install langchain-huggingface sentence-transformers
+
+# 2. Set a persistent cache directory (so models don't re-download every time)
+export HF_HOME=./.hf_cache
+
+# 3. Update .env to use HuggingFace embeddings
+# EKIE_EMBEDDING__PROVIDER=huggingface
+# EKIE_EMBEDDING__DEFAULT_MODEL=Qwen/Qwen3-VL-Embedding-8B
+# EKIE_EMBEDDING__DIMENSION=4096
 ```
 
 ---
