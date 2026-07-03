@@ -9,6 +9,7 @@ from domain.transformation.parsers.base import (
 )
 from domain.transformation.parsers.csv_parser import CsvParser
 from domain.transformation.parsers.html import HtmlParser
+from domain.transformation.parsers.rich_media import RichMediaParser
 from domain.transformation.parsers.text import (
     MarkdownParser,
     PlainTextParser,
@@ -58,6 +59,7 @@ def default_registry() -> ParserRegistry:
         SourceCodeParser(),
         CsvParser(),
         HtmlParser(),
+        RichMediaParser(),
     ):
         registry.register(parser)
     return registry

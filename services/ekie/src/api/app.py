@@ -5,6 +5,9 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from api.health import router as health_router
+from api.ingestion import (
+    repository_router as repository_ingestion_router,
+)
 from api.ingestion import router as ingestion_router
 from api.middleware import CorrelationMiddleware
 from composition import build_secret_provider
@@ -33,6 +36,7 @@ def create_app(settings: EkieSettings | None = None) -> FastAPI:
     app.add_middleware(CorrelationMiddleware)
     app.include_router(health_router)
     app.include_router(ingestion_router)
+    app.include_router(repository_ingestion_router)
 
     logger.info("ekie_app_initialized", extra={"environment": settings.environment})
     return app

@@ -31,6 +31,7 @@
 - [18. Deployment Guide](#18-deployment-guide)
 - [19. Troubleshooting](#19-troubleshooting)
 - [20. Glossary](#20-glossary)
+- [21. PM Owner Runbook](#21-pm-owner-runbook)
 
 ---
 
@@ -170,13 +171,17 @@ Enterprise-Knowledge-RAG-System/
 ├── docs/
 │   └── EKIE/
 │       ├── EKIE-handbook.md          # Architecture handbook (22 chapters)
-│       └── EKIE-documentation.md     # This document
+│       └── EKIE-Help_Guide.md        # This document
 ├── packages/
 │   └── contracts/                    # Shared cross-engine Pydantic v2 schemas
 │       └── src/
 ├── services/
 │   └── ekie/
 │       ├── .env.example              # Configuration template (180 variables)
+│       ├── .env.profile.ollama       # Ollama profile
+│       ├── .env.profile.huggingface  # HuggingFace profile
+│       ├── .env.profile.hybrid       # Hybrid profile
+│       ├── .env.profile.rollback-last-known-good # rollback profile
 │       ├── pyproject.toml            # Project metadata and dependencies
 │       ├── scripts/                  # Demo scripts for each subsystem
 │       │   ├── demo_sync.py
@@ -252,9 +257,14 @@ pip install -r requirements.txt
 # EKIE service with development extras
 pip install -e "services/ekie[dev,mssql]"
 
+# Optional: rich-media extraction stack (PDF/DOCX/PPTX/images)
+pip install -e "services/ekie[richmedia]"
+
 # Shared contracts package
 pip install -e packages/contracts
 ```
+
+If image OCR is required, install the Tesseract binary on the host and ensure it is available on PATH.
 
 ### 5.4 Configure Environment Variables
 
@@ -293,11 +303,51 @@ brew tap microsoft/mssql-release https://github.com/Microsoft/homebrew-mssql-rel
 brew install msodbcsql18
 ```
 
+### 5.6 Preflight Change Audit (Required Before Running EKIE)
+
+Before setup or deployment, inventory the current repository state so you know what changed:
+
+```bash
+git status --short
+```
+
+Interpretation:
+1. `M` means modified tracked file.
+2. `??` means new untracked file.
+3. Missing files from expected paths indicate a deletion or move.
+
+Recommended preflight checklist:
+1. Confirm `docs/EKIE/EKIE-Help_Guide.md` is current.
+2. Confirm `services/ekie/.env.example` exists and reflects latest options.
+3. Confirm `services/ekie/.env.profile.*` profiles exist for operator switching.
+4. Confirm ingestion API files are present under `services/ekie/src/api/`.
+
+### 5.7 Files Operators Edit, And What Each Controls
+
+Edit these files for operations; do not edit business logic for routine deployment changes.
+
+| File | Purpose | Typical edits |
+|---|---|---|
+| `services/ekie/.env` | Active runtime configuration for EKIE process | Provider/model selection, credentials, target directory, tracing toggles |
+| `services/ekie/.env.profile.ollama` | Ollama-first profile template | Ollama models, Qdrant settings |
+| `services/ekie/.env.profile.huggingface` | HuggingFace-first profile template | HF model IDs, `HF_HOME`, dimensions |
+| `services/ekie/.env.profile.hybrid` | Mixed provider template | HF intelligence + Ollama embeddings (or inverse) |
+| `services/ekie/.env.profile.rollback-last-known-good` | Fast rollback profile | Restore known good provider/model values |
+| `.env` (repo root) | Local container stack variables | Docker service credentials for MinIO, MSSQL, Langfuse |
+
+Operator rule:
+1. Copy profile to `services/ekie/.env`.
+2. Adjust only env variables required for your environment.
+3. Restart service.
+4. Run health and smoke ingest checks.
+
 ---
 
 ## 6. Configuration Reference
 
 > **Note:** This entire section is for **informational reference only**. For your initial setup, you only need to configure the critical variables mentioned in [Section 5.4](#54-configure-environment-variables). You do not need to perform any actions in this section unless you want to customize EKIE's default behavior.
+
+> **Important for operator workflows:** You do **not** edit Python source files (for example `services/ekie/src/config/settings.py`) to change providers or models. The values in code are defaults and validation constraints only. Runtime selection is done in `services/ekie/.env` using `EKIE_*` variables.
 
 EKIE uses a hierarchical, environment-backed configuration system. All values use the `EKIE_` prefix with `__` as the nesting delimiter.
 
@@ -405,10 +455,12 @@ EkieSettings
 | `EKIE_INTELLIGENCE__DETECT_SENSITIVE_CONTENT` | `true` | Detect PII/sensitive data |
 | `EKIE_INTELLIGENCE__HIGH_COMPLEXITY_SECTION_THRESHOLD` | `12` | Section complexity threshold |
 | `EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS` | `false` | Enable LLM-based topic analysis |
-| `EKIE_INTELLIGENCE__LLM_PROVIDER` | `ollama` | `ollama` or `huggingface` |
+| `EKIE_INTELLIGENCE__LLM_PROVIDER` | `ollama` | Allowed values: `ollama` or `huggingface` |
 | `EKIE_INTELLIGENCE__LLM_MODEL` | `llama3.1` | LLM model name |
 | `EKIE_INTELLIGENCE__LLM_BASE_URL` | `http://localhost:11434` | LLM endpoint |
 | `EKIE_INTELLIGENCE__LLM_TEMPERATURE` | `0.0` | LLM temperature (deterministic) |
+
+If an unsupported provider value is configured, EKIE fails configuration validation at startup.
 
 > **Note on using HuggingFace locally for Intelligence:** To use a HuggingFace LLM (e.g., `Qwen/Qwen2.5-7B-Instruct`) for topic analysis, install the dependencies (`pip install langchain-huggingface torch transformers accelerate`). Then set `EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS=true`, `EKIE_INTELLIGENCE__LLM_PROVIDER=huggingface`, and update `EKIE_INTELLIGENCE__LLM_MODEL` to your model ID. The model weights will be downloaded and cached in your `HF_HOME` directory.
 
@@ -429,10 +481,10 @@ EkieSettings
 
 | Variable | Default | Description |
 |---|---|---|
-| `EKIE_EMBEDDING__PROVIDER` | `local` | `local` (hash), `ollama`, or `huggingface` |
+| `EKIE_EMBEDDING__PROVIDER` | `local` | Allowed values: `local`, `ollama`, or `huggingface` |
 | `EKIE_EMBEDDING__DEFAULT_MODEL` | `local-hash-256` | Model identifier |
 | `EKIE_EMBEDDING__DIMENSION` | `256` | Embedding dimensionality |
-| `EKIE_EMBEDDING__DISTANCE_METRIC` | `cosine` | `cosine`, `dot_product`, or `euclidean` |
+| `EKIE_EMBEDDING__DISTANCE_METRIC` | `cosine` | Allowed values: `cosine`, `dot_product`, or `euclidean` |
 | `EKIE_EMBEDDING__MAX_INPUT_TOKENS` | `8192` | Maximum input token limit |
 | `EKIE_EMBEDDING__BATCH_SIZE` | `16` | Batch size for embedding requests |
 | `EKIE_EMBEDDING__NORMALIZE_VECTORS` | `true` | L2-normalize output vectors |
@@ -441,16 +493,23 @@ EkieSettings
 
 > **Note on using HuggingFace locally:** To use HuggingFace embedding models locally without Ollama (e.g., `Qwen/Qwen3-VL-Embedding-8B`), you must first install the dependency (`pip install langchain-huggingface sentence-transformers`). Then set `EKIE_EMBEDDING__PROVIDER=huggingface`, update `EKIE_EMBEDDING__DEFAULT_MODEL` to your model ID, and ensure `EKIE_EMBEDDING__DIMENSION` matches the model's output size. To prevent re-downloading the model weights every time, set the `HF_HOME` environment variable to a persistent local directory (e.g., `HF_HOME=./.hf_cache`).
 
+The embedding dimension must be a plain integer (for example `768`), not a comma-formatted value.
+
 #### Vector Publishing
 
 | Variable | Default | Description |
 |---|---|---|
 | `EKIE_PUBLISHING__PROVIDER` | `local` | `local` (in-memory) or `qdrant` |
 | `EKIE_PUBLISHING__DEFAULT_COLLECTION` | `enterprise_documents` | Target collection name |
+| `EKIE_PUBLISHING__COLLECTION_STRATEGY` | `static` | `static` or `model_scoped` |
 | `EKIE_PUBLISHING__BATCH_SIZE` | `64` | Batch size for upserts |
 | `EKIE_PUBLISHING__MAX_RETRIES` | `3` | Retry count on publish failures |
 | `EKIE_PUBLISHING__CREATE_MISSING_COLLECTIONS` | `true` | Auto-create collections |
 | `EKIE_PUBLISHING__VERIFY_AFTER_PUBLISH` | `true` | Verify vectors after publish |
+
+Collection strategy guidance:
+1. `static`: always publish to `EKIE_PUBLISHING__DEFAULT_COLLECTION`.
+2. `model_scoped`: publishes to a derived collection name including provider, model, and dimension suffix. Recommended when you switch embedding models frequently.
 
 ### 6.4 Orchestration Settings
 
@@ -785,6 +844,67 @@ curl -X POST "http://localhost:8001/v1/documents/doc-123/replay?embedding_provid
 ---
 
 ```
+DELETE /v1/documents/{document_id}/vectors
+```
+
+Delete published vectors for a document, typically used after source deletion.
+
+**Parameters:**
+- `document_id` (path, required): Document ID from the Control Plane.
+
+**Request:**
+```bash
+curl -X DELETE "http://localhost:8001/v1/documents/doc-123/vectors" \
+  -H "X-Tenant-ID: tenant-1"
+```
+
+**Response (200 OK):**
+```json
+{
+  "document_id": "doc-123",
+  "tenant_id": "tenant-1",
+  "deleted_count": 12,
+  "provider": "qdrant",
+  "collection": "enterprise_documents",
+  "message": "vectors deleted"
+}
+```
+
+If no vector payload is found, EKIE returns `deleted_count: 0` with message `no published vectors found`.
+
+---
+
+```
+POST /v1/repositories/{repository_id}/ingest
+```
+
+Synchronize a repository and ingest its active documents in one call.
+
+**Parameters:**
+- `repository_id` (path, required): Repository ID from the Control Plane.
+- `sync_before_ingest` (body, optional, default true): Run repository sync before ingestion.
+- `document_ids` (body, optional): Restrict processing to listed document IDs.
+- `max_documents` (body, optional): Limit number of documents processed.
+- `intelligence_provider`, `intelligence_model`, `embedding_provider`, `embedding_model` (query, optional): Per-request provider/model overrides.
+
+**Request:**
+```bash
+curl -X POST "http://localhost:8001/v1/repositories/repo-123/ingest" \
+  -H "X-Tenant-ID: tenant-1" \
+  -H "Content-Type: application/json" \
+  -d '{"sync_before_ingest": true, "max_documents": 100}'
+```
+
+**Response summary fields:**
+- `attempted`
+- `completed`
+- `dead_lettered`
+- `results[]` with per-document workflow outcomes
+- `errors[]` with per-document processing/read errors
+
+---
+
+```
 GET /v1/documents/{document_id}/workflow
 ```
 
@@ -839,6 +959,12 @@ Converts raw document bytes into canonical Markdown.
 | CSV | `CsvParser` | `.csv` |
 | HTML | `HtmlParser` | `.html`, `.htm` |
 | Source code | `SourceCodeParser` | `.py`, `.js`, `.ts`, `.java`, etc. |
+| Rich media | `RichMediaParser` | `.pdf`, `.doc`, `.docx`, `.ppt`, `.pptx`, `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.tif`, `.tiff`, `.webp` |
+
+**Rich-media extraction notes:**
+1. EKIE attempts extraction in this order: `unstructured` auto-partitioning, format-specific libraries, then OCR for images.
+2. OCR requires `pytesseract`, `Pillow`, and host-level Tesseract installation.
+3. If optional extraction dependencies are not installed, rich-media parsing can fail with a transformation dead-letter.
 
 **Configuration:** See [Section 6.3 — Document Transformation](#document-transformation).
 
@@ -1212,6 +1338,18 @@ EKIE_OBSERVABILITY__LANGFUSE_SECRET_KEY=sk-...
 
 When enabled with the `langgraph` runner, the orchestrator emits traces to the self-hosted Langfuse instance.
 
+Operational requirements:
+1. `EKIE_ORCHESTRATION__RUNNER=langgraph`
+2. `EKIE_ORCHESTRATION__ENABLE_TRACING=true`
+3. Langfuse service stack must be healthy before EKIE startup.
+4. Valid Langfuse project keys must be configured.
+
+Verification steps:
+1. Trigger an ingestion request with `X-Correlation-ID` header.
+2. Confirm the same correlation ID appears in EKIE logs.
+3. Confirm a trace appears in Langfuse for that run.
+4. If no trace appears, check `services/ekie/src/domain/orchestration/tracing.py` logs for callback initialization fallback.
+
 ### 14.4 OpenTelemetry
 
 Configure the OTEL exporter for distributed tracing:
@@ -1409,6 +1547,15 @@ storage = InMemoryAssetStorage()
 
 ## 18. Deployment Guide
 
+### 18.0 Zero-Code Model Switching Rule
+
+Changing providers and models is a configuration operation:
+1. Update values in `services/ekie/.env`.
+2. Restart EKIE service.
+3. Run health checks and a smoke ingest.
+
+You should not modify `services/ekie/src/config/settings.py` for routine model changes.
+
 ### 18.1 Environment Profiles
 
 | Environment | Key Settings |
@@ -1416,6 +1563,28 @@ storage = InMemoryAssetStorage()
 | **Local (default)** | `ENVIRONMENT=local`, local providers, in-memory storage, auto-schema provision |
 | **Staging** | `ENVIRONMENT=staging`, Qdrant + Ollama providers, MS SQL, MinIO |
 | **Production** | `ENVIRONMENT=production`, full stack, authentication required, >=2 replicas |
+
+### 18.1.1 Recommended profile files
+
+Use the committed profile files under `services/ekie/` and copy one into `services/ekie/.env` during deployment:
+1. `.env.profile.ollama`
+2. `.env.profile.huggingface`
+3. `.env.profile.hybrid`
+4. `.env.profile.rollback-last-known-good`
+
+PowerShell examples:
+```powershell
+Copy-Item services/ekie/.env.profile.hybrid services/ekie/.env -Force
+Copy-Item services/ekie/.env.profile.rollback-last-known-good services/ekie/.env -Force
+```
+
+Hybrid profile example:
+1. `EKIE_INTELLIGENCE__LLM_PROVIDER=huggingface`
+2. `EKIE_INTELLIGENCE__LLM_MODEL=<hf-chat-model>`
+3. `EKIE_EMBEDDING__PROVIDER=ollama`
+4. `EKIE_EMBEDDING__DEFAULT_MODEL=nomic-embed-text:latest`
+5. `EKIE_EMBEDDING__DIMENSION=768`
+6. `EKIE_PUBLISHING__COLLECTION_STRATEGY=model_scoped`
 
 ### 18.2 Production Configuration Checklist
 
@@ -1430,6 +1599,64 @@ storage = InMemoryAssetStorage()
 - [ ] `EKIE_PLUGINS__REQUIRE_SIGNATURE=true`
 - [ ] `EKIE_DEPLOYMENT__REPLICAS=2` (or higher)
 - [ ] `EKIE_OBSERVABILITY__LANGFUSE_ENABLED=true`
+
+### 18.2.1 Model-switch checklist
+
+- [ ] Provider values are valid (`ollama` or `huggingface` for intelligence; `local`, `ollama`, or `huggingface` for embedding)
+- [ ] Embedding dimension matches selected model capability
+- [ ] Publishing collection strategy chosen (`model_scoped` recommended for frequent model changes)
+- [ ] Smoke ingest passes after restart
+- [ ] Qdrant collection has points and payload metadata
+
+### 18.2.2 End-to-end deployment steps (operator runbook)
+
+1. Prepare environment files
+- Copy `services/ekie/.env.example` to `services/ekie/.env`.
+- Set database/storage credentials and model-provider variables.
+
+2. Start infrastructure
+```bash
+docker compose -f docker-compose.local.yml up -d
+docker compose -f docker-compose.local.yml ps
+```
+
+3. Verify dependencies
+```bash
+curl http://localhost:6333/collections
+curl http://localhost:11434/api/tags
+```
+
+4. Start EKIE API
+```bash
+python -m uvicorn api.app:app --host 0.0.0.0 --port 8001 --app-dir services/ekie/src
+```
+
+5. Run API health checks
+```bash
+curl http://localhost:8001/health/live
+curl http://localhost:8001/health/ready
+```
+
+6. Run repository ingest smoke test
+```bash
+curl -X POST "http://localhost:8001/v1/repositories/<repository_id>/ingest" \
+  -H "X-Tenant-ID: <tenant_id>" \
+  -H "Content-Type: application/json" \
+  -d '{"sync_before_ingest": true, "max_documents": 10}'
+```
+
+7. Verify Qdrant publish
+```bash
+curl -X POST "http://localhost:6333/collections/<collection>/points/count" \
+  -H "Content-Type: application/json" \
+  -d '{"exact":true}'
+```
+
+8. Capture deployment evidence
+- Profile used
+- Ingest response summary
+- Qdrant count response
+- Correlation ID for traceability
 
 ### 18.3 Docker Deployment
 
@@ -1509,7 +1736,34 @@ curl -H "X-Tenant-ID: my-tenant" http://localhost:8001/v1/documents/...
 EmbeddingValidationError: Expected dimension 768, got 256
 ```
 
-**Solution:** Ensure `EKIE_EMBEDDING__DIMENSION` matches the actual output dimension of your embedding model. For example, `nomic-embed-text` outputs 768 dimensions.
+**Solution:** Ensure `EKIE_EMBEDDING__DIMENSION` matches the actual output dimension of your embedding model. For example, `nomic-embed-text` outputs 768 dimensions. Use plain integers only (`768`, not `4,096`).
+
+#### Unsupported provider value in environment
+
+**Symptom:** EKIE fails startup with settings validation error for provider fields.
+
+**Solution:** Use only supported values:
+1. Intelligence provider: `ollama` or `huggingface`.
+2. Embedding provider: `local`, `ollama`, or `huggingface`.
+3. Publishing provider: `local` or `qdrant`.
+
+Do not edit Python code defaults to change provider. Set these values in `services/ekie/.env`.
+
+#### Langfuse container fails startup with ClickHouse error
+
+**Symptom:**
+```
+Error: CLICKHOUSE_URL is not configured
+```
+
+**Cause:** Recent Langfuse images require ClickHouse configuration for full operation.
+
+**Solution options:**
+1. Extend local observability stack with ClickHouse and set `CLICKHOUSE_URL` for Langfuse.
+2. Pin to a Langfuse version compatible with your current compose stack.
+3. Keep `EKIE_OBSERVABILITY__LANGFUSE_ENABLED=false` until observability stack is fully configured.
+
+**Operator guidance:** Do not mark trace observability complete until Langfuse startup is healthy and traces are visible in UI.
 
 #### Qdrant connection refused
 
@@ -1606,115 +1860,296 @@ from domain.storage import InMemoryAssetStorage
 
 ---
 
-## 21. Real-World Ingestion & Deployment Guide (End-to-End)
+## 21. PM Owner Runbook
 
-While the demo scripts in `services/ekie/scripts/` are great for understanding the architecture, deploying EKIE in a real production environment requires a slightly different approach. 
+This runbook is the product-owner acceptance flow from environment setup to ingestion proof and observability checks.
 
-In a live environment, EKIE runs as a continuously available API server. You then set up a separate "Sync Worker" (a background task like a cron job or a Celery worker) that polls your file system or SharePoint, detects changes, and sends requests to the EKIE API to perform the heavy lifting (chunking, embedding, publishing).
+### 21.1 Outcome Criteria
 
-This section covers exactly how to do that end-to-end.
+A run is accepted when all conditions below are true:
+1. EKIE service starts and health probes pass.
+2. A markdown file is ingested through EKIE APIs.
+3. SQL Control Plane contains document and asset lineage records.
+4. Qdrant contains vectors with expected metadata.
+5. Workflow status is `completed` for all five stages.
+6. Observability path is defined: Langfuse trace visible, or explicit blocker documented with mitigation.
 
----
+### 21.2 Operator Sequence (No Code Changes)
 
-### 21.1 Phase 1: Starting the Production API Server
-
-In development, we use `uvicorn --reload`. In production on a Linux server, you must use a robust WSGI/ASGI manager like `gunicorn` with multiple worker processes.
-
-1. Ensure your infrastructure (Qdrant, MinIO, MS SQL, Redis) is running.
-2. Start the EKIE API:
-
-**If deploying to a Linux Server (Production):**
+1. Audit repository state
 ```bash
-cd services/ekie
-gunicorn src.api.app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8001 --timeout 300
+git status --short
 ```
-*Note: We set `--timeout 300` because embedding a massive PDF can take several minutes.*
 
-**If running on Windows (Local Testing):**
-`gunicorn` does not support Windows. Use `uvicorn` with multiple workers instead:
+2. Select configuration profile
 ```powershell
-cd services/ekie
-uvicorn src.api.app:app --host 0.0.0.0 --port 8001 --workers 4
-```
-*Note: We set `--timeout 300` because embedding a massive PDF can take several minutes.*
-
-Your API is now live and waiting for requests at `http://localhost:8001`.
-
----
-
-### 21.2 Phase 2: Configuring the Built-In Sync Worker
-
-EKIE comes with a built-in, out-of-the-box production worker that automatically polls a directory and ingests new documents. You do not need to write any code!
-
-Simply set these variables in your `services/ekie/.env` file:
-```dotenv
-# The folder you want EKIE to continuously watch and ingest
-EKIE_SYNC__TARGET_DIRECTORY=/mnt/shared_drive/enterprise_docs
-EKIE_SYNC__TENANT_ID=production-tenant
-# How often to check for new files (in seconds)
-EKIE_SYNC__POLL_INTERVAL_SECONDS=300
-EKIE_SYNC__API_BASE_URL=http://localhost:8001
+Copy-Item services/ekie/.env.profile.hybrid services/ekie/.env -Force
 ```
 
-Once your `.env` is configured, simply run the worker in a background terminal (or as a system service):
+3. Start or verify infrastructure
 ```bash
-python services/ekie/scripts/production_sync.py
+docker compose -f docker-compose.local.yml up -d
+curl http://localhost:6333/collections
 ```
 
-This worker will now run infinitely, acting as the bridge between your live file system and the EKIE backend!
-
----
-
-### 21.3 Phase 3: What Happens During Ingestion? (Data Flow to Vector DB)
-
-When your worker calls `POST /v1/documents/{document_id}/ingest`, EKIE executes a complex LangGraph workflow in the background. Here is exactly how your raw file ends up as vectors in Qdrant:
-
-1. **Transformation:** The raw bytes are parsed (e.g. PDF text extraction) and converted into Canonical Markdown. This Markdown is saved permanently in MinIO as an immutable asset.
-2. **Intelligence:** The Markdown is analyzed (using heuristics or HuggingFace/Ollama if configured) to extract metadata like Language, Complexity, and document Topics.
-3. **Chunking:** The Markdown is split into chunks of roughly 512 tokens. EKIE's semantic chunker is smart enough to avoid breaking tables or code blocks in half.
-4. **Embedding:** Every chunk is passed to your configured Embedding model (e.g. `Qwen3-VL-Embedding-8B` via HuggingFace or `nomic-embed-text` via Ollama) to generate an array of floats (the vector).
-5. **Publishing:** The vectors, along with the extracted metadata and security classifications, are upserted into **Qdrant**.
-
-If the process fails at any point (e.g. Qdrant is temporarily down), EKIE marks the stage as failed and will automatically attempt to resume from the last successful checkpoint during the next replay!
-
----
-
-### 21.4 Phase 4: Deploying to a Main Server
-
-When you are ready to move off your laptop and onto a dedicated main server, follow these steps:
-
-#### 1. Server Requirements
-Provision a Linux server (Ubuntu 22.04 LTS is recommended) with at least **8 CPU Cores** and **16GB RAM**. Install Docker and Docker Compose.
-
-#### 2. Secure Your `.env` (CRITICAL)
-Do **not** use the default passwords from `.env.example`.
-Create a new `.env` on the server and set highly secure passwords for:
-- `MINIO_ROOT_PASSWORD`
-- `MSSQL_SA_PASSWORD`
-- `EKIE_CONTROL_PLANE__PASSWORD`
-
-Set the environment to production:
-```dotenv
-EKIE_ENVIRONMENT=production
+4. Start EKIE API from service directory so the correct `.env` is loaded
+```powershell
+Push-Location services/ekie
+..\..\.venv\Scripts\python.exe -m uvicorn api.app:app --host 0.0.0.0 --port 8001 --app-dir src
 ```
 
-#### 3. Update the Qdrant and MinIO Paths
-In a production deployment, you must ensure your Docker volumes are mapped to highly durable storage (like an attached SSD or network block storage), rather than relying on ephemeral Docker storage. 
-Modify your `docker-compose.local.yml` (save it as `docker-compose.prod.yml`) to bind mount real directories:
-```yaml
-    volumes:
-      - /mnt/storage/qdrant_data:/qdrant/storage
-```
-
-#### 4. Run the Infrastructure
-Start the backend services:
+5. Verify EKIE health
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+curl http://localhost:8001/health/live
+curl http://localhost:8001/health/ready
 ```
 
-#### 5. Start the API behind a Reverse Proxy
-Start the EKIE FastAPI server using the `gunicorn` command from Phase 1. 
-For a true production setup, you should place a reverse proxy like **Nginx** or **Traefik** in front of port `8001` to handle SSL/TLS termination, ensuring that all API traffic is encrypted.
+### 21.3 Markdown Ingestion Validation Flow
+
+1. Create a markdown file in the synced source folder.
+2. Call repository ingestion endpoint:
+```bash
+POST /v1/repositories/{repository_id}/ingest
+```
+3. Confirm response fields:
+- `attempted > 0`
+- `completed > 0`
+- `dead_lettered = 0` for happy path
+- completed stages include: `transform`, `intelligence`, `chunk`, `embed`, `publish`
+
+Example local validation values:
+1. Repository: `0ba1139f-c30c-439c-a2e9-2c1f1a776342`
+2. Tenant: `tenant-default`
+3. Ingested document: `000_pm_owner_validation.md`
+
+PowerShell example:
+```powershell
+$mdPath = 'D:\Octave\AI training\test\000_pm_owner_validation.md'
+@'
+# EKIE PM Validation
+
+This markdown file validates end-to-end ingestion.
+'@ | Set-Content -Path $mdPath -Encoding UTF8
+
+$headers = @{ 'X-Tenant-ID' = 'tenant-default'; 'Content-Type' = 'application/json' }
+$body = '{"sync_before_ingest":true,"max_documents":1}'
+Invoke-RestMethod -Method Post -Uri 'http://localhost:8001/v1/repositories/0ba1139f-c30c-439c-a2e9-2c1f1a776342/ingest' -Headers $headers -Body $body | ConvertTo-Json -Depth 10
+```
+
+### 21.4 SQL Verification Checklist
+
+Run SQL checks in the Control Plane database after ingestion.
+
+1. Document row exists and is active in `documents`.
+2. Asset lineage exists in `assets` for expected types:
+- `markdown`
+- `intelligence`
+- `chunks`
+- `embedding`
+- `vector`
+3. Workflow status API endpoint reports `completed`.
+
+SQL examples (Windows Authentication):
+```powershell
+sqlcmd -S "localhost\MSSQLSERVER2022" -E -C -d ekrag_control_plane -Q "SELECT TOP 5 id, source_path, status, updated_at FROM documents WHERE tenant_id='tenant-default' AND source_path LIKE '%000_pm_owner_validation.md' ORDER BY updated_at DESC;"
+
+sqlcmd -S "localhost\MSSQLSERVER2022" -E -C -d ekrag_control_plane -Q "SELECT TOP 20 document_id, asset_type, version, created_at FROM assets WHERE document_id IN (SELECT id FROM documents WHERE source_path LIKE '%000_pm_owner_validation.md') ORDER BY created_at DESC;"
+```
+
+### 21.5 Qdrant Verification Checklist
+
+1. Collection exists (`enterprise_documents` or model-scoped variant).
+2. Point count is greater than zero.
+3. Payload metadata includes:
+- `metadata.document_id`
+- `metadata.tenant_id`
+- `metadata.embedding_model`
+- `metadata.dimension`
+- `metadata.repository_id`
+
+Qdrant examples:
+```powershell
+Invoke-RestMethod -Method Get -Uri 'http://localhost:6333/collections' | ConvertTo-Json -Depth 10
+
+$payload = @{ limit = 1; with_payload = $true; with_vector = $false } | ConvertTo-Json -Depth 6
+Invoke-RestMethod -Method Post -Uri 'http://localhost:6333/collections/enterprise_documents/points/scroll' -ContentType 'application/json' -Body $payload | ConvertTo-Json -Depth 10
+```
+
+Deletion verification for source-removed files:
+1. Delete a file from the synced repository path.
+2. Trigger repository sync + ingest.
+3. Confirm the cleanup endpoint path executes successfully.
+
+PowerShell example:
+```powershell
+$headers = @{ 'X-Tenant-ID' = 'tenant-default'; 'Content-Type' = 'application/json' }
+Invoke-RestMethod -Method Post -Uri 'http://localhost:8001/v1/repositories/0ba1139f-c30c-439c-a2e9-2c1f1a776342/ingest' -Headers $headers -Body '{"sync_before_ingest":true}' | ConvertTo-Json -Depth 10
+```
+
+Expected behavior:
+1. Deleted document no longer appears as active in `documents`.
+2. Vector cleanup is triggered for `DocumentDeleted` sync events.
+3. Qdrant points for the deleted document are removed.
+
+### 21.6 Worker Monitoring Model
+
+Monitor ingestion workers and orchestration through three signals:
+1. API-level workflow status: `GET /v1/documents/{document_id}/workflow`
+2. SQL lineage growth: new `assets` rows per stage
+3. Structured logs with correlation ID and tenant ID
+
+If `production_sync.py` is enabled, monitor the polling loop process and API response rates as primary worker SLO indicators.
+
+### 21.7 Langfuse Monitoring Path
+
+Target state:
+1. Langfuse stack healthy
+2. EKIE tracing enabled
+3. Ingestion runs visible as traces
+
+Current known caveat:
+1. If Langfuse container fails with `CLICKHOUSE_URL is not configured`, observability stack is incomplete.
+2. In that case, continue operational monitoring via workflow API + SQL + logs, and treat Langfuse as a blocking platform dependency for full trace acceptance.
+3. If startup reports `CLICKHOUSE_MIGRATION_URL is not configured`, ensure your compose stack sets `CLICKHOUSE_MIGRATION_URL` for the Langfuse service.
+4. If startup reports `CLICKHOUSE_USER is not set`, set `CLICKHOUSE_USER` (for local defaults use `default`) and provide `CLICKHOUSE_PASSWORD` in the Langfuse service environment.
+5. If startup reports `CLICKHOUSE_PASSWORD is not set`, set a non-empty `CLICKHOUSE_PASSWORD` for both the ClickHouse service and the Langfuse service.
+6. If startup fails with replicated ClickHouse migration errors mentioning ZooKeeper, force single-node mode (`CLICKHOUSE_CLUSTER_ENABLED=false`) or use a Langfuse deployment profile that bundles the required cluster dependencies.
+7. If startup fails with `LANGFUSE_S3_EVENT_UPLOAD_BUCKET` validation, set `LANGFUSE_S3_EVENT_UPLOAD_BUCKET` explicitly (for local usage, any non-empty bucket name is sufficient).
+
+Local bring-up commands (PowerShell):
+```powershell
+$env:LANGFUSE_DB_USER='langfuse'
+$env:LANGFUSE_DB_PASSWORD='langfuse'
+$env:LANGFUSE_NEXTAUTH_SECRET='local-nextauth-secret'
+$env:LANGFUSE_SALT='local-salt'
+docker compose -f docker-compose.local.yml up -d clickhouse langfuse-db langfuse
+docker compose -f docker-compose.local.yml ps clickhouse langfuse-db langfuse
+```
+
+If Langfuse is healthy, enable EKIE trace emission in `services/ekie/.env`:
+```dotenv
+EKIE_OBSERVABILITY__LANGFUSE_ENABLED=true
+EKIE_ORCHESTRATION__RUNNER=langgraph
+EKIE_ORCHESTRATION__ENABLE_TRACING=true
+```
+
+After restart, trigger one ingest call and validate that a trace appears in Langfuse for the same correlation ID used by EKIE logs.
+
+### 21.8 Production Handover Notes
+
+1. Keep profile-based configuration for fast rollback.
+2. Use `model_scoped` publishing strategy when switching embeddings frequently.
+3. Never change provider defaults in code for routine operations.
+4. Record each deployment with profile name, repository ID, correlation ID, SQL verification output, and Qdrant verification output.
+
+### 21.9 Acceptance Evidence Template
+
+Use this template for each execution cycle:
+
+```text
+Run Date:
+Operator:
+Profile Applied:
+Repository ID:
+Tenant ID:
+Correlation ID:
+
+EKIE Health:
+- /health/live:
+- /health/ready:
+
+Ingestion Result:
+- attempted:
+- completed:
+- dead_lettered:
+- completed_stages:
+
+SQL Evidence:
+- documents row present: yes/no
+- assets include markdown/intelligence/chunks/embedding/vector: yes/no
+
+Qdrant Evidence:
+- collection name:
+- point count:
+- payload contains metadata.document_id/tenant_id/model/dimension/repository_id: yes/no
+
+Langfuse Evidence:
+- service healthy: yes/no
+- trace visible for correlation ID: yes/no
+- blocker (if any):
+
+Decision:
+- accepted / rejected
+- follow-up actions:
+```
+
+### 21.10 One-Command Acceptance Report
+
+Use the built-in script to run health checks, ingest a markdown file, validate SQL and Qdrant evidence, and produce a machine-readable report:
+
+```powershell
+python services/ekie/scripts/acceptance_report.py
+```
+
+Optional flags:
+1. `--tenant-id <tenant>`
+2. `--repository-id <repository_id>`
+3. `--source-dir <directory>`
+4. `--ekie-url <base_url>`
+5. `--langfuse-url <base_url>`
+6. `--report-dir <directory>`
+7. `--max-documents <n>`
+8. `--skip-ingest` (health-only mode)
+
+Default report output directory:
+1. `services/ekie/storage`
+2. Filename format: `acceptance_report_YYYYMMDD_HHMMSS.json`
+
+### 21.11 Rich-Media Dependency Operations Checklist
+
+Use this checklist before benchmarking or ingesting PDF/DOCX/PPTX/image-heavy repositories.
+
+Install steps:
+1. Install EKIE rich-media extras:
+```powershell
+pip install -e "services/ekie[richmedia]"
+```
+2. Install Tesseract OCR binary and verify it is on PATH:
+```powershell
+tesseract --version
+```
+
+Verification matrix:
+1. Python package availability:
+```powershell
+Push-Location services/ekie
+@'
+import importlib
+
+modules = ["unstructured", "pypdf", "docx", "pptx", "PIL", "pytesseract"]
+for m in modules:
+  try:
+    importlib.import_module(m)
+    print(f"{m}: OK")
+  except Exception as exc:
+    print(f"{m}: MISSING ({exc.__class__.__name__})")
+'@ | ..\..\.venv\Scripts\python.exe
+Pop-Location
+```
+2. Benchmark local repository coverage:
+```powershell
+Push-Location services/ekie
+..\..\.venv\Scripts\python.exe scripts/benchmark_rich_media.py --target-dir "D:\Octave\AI training\test"
+Pop-Location
+```
+
+Troubleshooting:
+1. If benchmark reports `success_rate=0.0`, install missing optional dependencies and re-run.
+2. If image OCR fails with dependency present, verify `tesseract --version` returns successfully in the same terminal session.
+3. If a specific file still fails extraction, treat it as parser-quality gap and queue a format-specific parser enhancement.
+
+Latest verification evidence (2026-07-02):
+1. `services/ekie/storage/rich_media_benchmark_20260702_151542.json` (success rate `1.0` on current sample set).
 
 ---
 

@@ -1,6 +1,12 @@
 """Vector Publishing Framework (EKIE handbook Chapter 11)."""
 
 from domain.publishing.collections import CollectionResolver, CollectionSpec
+from domain.publishing.cleanup import (
+    VectorCleanupError,
+    VectorCleanupResult,
+    VectorCleanupService,
+    cleanup_provider_registry,
+)
 from domain.publishing.engine import PublishResult, VectorPublishingEngine
 from domain.publishing.errors import PublishError, PublishErrorType
 from domain.publishing.events import PublishEvent, PublishEventType
@@ -39,6 +45,9 @@ __all__ = [
     "CollectionResolver",
     "CollectionSpec",
     "InMemoryVectorProvider",
+    "VectorCleanupError",
+    "VectorCleanupResult",
+    "VectorCleanupService",
     "PublishError",
     "PublishErrorType",
     "PublishEvent",
@@ -63,6 +72,7 @@ __all__ = [
     "VerificationReport",
     "build_vector_id",
     "default_provider_registry",
+    "cleanup_provider_registry",
     "missing_required_fields",
     "provider_registry_from_settings",
 ]

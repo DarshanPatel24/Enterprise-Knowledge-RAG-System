@@ -11,6 +11,7 @@ from domain.transformation.parsers.base import (
 from domain.transformation.parsers.csv_parser import CsvParser
 from domain.transformation.parsers.html import HtmlParser
 from domain.transformation.parsers.registry import ParserRegistry, default_registry
+from domain.transformation.parsers.rich_media import RichMediaParser
 from domain.transformation.parsers.text import (
     MarkdownParser,
     PlainTextParser,
@@ -28,6 +29,7 @@ __all__ = [
     "ParserError",
     "ParserRegistry",
     "PlainTextParser",
+    "RichMediaParser",
     "SourceCodeParser",
     "UnsupportedFormatError",
     "default_registry",

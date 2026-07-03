@@ -61,6 +61,14 @@ def register_repository(
 ) -> str:
     """Register a repository in the Control Plane and return its id."""
     with db.session() as session:
+        existing = (
+            session.query(Repository)
+            .filter_by(tenant_id=tenant_id, name=name)
+            .first()
+        )
+        if existing:
+            return existing.id
+
         repository = Repository(
             tenant_id=tenant_id,
             name=name,

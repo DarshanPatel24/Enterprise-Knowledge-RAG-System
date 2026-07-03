@@ -6,6 +6,7 @@ process environment or a local ``.env`` file with the ``EKIE_`` prefix.
 """
 
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import quote_plus
 
 from pydantic import Field
@@ -24,7 +25,7 @@ class ControlPlaneSettings(BaseSettings):
 
     url: str | None = None
     host: str = "localhost"
-    port: int = 1433
+    port: int | str | None = 1433
     database: str = "ekrag_control_plane"
     user: str = "sa"
     password: str = ""
@@ -51,9 +52,12 @@ class ControlPlaneSettings(BaseSettings):
         else:
             auth = ""
 
+        actual_port = None if self.port == "" else self.port
+        port_str = f":{actual_port}" if actual_port is not None else ""
+
         return (
             f"mssql+pyodbc://{auth}"
-            f"{self.host}:{self.port}/{self.database}?{query}"
+            f"{self.host}{port_str}/{self.database}?{query}"
         )
 
 
@@ -156,7 +160,7 @@ class IntelligenceSettings(BaseSettings):
     default_language: str = "en"
     high_complexity_section_threshold: int = 12
     enable_llm_analysis: bool = False
-    llm_provider: str = "ollama"
+    llm_provider: Literal["ollama", "huggingface"] = "ollama"
     llm_model: str = "llama3.1"
     llm_base_url: str = "http://localhost:11434"
     llm_temperature: float = 0.0
@@ -184,9 +188,9 @@ class EmbeddingSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="EKIE_EMBEDDING__", extra="ignore")
 
     default_model: str = "local-hash-256"
-    provider: str = "local"
-    dimension: int = 256
-    distance_metric: str = "cosine"
+    provider: Literal["local", "ollama", "huggingface"] = "local"
+    dimension: int = Field(default=256, gt=0)
+    distance_metric: Literal["cosine", "dot_product", "euclidean"] = "cosine"
     max_input_tokens: int = 8192
     batch_size: int = 16
     normalize_vectors: bool = True
@@ -201,8 +205,9 @@ class PublishingSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="EKIE_PUBLISHING__", extra="ignore")
 
-    provider: str = "local"
+    provider: Literal["local", "qdrant"] = "local"
     default_collection: str = "enterprise_documents"
+    collection_strategy: Literal["static", "model_scoped"] = "static"
     batch_size: int = 64
     max_retries: int = 3
     create_missing_collections: bool = True

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from pydantic import BaseModel, Field
 
 from domain.control_plane import Document
@@ -35,8 +37,21 @@ class CollectionResolver:
         self, document: Document, embedding_document: EmbeddingDocument
     ) -> CollectionSpec:
         """Return the collection schema for a document's embedding set."""
+        name = self._policy.default_collection
+        if self._policy.collection_strategy == "model_scoped":
+            model_slug = _slug(embedding_document.model_name)
+            name = (
+                f"{name}__{embedding_document.provider}__"
+                f"{model_slug}__d{embedding_document.dimension}"
+            )
         return CollectionSpec(
-            name=self._policy.default_collection,
+            name=name,
             dimension=embedding_document.dimension,
             distance_metric=embedding_document.distance_metric.value,
         )
+
+
+def _slug(value: str) -> str:
+    """Return a Qdrant-safe model slug (lowercase alnum/underscore only)."""
+    normalized = re.sub(r"[^a-zA-Z0-9]+", "_", value.strip().lower()).strip("_")
+    return normalized or "model"

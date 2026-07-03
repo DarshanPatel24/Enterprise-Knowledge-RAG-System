@@ -178,7 +178,7 @@ class Lineage(Base):
         String(36), ForeignKey("assets.id", ondelete="CASCADE"), index=True
     )
     parent_asset_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
+        String(36), ForeignKey("assets.id"), nullable=True
     )
     relation: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(

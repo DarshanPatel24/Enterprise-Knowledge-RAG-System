@@ -52,15 +52,33 @@ services:
     volumes:
       - langfuse_db_data:/var/lib/postgresql/data
 
+  clickhouse:
+    # Internal analytics store for Langfuse ONLY. Not an application database.
+    image: clickhouse/clickhouse-server:24.8
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: langfuse_ch
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
   langfuse:
     # Self-hosted observability (LLM and agent tracing). No data leaves the machine.
     image: langfuse/langfuse:latest
     depends_on:
       - langfuse-db
+      - clickhouse
     ports:
       - "${LANGFUSE_PORT:-3000}:3000"
     environment:
       DATABASE_URL: postgresql://${LANGFUSE_DB_USER}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: langfuse_ch
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse-events
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
       SALT: ${LANGFUSE_SALT}
       NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3000}
@@ -72,3 +90,4 @@ volumes:
   minio_data:
   mssql_data:
   langfuse_db_data:
+  clickhouse_data:

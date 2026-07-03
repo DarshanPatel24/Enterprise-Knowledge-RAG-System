@@ -27,12 +27,13 @@ _SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from config.settings import ControlPlaneSettings, get_settings  # noqa: E402
+from config.settings import get_settings  # noqa: E402
 from domain.control_plane import ControlPlaneDatabase  # noqa: E402
 from domain.sync import (  # noqa: E402
     LocalFileSystemConnector,
     RepositoryConnectorConfig,
     RepositorySynchronizer,
+    SyncEventType,
     SyncPolicy,
     register_repository,
 )
@@ -65,8 +66,9 @@ def run_worker() -> None:
     print(f" API Base URL     : {api_url}")
     print(f"==================================================\n")
 
-    # Connect to the Control Plane Database
+    # Connect to the Control Plane Database and ensure tables exist
     db = ControlPlaneDatabase(settings.control_plane)
+    db.create_all()
     
     # Register the repository
     repository_id = register_repository(
@@ -97,9 +99,32 @@ def run_worker() -> None:
         try:
             result = synchronizer.synchronize(repository_id, tenant_id)
             print(f"[{now}] Scan complete. Found {len(result.events)} changes.")
+
+            for event in result.events:
+                if event.event_type is SyncEventType.DOCUMENT_DELETED and event.document_id:
+                    try:
+                        response = requests.delete(
+                            f"{api_url}/v1/documents/{event.document_id}/vectors",
+                            headers={"X-Tenant-ID": tenant_id},
+                        )
+                        if response.status_code == 200:
+                            print(
+                                "     [DELETE] Vector cleanup completed for deleted document "
+                                f"{event.document_id}"
+                            )
+                        else:
+                            print(
+                                "     [ERROR] Vector cleanup API failed for deleted document "
+                                f"{event.document_id}: {response.text}"
+                            )
+                    except Exception as exc:
+                        print(
+                            "     [ERROR] Vector cleanup failed for deleted document "
+                            f"{event.document_id}: {exc}"
+                        )
             
             for event in result.events:
-                if event.event_type.value in ["document_created", "document_modified"]:
+                if event.event_type.value in ["DocumentDiscovered", "DocumentModified"]:
                     document_id = event.document_id
                     file_path = target_path / event.source_path
                     

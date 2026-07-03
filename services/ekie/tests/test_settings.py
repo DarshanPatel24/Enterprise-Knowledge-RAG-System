@@ -1,5 +1,8 @@
 """Tests for environment-backed EKIE settings."""
 
+import pytest
+from pydantic import ValidationError
+
 from config.settings import ControlPlaneSettings, EkieSettings
 
 
@@ -46,3 +49,25 @@ def test_control_plane_url_built_from_components() -> None:
     assert "TrustServerCertificate=yes" in url
     # Password special characters must be URL-encoded.
     assert "p%40ss+word" in url
+
+
+def test_rejects_unknown_embedding_provider() -> None:
+    with pytest.raises(ValidationError):
+        EkieSettings.model_validate(
+            {
+                "embedding": {
+                    "provider": "openai",
+                }
+            }
+        )
+
+
+def test_rejects_invalid_intelligence_provider() -> None:
+    with pytest.raises(ValidationError):
+        EkieSettings.model_validate(
+            {
+                "intelligence": {
+                    "llm_provider": "anthropic",
+                }
+            }
+        )

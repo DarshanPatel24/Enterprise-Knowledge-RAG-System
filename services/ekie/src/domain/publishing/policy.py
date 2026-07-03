@@ -12,6 +12,7 @@ class PublishingSettingsLike(Protocol):
 
     provider: str
     default_collection: str
+    collection_strategy: str
     batch_size: int
     max_retries: int
     create_missing_collections: bool
@@ -29,6 +30,7 @@ class PublishingPolicy(BaseModel):
 
     provider: str = "local"
     default_collection: str = "enterprise_documents"
+    collection_strategy: str = "static"
     batch_size: int = Field(default=64, gt=0)
     max_retries: int = Field(default=3, ge=0)
     create_missing_collections: bool = True
@@ -40,6 +42,7 @@ class PublishingPolicy(BaseModel):
         return cls(
             provider=settings.provider,
             default_collection=settings.default_collection,
+            collection_strategy=settings.collection_strategy,
             batch_size=settings.batch_size,
             max_retries=settings.max_retries,
             create_missing_collections=settings.create_missing_collections,
