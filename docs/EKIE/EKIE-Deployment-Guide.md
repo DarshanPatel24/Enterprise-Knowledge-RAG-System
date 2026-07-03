@@ -146,12 +146,15 @@ python -m venv .venv
 ### 3.2 Install Dependencies
 
 ```powershell
-# Core service + all production extras
+# Core service + all production extras including VL embedding model support
 pip install -e "services/ekie[dev,mssql,storage,richmedia]"
 pip install -e packages/contracts
 
-# Optional: HuggingFace embedding / intelligence
-pip install langchain-huggingface sentence-transformers torch transformers accelerate
+# Required for Qwen3-VL-Embedding-2B (vision-language embedding model)
+pip install -U "sentence-transformers[image]" torchvision
+
+# Required for HuggingFace intelligence LLM (Qwen/Qwen2.5-7B-Instruct)
+pip install langchain-huggingface torch transformers accelerate
 
 # Optional: Ollama embedding / intelligence
 pip install langchain-ollama
@@ -202,14 +205,93 @@ These keys have no safe default and **must** be set before starting EKIE:
 
 ### 4.4 Embedding Configuration
 
-| Key | Default | Notes |
+| Key | Current value | Notes |
 |---|---|---|
-| `EKIE_EMBEDDING__PROVIDER` | `local` | `local` = hash-based (CI/offline), `huggingface` or `ollama` for real embeddings |
-| `EKIE_EMBEDDING__DEFAULT_MODEL` | `local-hash-256` | Use `sentence-transformers/all-MiniLM-L6-v2` for HuggingFace |
-| `EKIE_EMBEDDING__DIMENSION` | `256` | Must match model output (384 for all-MiniLM-L6-v2, 768 for nomic-embed-text) |
-| `HF_HOME` | `` | Set to absolute path for persistent HF model cache (e.g., `D:\models\hf-cache`) |
+| `EKIE_EMBEDDING__PROVIDER` | `huggingface` | `local` = hash-based (CI/offline), `huggingface` for real embeddings |
+| `EKIE_EMBEDDING__DEFAULT_MODEL` | `Qwen/Qwen3-VL-Embedding-2B` | Vision-language embedding model; 2B parameter variant |
+| `EKIE_EMBEDDING__DIMENSION` | `1536` | Output dimension for Qwen3-VL-Embedding-2B |
+| `HF_HOME` | `./storage` | Local cache path for downloaded model weights |
 
-### 4.5 Environment Profiles
+**Prerequisites for Qwen3-VL-Embedding-2B:**
+
+This model is part of the Qwen3 vision-language family and requires additional image processing libraries:
+
+```powershell
+pip install -U "sentence-transformers[image]" torchvision
+```
+
+First-run behavior:
+1. On first ingest request, model weights (~4 GB) are downloaded to `HF_HOME`.
+2. All subsequent requests load weights from local cache — no internet required.
+3. To force offline-only after download: add `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` to `.env`.
+
+**Dimension reference for other Qwen3 embedding models:**
+
+| Model | Dimension |
+|---|---|
+| `Qwen/Qwen3-VL-Embedding-2B` | 1536 |
+| `Qwen/Qwen3-VL-Embedding-8B` | 3584 |
+| `sentence-transformers/all-MiniLM-L6-v2` | 384 |
+| `nomic-embed-text` (Ollama) | 768 |
+
+**Warning:** Changing the embedding model after data is already ingested requires re-ingesting all documents because Qdrant collection dimensions cannot change in place.
+
+### 4.5 Langfuse Observability
+
+Langfuse is enabled in the current configuration. Every ingestion workflow emits a trace visible in the Langfuse UI at http://localhost:3000.
+
+Required `.env` settings (already active):
+
+```dotenv
+EKIE_OBSERVABILITY__LANGFUSE_ENABLED=true
+EKIE_OBSERVABILITY__LANGFUSE_HOST=http://localhost:3000
+EKIE_ORCHESTRATION__RUNNER=langgraph
+EKIE_ORCHESTRATION__ENABLE_TRACING=true
+```
+
+Start the Langfuse stack before the EKIE API:
+
+```powershell
+docker compose -f docker-compose.local.yml up -d clickhouse langfuse-db langfuse
+docker compose -f docker-compose.local.yml ps clickhouse langfuse-db langfuse
+```
+
+Verify Langfuse is reachable:
+
+```powershell
+Invoke-RestMethod http://localhost:3000/api/public/health
+# Expected: { "status": "OK" }
+```
+
+If Langfuse fails to start, see [Section 19 — Troubleshooting Langfuse](EKIE-Help_Guide.md#217-langfuse-monitoring-path) in the help guide.
+
+### 4.6 Document Intelligence (LLM Analysis)
+
+LLM-based topic extraction and summarization is enabled and uses `Qwen/Qwen2.5-7B-Instruct` locally.
+
+Required `.env` settings (already active):
+
+```dotenv
+EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS=true
+EKIE_INTELLIGENCE__LLM_PROVIDER=huggingface
+EKIE_INTELLIGENCE__LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+```
+
+Prerequisites:
+
+```powershell
+pip install langchain-huggingface torch transformers accelerate
+```
+
+First-run behavior: model weights (~15 GB) are downloaded to `HF_HOME` on first document with high complexity. All subsequent inference is local.
+
+To disable temporarily (for performance testing):
+
+```dotenv
+EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS=false
+```
+
+### 4.7 Environment Profiles
 
 Pre-built configuration profiles for common deployment scenarios:
 
