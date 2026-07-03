@@ -44,6 +44,7 @@ class StageRecord(BaseModel):
     content_hash: str
     created: bool
     attempts: int = 1
+    metrics: dict[str, int | float | str] = Field(default_factory=dict)
 
 
 class StageFailure(BaseModel):

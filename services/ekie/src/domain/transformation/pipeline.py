@@ -8,6 +8,7 @@ immutable versioned asset persistence with Control Plane references and lineage
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
@@ -215,7 +216,12 @@ class TransformationPipeline:
 
         storage_uri = f"asset://{storage_key}?version={stored.version}"
         asset_id = self._record_asset(
-            document.id, tenant_id, stored.version, storage_uri, content_hash
+            document.id,
+            tenant_id,
+            stored.version,
+            storage_uri,
+            content_hash,
+            metrics={"markdown_chars": len(markdown_text)},
         )
         events.append(
             self._event(
@@ -261,6 +267,7 @@ class TransformationPipeline:
         version: int,
         storage_uri: str,
         content_hash: str,
+        metrics: dict[str, int | float | str] | None = None,
     ) -> str:
         with self._db.session() as session:
             asset = Asset(
@@ -270,6 +277,7 @@ class TransformationPipeline:
                 version=version,
                 storage_uri=storage_uri,
                 content_hash=content_hash,
+                stage_metrics=json.dumps(metrics) if metrics is not None else None,
             )
             session.add(asset)
             session.flush()

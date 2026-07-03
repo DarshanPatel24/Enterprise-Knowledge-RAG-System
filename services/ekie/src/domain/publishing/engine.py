@@ -9,6 +9,7 @@ ADR-028).
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
 
@@ -367,6 +368,11 @@ class VectorPublishingEngine:
             storage_uri,
             content_hash,
             embedding_ref.asset_id,
+            metrics={
+                "vector_count": vector_count,
+                "verified_count": verified_count,
+                "batch_count": batch_count,
+            },
         )
         events.append(
             self._event(
@@ -521,6 +527,7 @@ class VectorPublishingEngine:
         storage_uri: str,
         content_hash: str,
         parent_asset_id: str,
+        metrics: dict[str, int | float | str] | None = None,
     ) -> str:
         with self._db.session() as session:
             asset = Asset(
@@ -530,6 +537,7 @@ class VectorPublishingEngine:
                 version=version,
                 storage_uri=storage_uri,
                 content_hash=content_hash,
+                stage_metrics=json.dumps(metrics) if metrics is not None else None,
             )
             session.add(asset)
             session.flush()

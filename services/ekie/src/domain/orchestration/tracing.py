@@ -4,11 +4,14 @@ Tracing is self-hosted and disabled by default (local-first). The Langfuse
 client is imported lazily so the offline path stays dependency-free; when the
 package is absent the orchestrator degrades to structured-log tracing, which
 already carries ``tenant_id`` and ``correlation_id`` from the request context.
+
+Uses the direct Langfuse Python SDK (no LangChain callback dependency) so it
+works with any version of langchain.
 """
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 from domain.observability import get_logger
 
@@ -24,32 +27,41 @@ class LangfuseSettingsLike(Protocol):
     langfuse_secret_key: str
 
 
-def build_langfuse_callbacks(settings: LangfuseSettingsLike) -> list[object]:
-    """Return LangChain callbacks for Langfuse, or an empty list when disabled.
+def build_langfuse_client(settings: LangfuseSettingsLike) -> Any | None:
+    """Return a Langfuse client for direct trace creation, or None when disabled.
 
-    Returns an empty list when tracing is disabled or the ``langfuse`` package
-    is not installed, so callers can always pass the result to the graph config.
+    Uses ``langfuse.Langfuse`` directly — no LangChain callback dependency.
+    This works with any version of langchain and any langfuse v2 release.
     """
     if not settings.langfuse_enabled:
-        return []
+        return None
+    if not settings.langfuse_public_key:
+        logger.warning(
+            "langfuse_unavailable",
+            extra={"detail": "EKIE_OBSERVABILITY__LANGFUSE_PUBLIC_KEY not set"},
+        )
+        return None
     try:
-        from langfuse.langchain import CallbackHandler
+        from langfuse import Langfuse
     except ImportError:
-        try:
-            from langfuse.callback import CallbackHandler  # langfuse <2.x fallback
-        except ImportError:
-            logger.warning(
-                "langfuse_unavailable",
-                extra={"detail": "langfuse not installed; falling back to log tracing"},
-            )
-            return []
+        logger.warning(
+            "langfuse_unavailable",
+            extra={"detail": "langfuse package not installed; run: pip install 'langfuse>=2.0,<3.0'"},
+        )
+        return None
+    return Langfuse(
+        public_key=settings.langfuse_public_key,
+        secret_key=settings.langfuse_secret_key,
+        host=settings.langfuse_host,
+    )
 
-    # langfuse v2+ reads credentials from LANGFUSE_* environment variables.
-    # Inject them from settings so operators only configure services/ekie/.env.
-    import os
-    os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
-    os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
-    os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_host)
 
-    handler = CallbackHandler()
-    return [handler]
+# Backward-compatibility shim — the old callback list approach is replaced
+# by direct trace creation in the runner; this always returns an empty list
+# so existing call sites that pass it as `tracer_callbacks` keep working.
+def build_langfuse_callbacks(settings: LangfuseSettingsLike) -> list[object]:
+    """Legacy shim: callbacks approach replaced by direct tracing.
+
+    Returns an empty list; callers should switch to :func:`build_langfuse_client`.
+    """
+    return []

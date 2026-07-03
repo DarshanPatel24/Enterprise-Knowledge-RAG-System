@@ -153,6 +153,7 @@ class Asset(Base, TimestampMixin):
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     storage_uri: Mapped[str] = mapped_column(String(1024), nullable=False)
     content_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    stage_metrics: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
 
     document: Mapped[Document] = relationship(back_populates="assets")
     lineage_out: Mapped[list[Lineage]] = relationship(

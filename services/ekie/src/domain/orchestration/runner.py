@@ -143,6 +143,7 @@ class SequentialWorkflowRunner(WorkflowRunner):
                     content_hash=outcome.content_hash,
                     created=outcome.created,
                     attempts=attempts,
+                    metrics=outcome.metrics,
                 )
             )
             checkpointer.save(current)
@@ -162,18 +163,20 @@ class LangGraphWorkflowRunner(WorkflowRunner):
 
     Builds a typed ``StateGraph`` whose nodes are the pipeline stages and whose
     edges enforce the deterministic stage order, compiled with a checkpointer
-    for resume. Langfuse callbacks and correlation metadata are attached to the
-    graph invocation config.
+    for resume. A Langfuse trace is created directly via the SDK (no LangChain
+    callback dependency) for reliable self-hosted tracing.
     """
 
     def __init__(
         self,
         *,
         sleep: SleepFn = time.sleep,
-        tracer_callbacks: list[object] | None = None,
+        tracer_callbacks: object | None = None,
     ) -> None:
         self._sleep = sleep
-        self._callbacks = tracer_callbacks or []
+        # Accept either a Langfuse client (new direct approach) or legacy
+        # callback list for backward compatibility with tests.
+        self._langfuse_client = tracer_callbacks if not isinstance(tracer_callbacks, list) else None
 
     def run(
         self,
@@ -235,6 +238,7 @@ class LangGraphWorkflowRunner(WorkflowRunner):
                         content_hash=outcome.content_hash,
                         created=outcome.created,
                         attempts=attempts,
+                        metrics=outcome.metrics,
                     )
                 )
                 checkpointer.save(updated)
@@ -259,15 +263,37 @@ class LangGraphWorkflowRunner(WorkflowRunner):
             "configurable": {
                 "thread_id": f"{state.tenant_id}:{state.document_id}",
             },
-            "callbacks": self._callbacks,
             "metadata": {
                 "tenant_id": state.tenant_id,
                 "correlation_id": state.correlation_id,
                 "session_id": state.document_id,
             },
         }
+
+        # Create a Langfuse trace for the full workflow run if the client is available.
+        _lf_span = None
+        if self._langfuse_client is not None:
+            try:
+                _lf_trace = self._langfuse_client.trace(
+                    name="ekie-ingestion",
+                    id=state.correlation_id or None,
+                    input={"document_id": state.document_id, "tenant_id": state.tenant_id},
+                    metadata={"correlation_id": state.correlation_id},
+                    tags=["ekie", "ingestion"],
+                )
+                _lf_span = _lf_trace.span(name="langgraph-pipeline")
+            except Exception:  # noqa: BLE001 - tracing must never break ingestion
+                _lf_span = None
+
         result = app.invoke(state.marked(WorkflowStatus.RUNNING), config=config)
         final = WorkflowState.model_validate(result)
+
+        if _lf_span is not None:
+            try:
+                _lf_span.end(output={"status": final.status.value if hasattr(final.status, 'value') else str(final.status)})
+                self._langfuse_client.flush()
+            except Exception:  # noqa: BLE001 - tracing must never break ingestion
+                pass
         if final.status != WorkflowStatus.DEAD_LETTER:
             final = final.marked(WorkflowStatus.COMPLETED)
             checkpointer.save(final)

@@ -8,9 +8,11 @@
 #   Redis         6379
 #   MinIO API     9005   (host port; container always listens on 9000)
 #   MinIO Console 9006   (host port; container always listens on 9001)
-#   MSSQL         1433
 #   ClickHouse    8123
 #   Langfuse UI   3000
+#
+# MSSQL: NOT in this compose file. EKIE connects to the Windows-native SQL Server
+#         instance (localhost\MSSQLSERVER2022) via Windows Authentication.
 #
 # Usage: docker compose -f docker-compose.local.yml up -d
 services:
@@ -61,25 +63,11 @@ services:
       timeout: 5s
       retries: 5
 
-  mssql:
-    # EK-RAG control plane (enterprise-ready). Local container only.
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    restart: unless-stopped
-    ports:
-      - "${MSSQL_PORT:-1433}:1433"
-    environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-}
-      MSSQL_PID: Developer
-    volumes:
-      - mssql_data:/var/opt/mssql
-    healthcheck:
-      # TCP-level check: confirms SQL Server is listening on 1433.
-      # Avoids SA credential dependency; EKIE connects via Windows Auth to the host instance.
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/1433' 2>/dev/null && echo ok || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 6
+  # mssql: REMOVED — EKIE connects to the Windows-native SQL Server instance
+  # (localhost\MSSQLSERVER2022 via Windows Authentication, not a Docker container).
+  # To use a containerised SQL Server instead, add a service with:
+  #   image: mcr.microsoft.com/mssql/server:2022-latest
+  #   environment: { ACCEPT_EULA: "Y", MSSQL_SA_PASSWORD: ..., MSSQL_PID: Developer }
 
   langfuse-db:
     # Internal store for Langfuse ONLY. Not an application database. Local-only.
@@ -173,6 +161,5 @@ volumes:
   qdrant_data:
   redis_data:
   minio_data:
-  mssql_data:
   langfuse_db_data:
   clickhouse_data:

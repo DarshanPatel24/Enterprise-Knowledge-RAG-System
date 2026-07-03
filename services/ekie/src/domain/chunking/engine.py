@@ -9,6 +9,7 @@ immutable, versioned managed asset with lineage back to the intelligence asset
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass, field
 
 from domain.chunking.context import build_context
@@ -218,7 +219,16 @@ class ChunkingEngine:
             raise ChunkingError(ChunkingErrorType.STORAGE_FAILURE, str(exc)) from exc
         storage_uri = f"asset://{key}?version={stored.version}"
         asset_id = self._record_asset(
-            document_id, tenant_id, stored.version, storage_uri, content_hash, intelligence.asset_id
+            document_id,
+            tenant_id,
+            stored.version,
+            storage_uri,
+            content_hash,
+            intelligence.asset_id,
+            metrics={
+                "chunk_count": chunk_document.chunk_count,
+                "total_tokens": chunk_document.total_tokens,
+            },
         )
         events.append(
             self._event(
@@ -307,6 +317,7 @@ class ChunkingEngine:
         storage_uri: str,
         content_hash: str,
         parent_asset_id: str,
+        metrics: dict[str, int | float | str] | None = None,
     ) -> str:
         with self._db.session() as session:
             asset = Asset(
@@ -316,6 +327,7 @@ class ChunkingEngine:
                 version=version,
                 storage_uri=storage_uri,
                 content_hash=content_hash,
+                stage_metrics=json.dumps(metrics) if metrics is not None else None,
             )
             session.add(asset)
             session.flush()

@@ -69,24 +69,26 @@ $env:MINIO_ROOT_USER = "minioadmin"
 $env:MINIO_ROOT_PASSWORD = "minioadmin"
 $env:MINIO_PORT = "9005"
 $env:MINIO_CONSOLE_PORT = "9006"
-$env:MSSQL_SA_PASSWORD = ""          # leave empty for Windows Auth
+# SQL Server is the Windows-native instance (not Docker) — no SA password needed here
 $env:LANGFUSE_DB_USER = "langfuse"
 $env:LANGFUSE_DB_PASSWORD = "langfuse"
 $env:LANGFUSE_NEXTAUTH_SECRET = "change-in-production"
 $env:LANGFUSE_SALT = "change-in-production"
 ```
 
+> **SQL Server:** EKIE uses your Windows-native SQL Server instance (`localhost\MSSQLSERVER2022`) via Windows Authentication. There is **no Docker MSSQL container** in this stack.
+
 ### 2.2 Start Core Infrastructure
 
 ```powershell
-docker compose -f docker-compose.local.yml up -d qdrant minio mssql redis
+docker compose -f docker-compose.local.yml up -d qdrant minio redis
 ```
 
 Wait for healthy status:
 
 ```powershell
 docker compose -f docker-compose.local.yml ps
-# All four services should show "Up" before proceeding.
+# qdrant, minio, and redis should show (healthy) before proceeding.
 ```
 
 ### 2.3 Create MinIO Bucket
@@ -112,17 +114,13 @@ Or use the MinIO Console at http://localhost:9006 (login: minioadmin / minioadmi
 
 ### 2.4 Create SQL Server Database
 
-If using Windows Authentication against a local named instance:
+EKIE connects to your Windows-native SQL Server instance via Windows Authentication. Create the database once:
 
 ```powershell
 sqlcmd -S "localhost\MSSQLSERVER2022" -E -C -Q "IF DB_ID('ekrag_control_plane') IS NULL CREATE DATABASE ekrag_control_plane;"
 ```
 
-If using Docker MSSQL with SQL auth:
-
-```powershell
-sqlcmd -S "localhost,1433" -U sa -P "<sa-password>" -C -Q "IF DB_ID('ekrag_control_plane') IS NULL CREATE DATABASE ekrag_control_plane;"
-```
+> There is no Docker MSSQL container. If you receive a connection error, verify the `MSSQL$MSSQLSERVER2022` Windows service is running: `Get-Service MSSQL\$MSSQLSERVER2022`
 
 ### 2.5 Start Langfuse Observability Stack
 
@@ -184,7 +182,49 @@ pip install langchain-ollama
 
 ### 3.3 Automated One-Command Setup
 
-The setup script performs steps 2–5 automatically:
+Two automation levels are available:
+
+#### Option A — `deploy.py` (recommended for new deployments)
+
+The deployment task runner executes all 10 gates in order and reports pass/fail per gate:
+
+```powershell
+# From any directory:
+python services/ekie/scripts/deploy.py
+
+# Or after pip install -e services/ekie[...]:
+ekie-deploy
+```
+
+What it does automatically:
+1. Prerequisite check (Python, Docker, Tesseract, pyodbc)
+2. `.env` validation (required keys present, target folder exists)
+3. Docker infrastructure startup (Qdrant, MinIO, Redis)
+4. MinIO bucket provisioning (`ekie-assets`, `langfuse-events`)
+5. SQL Server schema provisioning (`create_all`)
+6. Langfuse stack startup + key validation
+7. HuggingFace model cache check
+8. EKIE API health check
+9. Ingestion smoke test (max 2 documents)
+10. Monitoring verification (Qdrant count, Langfuse traces, MinIO objects)
+
+Flags:
+```powershell
+# Skip Docker startup (already running):
+python services/ekie/scripts/deploy.py --skip-docker
+
+# Use a different tenant:
+python services/ekie/scripts/deploy.py --tenant-id my-tenant
+
+# Skip ingestion smoke test:
+python services/ekie/scripts/deploy.py --skip-smoke
+```
+
+All gates must show `[OK]` or `[WARN]` before marking a deployment done. Any `[FAIL]` stops execution with a remediation hint.
+
+#### Option B — `setup.py` (infrastructure-only, first-time)
+
+The setup script performs infrastructure steps 2–5 only (no ingestion smoke test, no monitoring check):
 
 ```powershell
 python services/ekie/scripts/setup.py
@@ -422,6 +462,29 @@ Worker configuration from `.env`:
 | `EKIE_SYNC__TENANT_ID` | `tenant-default` | Tenant identifier |
 | `EKIE_SYNC__POLL_INTERVAL_SECONDS` | `300` | How often to scan |
 | `EKIE_SYNC__API_BASE_URL` | `http://localhost:8001` | EKIE API endpoint |
+
+### 6.3 Monitor Ingestion Progress (Terminal C)
+
+Run the live progress monitor alongside the API and worker to see per-document stage progress, status, and elapsed time:
+
+```powershell
+python services/ekie/scripts/monitor.py
+
+# Or after pip install -e services/ekie[...]:
+ekie-monitor
+
+# Options:
+python services/ekie/scripts/monitor.py --tenant-id tenant-default --refresh 3
+python services/ekie/scripts/monitor.py --all   # show all documents
+```
+
+The monitor reads the Control Plane directly (no API call required) and refreshes every 3 seconds. It shows:
+1. Overall progress bar with percentage, counts per status (complete / running / queued / failed)
+2. Per-document 5-stage pipeline bar (`█`=done `░`=pending across Transformation, Intelligence, Chunking, Embedding, Publishing)
+3. Last-updated elapsed time per document
+4. Estimated remaining documents
+
+Press **Ctrl+C** to stop the monitor.
 
 ---
 

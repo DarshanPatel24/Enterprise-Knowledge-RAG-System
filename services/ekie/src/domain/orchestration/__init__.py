@@ -36,7 +36,7 @@ from domain.orchestration.state import (
     WorkflowState,
     WorkflowStatus,
 )
-from domain.orchestration.tracing import build_langfuse_callbacks
+from domain.orchestration.tracing import build_langfuse_callbacks, build_langfuse_client
 
 __all__ = [
     "Checkpointer",

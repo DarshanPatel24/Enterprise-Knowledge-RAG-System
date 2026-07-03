@@ -39,6 +39,7 @@ ekie-worker = "scripts.start_worker:main"
 ekie-setup = "scripts.setup:main"
 ekie-cleanup = "scripts.cleanup_dev_artifacts:main"
 ekie-deploy = "scripts.deploy:main"
+ekie-monitor = "scripts.monitor:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "../../packages/contracts/src", "tests"]

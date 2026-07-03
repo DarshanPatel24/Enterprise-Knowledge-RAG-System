@@ -60,6 +60,7 @@ class StageRecordResponse(BaseModel):
     created: bool
     content_hash: str
     attempts: int
+    metrics: dict[str, int | float | str] = Field(default_factory=dict)
 
 
 class FailureResponse(BaseModel):
@@ -132,6 +133,7 @@ def _records(records: tuple[StageRecord, ...]) -> list[StageRecordResponse]:
             created=record.created,
             content_hash=record.content_hash,
             attempts=record.attempts,
+            metrics=record.metrics,
         )
         for record in records
     ]

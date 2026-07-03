@@ -9,7 +9,7 @@ mutable state, so the orchestrator can retry, skip, or replay them safely
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from domain.chunking.engine import ChunkingEngine
 from domain.embedding.engine import EmbeddingEngine
@@ -39,6 +39,7 @@ class StageOutcome:
     version: int
     content_hash: str
     created: bool
+    metrics: dict[str, int | float | str] = field(default_factory=dict)
 
 
 StageFn = Callable[[PipelineEngines, WorkflowState], StageOutcome]
@@ -66,7 +67,11 @@ def _run_transform(engines: PipelineEngines, state: WorkflowState) -> StageOutco
         mime_type=state.mime_type,
     )
     return StageOutcome(
-        result.asset_id, result.version, result.content_hash, result.created
+        result.asset_id,
+        result.version,
+        result.content_hash,
+        result.created,
+        metrics={"markdown_chars": len(result.markdown)},
     )
 
 
@@ -78,8 +83,19 @@ def _run_intelligence(engines: PipelineEngines, state: WorkflowState) -> StageOu
         provider_override=state.intelligence_provider,
         model_override=state.intelligence_model,
     )
+    sem = result.report.semantic_metadata
     return StageOutcome(
-        result.asset_id, result.version, result.content_hash, result.created
+        result.asset_id,
+        result.version,
+        result.content_hash,
+        result.created,
+        metrics={
+            "section_count": sem.section_count,
+            "token_count": sem.token_count,
+            "table_count": len(result.report.tables),
+            "code_block_count": len(result.report.code_blocks),
+            "language": sem.language,
+        },
     )
 
 
@@ -87,7 +103,14 @@ def _run_chunk(engines: PipelineEngines, state: WorkflowState) -> StageOutcome:
     """Chunk the enriched document into a versioned chunk asset."""
     result = engines.chunking.chunk(state.document_id, state.tenant_id)
     return StageOutcome(
-        result.asset_id, result.version, result.content_hash, result.created
+        result.asset_id,
+        result.version,
+        result.content_hash,
+        result.created,
+        metrics={
+            "chunk_count": result.chunk_document.chunk_count,
+            "total_tokens": result.chunk_document.total_tokens,
+        },
     )
 
 
@@ -100,7 +123,16 @@ def _run_embed(engines: PipelineEngines, state: WorkflowState) -> StageOutcome:
         model_override=state.embedding_model,
     )
     return StageOutcome(
-        result.asset_id, result.version, result.content_hash, result.created
+        result.asset_id,
+        result.version,
+        result.content_hash,
+        result.created,
+        metrics={
+            "embedding_count": result.embedding_document.embedding_count,
+            "total_tokens": result.total_tokens,
+            "batch_count": result.batch_count,
+            "dimension": result.dimension,
+        },
     )
 
 
@@ -108,7 +140,15 @@ def _run_publish(engines: PipelineEngines, state: WorkflowState) -> StageOutcome
     """Publish the embedding asset into the vector store as a vector asset."""
     result = engines.publishing.publish(state.document_id, state.tenant_id)
     return StageOutcome(
-        result.asset_id, result.version, result.content_hash, result.created
+        result.asset_id,
+        result.version,
+        result.content_hash,
+        result.created,
+        metrics={
+            "vector_count": result.vector_count,
+            "verified_count": result.verified_count,
+            "batch_count": result.batch_count,
+        },
     )
 
 

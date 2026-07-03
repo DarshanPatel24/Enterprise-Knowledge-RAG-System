@@ -188,6 +188,7 @@ Enterprise-Knowledge-RAG-System/
 │       │   ├── setup.py              # One-command first-time environment setup
 │       │   ├── start_api.py          # cwd-safe API launcher (ekie-api)
 │       │   ├── start_worker.py       # cwd-safe worker launcher (ekie-worker)
+│       │   ├── monitor.py            # Live ingestion progress monitor (ekie-monitor)
 │       │   ├── cleanup_dev_artifacts.py # Pre-production cleanup (ekie-cleanup)
 │       │   ├── production_sync.py    # Continuous folder-polling ingestion worker
 │       │   ├── acceptance_report.py  # One-command acceptance evidence report
@@ -362,7 +363,7 @@ Edit these files for operations; do not edit business logic for routine deployme
 | `services/ekie/.env.profile.huggingface` | HuggingFace-first profile template | HF model IDs, `HF_HOME`, dimensions |
 | `services/ekie/.env.profile.hybrid` | Mixed provider template | HF intelligence + Ollama embeddings (or inverse) |
 | `services/ekie/.env.profile.rollback-last-known-good` | Fast rollback profile | Restore known good provider/model values |
-| `.env` (repo root) | Local container stack variables | Docker service credentials for MinIO, MSSQL, Langfuse |
+| `.env` (repo root) | Local container stack variables | Docker service credentials for MinIO and Langfuse |
 
 Operator rule:
 1. Copy profile to `services/ekie/.env`.
@@ -596,7 +597,7 @@ Copy-Item .env.example .env
 # On Mac/Linux
 cp .env.example .env
 ```
-Ensure you set strong passwords (like `MINIO_ROOT_PASSWORD` and `MSSQL_SA_PASSWORD`) in this root `.env` file.
+Ensure you set required credentials (like `MINIO_ROOT_PASSWORD`) in this root `.env` file. SQL Server uses your Windows-native instance — no Docker MSSQL credentials needed.
 
 The project provides a Docker Compose file that starts all required services:
 
@@ -607,8 +608,7 @@ docker compose -f docker-compose.local.yml up -d
 This starts the following services:
 
 | Service | Port | Purpose |
-|---|---|—|
-| **MS SQL Server 2022** | `1433` | Control Plane database |
+|---|---|---|
 | **Qdrant** | `6333` | Vector database |
 | **Redis 7** | `6379` | Cache layer |
 | **MinIO** | `9005` (API), `9006` (Console) | Object storage |
@@ -616,8 +616,8 @@ This starts the following services:
 | **ClickHouse** | `8123` | Langfuse internal analytics |
 | **PostgreSQL 16** | *(internal)* | Langfuse internal store only |
 
-> **Important:** The PostgreSQL instance exists solely as Langfuse's internal store. It is NOT an application database. The EK-RAG control plane uses Microsoft SQL Server.
-> **Note on Qdrant:** Qdrant is fully managed by Docker and stores its data in a managed Docker volume.
+> **SQL Server** is your **Windows-native instance** (`localhost\MSSQLSERVER2022`). It is NOT in Docker. EKIE connects via Windows Authentication.
+> **Note on Qdrant:** Qdrant stores its data in a managed Docker volume.
 > **MinIO ports:** MinIO API runs on host port **9005** (mapped to container port 9000). Console runs on host port **9006**. These are fixed in `docker-compose.local.yml` to avoid conflicts with Windows reserved ports.
 
 ### 7.2 Verify Services
@@ -1967,6 +1967,20 @@ A run is accepted when all conditions below are true:
 
 ### 21.2 Operator Sequence (No Code Changes)
 
+**Recommended: use the deployment task runner for a full gated deployment:**
+
+```powershell
+# Runs all 10 gates with per-gate pass/fail status:
+python services/ekie/scripts/deploy.py
+
+# Or after pip install -e services/ekie[...]:
+ekie-deploy
+```
+
+The runner covers: prerequisites → .env validation → Docker infra → MinIO buckets → SQL schema → Langfuse → HuggingFace model cache → API health → smoke ingest → monitoring verification.
+
+For a manual step-by-step sequence without the runner:
+
 1. Audit repository state
 ```bash
 git status --short
@@ -2085,12 +2099,44 @@ Expected behavior:
 
 ### 21.6 Worker Monitoring Model
 
-Monitor ingestion workers and orchestration through three signals:
-1. API-level workflow status: `GET /v1/documents/{document_id}/workflow`
-2. SQL lineage growth: new `assets` rows per stage
-3. Structured logs with correlation ID and tenant ID
+Use the built-in live progress monitor to watch ingestion as the worker runs. It reads directly from the Control Plane database and refreshes every few seconds:
 
-If `production_sync.py` is enabled, monitor the polling loop process and API response rates as primary worker SLO indicators.
+```powershell
+# Terminal C (alongside API and worker):
+python services/ekie/scripts/monitor.py
+
+# Or after pip install -e services/ekie[...]:
+ekie-monitor
+```
+
+Options:
+
+```powershell
+# Custom tenant and refresh rate:
+python services/ekie/scripts/monitor.py --tenant-id tenant-default --refresh 3
+
+# Show all documents (default: top 40 by activity):
+python services/ekie/scripts/monitor.py --all
+```
+
+What the monitor shows:
+
+```
+╭────────────────── EKIE Ingestion Monitor ──────────────────╮
+│  Tenant: tenant-default   Refresh: 3s   Time: 16:05:23               │
+│                                                                        │
+│  ████████░░░░░░░░░░░░  42%  5 complete  2 running  3 queued  1 failed │
+╰──────────────────────────────────────────────────────────────────────────╯
+
+ Document               Stages       Pipeline Status    Updated
+ dashboard.pdf          █ █ █ ░ ░    ➳ embedding…       45s
+ CI101_PPTX.pptx        █ █ █ █ █    ✓ complete         2m 12s
+ FDS_Rev00.docx         ░ ░ ░ ░ ░    synced, awaiting   5s
+```
+
+**Stage bar:** `█`=done `░`=pending across 5 stages: Transformation, Intelligence, Chunking, Embedding, Publishing.
+
+The monitor reads the Control Plane directly (no API call required) so it stays accurate even while a long ingestion is in progress. Press **Ctrl+C** to exit.
 
 ### 21.7 Langfuse Monitoring Path
 

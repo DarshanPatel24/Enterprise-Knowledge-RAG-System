@@ -26,6 +26,7 @@ from domain.orchestration import (
     PipelineEngines,
     WorkflowOrchestrator,
     build_langfuse_callbacks,
+    build_langfuse_client,
 )
 from domain.orchestration.checkpointer import Checkpointer
 from domain.plugins import (
@@ -162,13 +163,13 @@ def build_workflow_orchestrator(
     checkpointer: Checkpointer | None = None,
 ) -> WorkflowOrchestrator:
     """Build the ingestion workflow orchestrator from configuration."""
-    tracer_callbacks = build_langfuse_callbacks(settings.observability)
+    langfuse_client = build_langfuse_client(settings.observability) if settings.orchestration.enable_tracing else None
     return WorkflowOrchestrator(
         db,
         build_pipeline_engines(settings, db, storage),
         OrchestrationPolicy.from_settings(settings.orchestration),
         checkpointer=checkpointer,
-        tracer_callbacks=tracer_callbacks,
+        tracer_callbacks=langfuse_client,
     )
 
 

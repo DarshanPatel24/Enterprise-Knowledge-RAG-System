@@ -7,6 +7,7 @@ asset with lineage back to its source Markdown asset (handbook 8.16, ADR-016).
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -243,7 +244,19 @@ class DocumentIntelligenceEngine:
         )
         storage_uri = f"asset://{key}?version={stored.version}"
         asset_id = self._record_asset(
-            document_id, tenant_id, stored.version, storage_uri, content_hash, markdown.asset_id
+            document_id,
+            tenant_id,
+            stored.version,
+            storage_uri,
+            content_hash,
+            markdown.asset_id,
+            metrics={
+                "section_count": report.semantic_metadata.section_count,
+                "token_count": report.semantic_metadata.token_count,
+                "table_count": len(report.tables),
+                "code_block_count": len(report.code_blocks),
+                "language": report.semantic_metadata.language,
+            },
         )
         events.append(
             self._event(
@@ -288,6 +301,7 @@ class DocumentIntelligenceEngine:
         storage_uri: str,
         content_hash: str,
         parent_asset_id: str,
+        metrics: dict[str, int | float | str] | None = None,
     ) -> str:
         with self._db.session() as session:
             asset = Asset(
@@ -297,6 +311,7 @@ class DocumentIntelligenceEngine:
                 version=version,
                 storage_uri=storage_uri,
                 content_hash=content_hash,
+                stage_metrics=json.dumps(metrics) if metrics is not None else None,
             )
             session.add(asset)
             session.flush()

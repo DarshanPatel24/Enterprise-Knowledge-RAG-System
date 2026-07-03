@@ -18,7 +18,7 @@ from config.settings import EkieSettings, get_settings
 from domain.control_plane import ControlPlaneDatabase
 from domain.observability import get_tenant_id
 from domain.orchestration import WorkflowOrchestrator
-from domain.storage import AssetStorage, InMemoryAssetStorage
+from domain.storage import AssetStorage
 
 
 @dataclass(frozen=True)
@@ -47,6 +47,7 @@ def build_resources(settings: EkieSettings) -> AppResources:
     db = ControlPlaneDatabase(settings.control_plane)
     if settings.environment == "local":
         db.create_all()
+    db.run_migrations()
     storage: AssetStorage = build_asset_storage(settings)
     orchestrator = build_workflow_orchestrator(settings, db, storage)
     return AppResources(

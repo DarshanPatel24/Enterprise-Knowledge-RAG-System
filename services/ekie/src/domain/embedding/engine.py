@@ -8,6 +8,7 @@ lineage back to the chunk asset (handbook 10.8, ADR-022/ADR-023).
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
 
@@ -325,7 +326,18 @@ class EmbeddingEngine:
             raise EmbeddingError(EmbeddingErrorType.STORAGE_FAILURE, str(exc)) from exc
         storage_uri = f"asset://{key}?version={stored.version}"
         asset_id = self._record_asset(
-            document_id, tenant_id, stored.version, storage_uri, content_hash, chunks_ref.asset_id
+            document_id,
+            tenant_id,
+            stored.version,
+            storage_uri,
+            content_hash,
+            chunks_ref.asset_id,
+            metrics={
+                "embedding_count": embedding_document.embedding_count,
+                "total_tokens": embedding_document.total_tokens,
+                "batch_count": batch_count,
+                "dimension": embedding_document.dimension,
+            },
         )
         events.append(
             self._event(
@@ -441,6 +453,7 @@ class EmbeddingEngine:
         storage_uri: str,
         content_hash: str,
         parent_asset_id: str,
+        metrics: dict[str, int | float | str] | None = None,
     ) -> str:
         with self._db.session() as session:
             asset = Asset(
@@ -450,6 +463,7 @@ class EmbeddingEngine:
                 version=version,
                 storage_uri=storage_uri,
                 content_hash=content_hash,
+                stage_metrics=json.dumps(metrics) if metrics is not None else None,
             )
             session.add(asset)
             session.flush()

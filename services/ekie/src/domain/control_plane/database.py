@@ -9,7 +9,7 @@ override URL such as SQLite is used for tests and local experimentation).
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from config.settings import ControlPlaneSettings
@@ -34,6 +34,27 @@ class ControlPlaneDatabase:
         Production schema changes are managed through migrations, not this call.
         """
         Base.metadata.create_all(self._engine)
+
+    def run_migrations(self) -> None:
+        """Apply additive schema migrations idempotently.
+
+        Safe to call on every startup: each migration checks whether the change
+        is already present before issuing DDL. Supports both SQL Server and
+        SQLite dialects.
+        """
+        inspector = inspect(self._engine)
+        dialect = self._engine.dialect.name
+
+        # M-001: assets.stage_metrics — per-stage processing metrics (JSON text).
+        existing_columns = {c["name"] for c in inspector.get_columns("assets")}
+        if "stage_metrics" not in existing_columns:
+            if dialect == "mssql":
+                ddl = "ALTER TABLE assets ADD stage_metrics NVARCHAR(MAX) NULL"
+            else:
+                ddl = "ALTER TABLE assets ADD COLUMN stage_metrics TEXT"
+            with self._engine.connect() as conn:
+                conn.execute(text(ddl))
+                conn.commit()
 
     def drop_all(self) -> None:
         """Drop all Control Plane tables (test teardown convenience)."""
