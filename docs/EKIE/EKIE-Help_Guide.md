@@ -1364,28 +1364,53 @@ Both values are thread-local and automatically included in all log entries and e
 
 ### 14.3 Langfuse Integration
 
-For LLM/agent observability:
+Langfuse 3.x requires **two containers** to trace ingestion workflows: the web app (`langfuse`) and the queue processor (`langfuse-worker`). Without the worker, traces are accepted with HTTP 207 but never appear in the UI.
+
+Start the full stack:
+
+```powershell
+docker compose -f docker-compose.local.yml up -d clickhouse langfuse-db langfuse langfuse-worker
+```
+
+Required `.env` settings:
 
 ```dotenv
 EKIE_OBSERVABILITY__LANGFUSE_ENABLED=true
 EKIE_OBSERVABILITY__LANGFUSE_HOST=http://localhost:3000
-EKIE_OBSERVABILITY__LANGFUSE_PUBLIC_KEY=pk-...
-EKIE_OBSERVABILITY__LANGFUSE_SECRET_KEY=sk-...
+EKIE_OBSERVABILITY__LANGFUSE_PUBLIC_KEY=pk-lf-<from-langfuse-ui>
+EKIE_OBSERVABILITY__LANGFUSE_SECRET_KEY=sk-lf-<from-langfuse-ui>
+EKIE_ORCHESTRATION__RUNNER=langgraph
+EKIE_ORCHESTRATION__ENABLE_TRACING=true
 ```
 
-When enabled with the `langgraph` runner, the orchestrator emits traces to the self-hosted Langfuse instance.
+Get API keys: http://localhost:3000 → Settings → API Keys.
+
+**Python SDK:** pin to `langfuse>=2.0,<3.0`. Version 4.x uses OTEL protocol which is incompatible with the self-hosted docker stack.
+
+```powershell
+pip install "langfuse>=2.0,<3.0"
+```
 
 Operational requirements:
-1. `EKIE_ORCHESTRATION__RUNNER=langgraph`
-2. `EKIE_ORCHESTRATION__ENABLE_TRACING=true`
-3. Langfuse service stack must be healthy before EKIE startup.
-4. Valid Langfuse project keys must be configured.
+1. `langfuse` and `langfuse-worker` containers both healthy before EKIE startup.
+2. API keys from Langfuse UI set in `.env`.
+3. EKIE API restarted after key change.
 
-Verification steps:
-1. Trigger an ingestion request with `X-Correlation-ID` header.
-2. Confirm the same correlation ID appears in EKIE logs.
-3. Confirm a trace appears in Langfuse for that run.
-4. If no trace appears, check `services/ekie/src/domain/orchestration/tracing.py` logs for callback initialization fallback.
+Verification:
+
+```powershell
+Push-Location services/ekie
+..\..\.venv\Scripts\python.exe -c "
+import sys, requests, base64; sys.path.insert(0, 'src')
+from config.settings import get_settings; s = get_settings()
+creds = base64.b64encode(f'{s.observability.langfuse_public_key}:{s.observability.langfuse_secret_key}'.encode()).decode()
+resp = requests.get('http://localhost:3000/api/public/traces?limit=5', headers={'Authorization': f'Basic {creds}'})
+traces = resp.json().get('data', [])
+print(f'Traces in Langfuse: {len(traces)}')
+[print(' -', t.get('name'), t.get('id')) for t in traces]
+"
+Pop-Location
+```
 
 ### 14.4 OpenTelemetry
 
@@ -1651,52 +1676,78 @@ Hybrid profile example:
 ### 18.2.2 End-to-end deployment steps (operator runbook)
 
 1. Prepare environment files
-- Copy `services/ekie/.env.example` to `services/ekie/.env`.
-- Set database/storage credentials and model-provider variables.
+   - Copy `services/ekie/.env.example` to `services/ekie/.env`.
+   - Set database credentials, storage credentials, model-provider variables.
+   - Add Langfuse API keys (get from UI after step 2).
 
-2. Start infrastructure
-```bash
+2. Start infrastructure (run once; includes Langfuse worker)
+```powershell
 docker compose -f docker-compose.local.yml up -d
 docker compose -f docker-compose.local.yml ps
+# All services should show (healthy) or Up.
 ```
 
-3. Verify dependencies
-```bash
-curl http://localhost:6333/collections
-curl http://localhost:11434/api/tags
+3. Create Langfuse account and copy API keys
+   - Open http://localhost:3000, register, create project.
+   - Settings → API Keys → copy `pk-lf-...` and `sk-lf-...` to `.env`.
+
+4. Install Python dependencies (run once per machine)
+```powershell
+pip install -e "services/ekie[dev,mssql,storage,richmedia]"
+pip install -U "sentence-transformers[image]" torchvision langchain-huggingface torch transformers accelerate "langfuse>=2.0,<3.0"
 ```
 
-4. Start EKIE API
-```bash
-python -m uvicorn api.app:app --host 0.0.0.0 --port 8001 --app-dir services/ekie/src
+5. Install Tesseract OCR (run once per machine, for scanned PDF support)
+   - Download from https://github.com/UB-Mannheim/tesseract/wiki and install.
+   - Add `C:\Program Files\Tesseract-OCR` to system PATH.
+   - Verify: `tesseract --version`
+
+6. Download HuggingFace models (run once; ~19 GB total)
+```powershell
+python services/ekie/scripts/setup.py
+# Or manually:
+Push-Location services/ekie
+..\..\.venv\Scripts\python.exe -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-VL-Embedding-2B', ignore_patterns=['*.gguf','*.bin'])"
+..\..\.venv\Scripts\python.exe -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen2.5-7B-Instruct', ignore_patterns=['*.gguf','*.bin'])"
+Pop-Location
 ```
 
-5. Run API health checks
-```bash
-curl http://localhost:8001/health/live
-curl http://localhost:8001/health/ready
+7. Set offline flags in `.env` after download completes
+```dotenv
+HF_HUB_OFFLINE=1
+TRANSFORMERS_OFFLINE=1
 ```
 
-6. Run repository ingest smoke test
-```bash
-curl -X POST "http://localhost:8001/v1/repositories/<repository_id>/ingest" \
-  -H "X-Tenant-ID: <tenant_id>" \
-  -H "Content-Type: application/json" \
-  -d '{"sync_before_ingest": true, "max_documents": 10}'
+8. Start EKIE API (Terminal A)
+```powershell
+$env:PATH = "C:\Program Files\Tesseract-OCR;$env:PATH"
+python services/ekie/scripts/start_api.py
 ```
 
-7. Verify Qdrant publish
-```bash
-curl -X POST "http://localhost:6333/collections/<collection>/points/count" \
-  -H "Content-Type: application/json" \
-  -d '{"exact":true}'
+9. Start ingestion worker (Terminal B)
+```powershell
+$env:PATH = "C:\Program Files\Tesseract-OCR;$env:PATH"
+python services/ekie/scripts/start_worker.py
 ```
 
-8. Capture deployment evidence
-- Profile used
-- Ingest response summary
-- Qdrant count response
-- Correlation ID for traceability
+10. Run API health checks
+```powershell
+Invoke-RestMethod http://localhost:8001/health/live
+Invoke-RestMethod http://localhost:8001/health/ready
+```
+
+11. Get repository ID and trigger first ingest
+```powershell
+$headers = @{ 'X-Tenant-ID' = 'tenant-default'; 'Content-Type' = 'application/json' }
+Push-Location services/ekie; ..\..\.venv\Scripts\python.exe -c "import sys; sys.path.insert(0,'src'); from config.settings import get_settings; from domain.control_plane import ControlPlaneDatabase, Repository; db = ControlPlaneDatabase(get_settings().control_plane); [print(r.id, r.name) for r in __import__('sqlalchemy.orm', fromlist=['Session']).Session; db.session().__enter__().query(Repository).filter_by(tenant_id='tenant-default').all()]"
+# Use ID from above:
+Invoke-RestMethod -Method Post -Uri 'http://localhost:8001/v1/repositories/<repo-id>/ingest' -Headers $headers -Body '{"sync_before_ingest":true,"max_documents":5}' | ConvertTo-Json -Depth 5
+```
+
+12. Verify data in all monitoring layers
+   - Qdrant: http://localhost:6333/dashboard
+   - MinIO: http://localhost:9006 (minioadmin / minioadmin)
+   - Langfuse: http://localhost:3000 → Traces
 
 ### 18.3 Docker Deployment
 

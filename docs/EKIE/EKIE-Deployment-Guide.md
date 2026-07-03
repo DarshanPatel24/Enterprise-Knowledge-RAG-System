@@ -124,12 +124,23 @@ If using Docker MSSQL with SQL auth:
 sqlcmd -S "localhost,1433" -U sa -P "<sa-password>" -C -Q "IF DB_ID('ekrag_control_plane') IS NULL CREATE DATABASE ekrag_control_plane;"
 ```
 
-### 2.5 Optional: Start Langfuse (Observability)
+### 2.5 Start Langfuse Observability Stack
 
-Only required when `EKIE_OBSERVABILITY__LANGFUSE_ENABLED=true`:
+Langfuse 3.x requires **two containers**: the web app and a worker. Both must run for ingestion events to appear in the UI.
 
 ```powershell
-docker compose -f docker-compose.local.yml up -d clickhouse langfuse-db langfuse
+docker compose -f docker-compose.local.yml up -d clickhouse langfuse-db langfuse langfuse-worker
+docker compose -f docker-compose.local.yml ps clickhouse langfuse-db langfuse langfuse-worker
+# All four should show (healthy) or Up.
+```
+
+The `langfuse-worker` container processes queued ingestion events and writes them to ClickHouse. Without it, all traces are accepted with HTTP 207 but never appear in the Langfuse UI.
+
+After both containers are healthy, log in at http://localhost:3000, create your account, create a project, and copy the API keys to `.env`:
+
+```dotenv
+EKIE_OBSERVABILITY__LANGFUSE_PUBLIC_KEY=pk-lf-...
+EKIE_OBSERVABILITY__LANGFUSE_SECRET_KEY=sk-lf-...
 ```
 
 ---
@@ -156,9 +167,20 @@ pip install -U "sentence-transformers[image]" torchvision
 # Required for HuggingFace intelligence LLM (Qwen/Qwen2.5-7B-Instruct)
 pip install langchain-huggingface torch transformers accelerate
 
+# Required for Langfuse tracing
+pip install "langfuse>=2.0,<3.0"
+
 # Optional: Ollama embedding / intelligence
 pip install langchain-ollama
 ```
+
+> **Tesseract OCR (required for scanned PDFs):**
+> Download the Windows installer from https://github.com/UB-Mannheim/tesseract/wiki
+> After install, add to system PATH permanently (run once in admin PowerShell):
+> ```powershell
+> [System.Environment]::SetEnvironmentVariable("PATH","C:\Program Files\Tesseract-OCR;" + [System.Environment]::GetEnvironmentVariable("PATH","Machine"),"Machine")
+> ```
+> Verify: `tesseract --version`
 
 ### 3.3 Automated One-Command Setup
 
@@ -245,9 +267,35 @@ Required `.env` settings (already active):
 ```dotenv
 EKIE_OBSERVABILITY__LANGFUSE_ENABLED=true
 EKIE_OBSERVABILITY__LANGFUSE_HOST=http://localhost:3000
+EKIE_OBSERVABILITY__LANGFUSE_PUBLIC_KEY=pk-lf-<your-key>
+EKIE_OBSERVABILITY__LANGFUSE_SECRET_KEY=sk-lf-<your-key>
 EKIE_ORCHESTRATION__RUNNER=langgraph
 EKIE_ORCHESTRATION__ENABLE_TRACING=true
 ```
+
+**How to get API keys:**
+1. Start the full Langfuse stack (Section 2.5).
+2. Open http://localhost:3000 and register an account.
+3. Create an organization and project.
+4. Go to Settings → API Keys → Create new key pair.
+5. Paste `pk-lf-...` and `sk-lf-...` into `.env`.
+6. Restart the EKIE API after setting keys.
+
+**Verify ingestion traces appear:**
+
+```powershell
+Push-Location services/ekie
+..\..\.venv\Scripts\python.exe -c "
+import sys, requests, base64; sys.path.insert(0, 'src')
+from config.settings import get_settings; s = get_settings()
+creds = base64.b64encode(f'{s.observability.langfuse_public_key}:{s.observability.langfuse_secret_key}'.encode()).decode()
+resp = requests.get('http://localhost:3000/api/public/traces?limit=5', headers={'Authorization': f'Basic {creds}'})
+print('Traces:', len(resp.json().get('data', [])))
+"
+Pop-Location
+```
+
+**Langfuse Python SDK version:** pin to `langfuse>=2.0,<3.0`. Version 4.x switched to OpenTelemetry protocol which is incompatible with the self-hosted stack.
 
 Start the Langfuse stack before the EKIE API:
 
@@ -456,11 +504,20 @@ EKIE_STORAGE__SECRET_KEY=<real-secret-key>
 EKIE_SECURITY__REQUIRE_AUTHENTICATION=false  # set true when API keys are provisioned
 EKIE_SECURITY__ENFORCE_AUTHORIZATION=true
 
-# LangGraph orchestrator for workflow checkpointing
+# LangGraph orchestrator + Langfuse tracing
 EKIE_ORCHESTRATION__RUNNER=langgraph
+EKIE_ORCHESTRATION__ENABLE_TRACING=true
+EKIE_OBSERVABILITY__LANGFUSE_ENABLED=true
+EKIE_OBSERVABILITY__LANGFUSE_PUBLIC_KEY=pk-lf-...
+EKIE_OBSERVABILITY__LANGFUSE_SECRET_KEY=sk-lf-...
 
-# LLM analysis (enable only after model is downloaded and tested)
-EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS=false
+# HuggingFace models — enable offline mode after both models are downloaded
+HF_HUB_OFFLINE=1
+TRANSFORMERS_OFFLINE=1
+HF_HUB_DISABLE_SYMLINKS_WARNING=1
+
+# LLM analysis (enable only after Qwen2.5-7B-Instruct is downloaded)
+EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS=true
 
 # Keep classification downgrade disabled
 EKIE_GOVERNANCE__ALLOW_CLASSIFICATION_DOWNGRADE=false
@@ -540,3 +597,5 @@ If you change `EKIE_EMBEDDING__DEFAULT_MODEL` or `EKIE_EMBEDDING__DIMENSION`, ex
 | MinIO HA not configured | Single MinIO instance is a single point of failure | P2: Deploy MinIO in distributed mode |
 | No horizontal API scaling | Single API process | P2: Load balancer + replica config |
 | Windows-only automation scripts | Linux/macOS operators need shell equivalents | P2: Add bash/Makefile equivalents |
+| OCR for image-only PDFs requires Tesseract binary | Scanned PDFs dead-letter without Tesseract on PATH | Install Tesseract and add to system PATH (see Section 3.2) |
+| Langfuse SDK pinned to v2.x | langfuse 3.x/4.x OTEL protocol not compatible with local self-hosted stack | Track Langfuse self-hosted OTEL support; upgrade when stable |
