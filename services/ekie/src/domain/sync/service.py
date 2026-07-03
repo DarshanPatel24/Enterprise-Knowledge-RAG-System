@@ -245,6 +245,31 @@ class RepositorySynchronizer:
     def _apply_created(
         self, session: Session, repository_id: str, tenant_id: str, change: DetectedChange
     ) -> SyncEvent:
+        # A deleted document re-added at the same path must be reactivated rather
+        # than inserted; a fresh INSERT would violate the (repository_id, source_path)
+        # unique constraint that persists across status values.
+        existing = (
+            session.query(Document)
+            .filter_by(
+                repository_id=repository_id,
+                tenant_id=tenant_id,
+                source_path=change.source_path,
+            )
+            .first()
+        )
+        if existing is not None:
+            existing.status = DocumentStatus.ACTIVE
+            existing.content_hash = change.content_hash or existing.content_hash
+            existing.version += 1
+            session.flush()
+            return SyncEvent(
+                event_type=SyncEventType.DOCUMENT_DISCOVERED,
+                repository_id=repository_id,
+                tenant_id=tenant_id,
+                document_id=existing.id,
+                source_path=change.source_path,
+                version=existing.version,
+            )
         document = Document(
             repository_id=repository_id,
             tenant_id=tenant_id,
@@ -288,6 +313,21 @@ class RepositorySynchronizer:
         document = session.get(Document, change.document_id)
         if document is None:
             raise SynchronizationError(f"twin not found for relocation: {change.document_id}")
+        # If another soft-deleted row already occupies the destination path,
+        # remove it first to avoid a unique-constraint violation on the update.
+        conflict = (
+            session.query(Document)
+            .filter(
+                Document.repository_id == repository_id,
+                Document.tenant_id == tenant_id,
+                Document.source_path == change.source_path,
+                Document.id != document.id,
+            )
+            .first()
+        )
+        if conflict is not None:
+            session.delete(conflict)
+            session.flush()
         document.source_path = change.source_path
         event_type = (
             SyncEventType.DOCUMENT_RENAMED

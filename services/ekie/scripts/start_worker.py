@@ -12,22 +12,31 @@ Usage:
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
 _SERVICE_ROOT = Path(__file__).resolve().parents[1]
-_SRC = _SERVICE_ROOT / "src"
+_REPO_ROOT = _SERVICE_ROOT.parents[1]
+_SYNC_SCRIPT = _SERVICE_ROOT / "scripts" / "production_sync.py"
 
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
 
-os.chdir(_SERVICE_ROOT)
+def _venv_python() -> str:
+    """Return the venv Python if it exists, otherwise fall back to sys.executable."""
+    candidates = [
+        _REPO_ROOT / ".venv" / "Scripts" / "python.exe",   # Windows
+        _REPO_ROOT / ".venv" / "bin" / "python",            # Linux/macOS
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
 
 
 def main() -> None:
-    # Import after chdir so settings.py resolves .env correctly.
-    from scripts.production_sync import run_worker  # type: ignore[import]
-    run_worker()
+    os.chdir(_SERVICE_ROOT)
+    result = subprocess.run([_venv_python(), str(_SYNC_SCRIPT)], cwd=str(_SERVICE_ROOT))
+    sys.exit(result.returncode)
 
 
 if __name__ == "__main__":

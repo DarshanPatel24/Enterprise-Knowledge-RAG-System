@@ -5,7 +5,7 @@
 > **Version:** 1.0
 > **Status:** Approved
 > **Audience:** Engineers, DevOps, Platform Operators
-> **Last Updated:** 2026-07-02
+> **Last Updated:** 2026-07-03
 
 ---
 
@@ -49,7 +49,7 @@ EKIE (Enterprise Knowledge Ingestion Engine) is a dedicated enterprise platform 
 | Document transformation | Converts any supported format into canonical Markdown |
 | Document intelligence | Extracts metadata, detects language, classifies content, identifies sensitive data |
 | Intelligent chunking | Splits Markdown into semantically meaningful chunks preserving structure |
-| Embedding generation | Generates vector embeddings via local or Ollama providers |
+| Embedding generation | Generates vector embeddings via local, Ollama, or HuggingFace providers (active: `Qwen/Qwen3-VL-Embedding-2B`) |
 | Vector publishing | Publishes embeddings to Qdrant with mandatory metadata enforcement |
 | Workflow orchestration | Runs the full pipeline as a checkpointed, resumable graph |
 | Security & governance | RBAC/ABAC authorization, audit logging, classification enforcement |
@@ -150,17 +150,18 @@ The Control Plane (Microsoft SQL Server) is the single source of truth for all i
 
 | Software | Version | Purpose |
 |---|---|---|
-| **Ollama** | Latest | Local LLM and embedding models |
+| **Ollama** | Latest | Alternative local LLM and embedding model server |
 | **Node.js** | 18+ | Web UI (separate `apps/web-ui/` project) |
+| **Tesseract OCR** | Latest | Required for image OCR in rich-media ingestion |
 
 ### 3.3 Hardware Recommendations
 
 | Component | Minimum | Recommended |
 |---|---|---|
 | CPU | 4 cores | 8+ cores |
-| RAM | 8 GB | 16+ GB |
-| Disk | 20 GB free | 50+ GB SSD |
-| GPU | Not required | NVIDIA GPU for Ollama acceleration |
+| RAM | 16 GB | 32 GB (required for HuggingFace model inference) |
+| Disk | 40 GB free | 100+ GB SSD (HuggingFace model weights ~15 GB LLM + ~4 GB embedder) |
+| GPU | Not required | NVIDIA GPU strongly recommended for HuggingFace model performance |
 
 ---
 
@@ -183,7 +184,15 @@ Enterprise-Knowledge-RAG-System/
 │       ├── .env.profile.hybrid       # Hybrid profile
 │       ├── .env.profile.rollback-last-known-good # rollback profile
 │       ├── pyproject.toml            # Project metadata and dependencies
-│       ├── scripts/                  # Demo scripts for each subsystem
+│       ├── scripts/                  # Automation, demo, and validation scripts
+│       │   ├── setup.py              # One-command first-time environment setup
+│       │   ├── start_api.py          # cwd-safe API launcher (ekie-api)
+│       │   ├── start_worker.py       # cwd-safe worker launcher (ekie-worker)
+│       │   ├── cleanup_dev_artifacts.py # Pre-production cleanup (ekie-cleanup)
+│       │   ├── production_sync.py    # Continuous folder-polling ingestion worker
+│       │   ├── acceptance_report.py  # One-command acceptance evidence report
+│       │   ├── benchmark_rich_media.py # Rich-media extraction quality benchmark
+│       │   ├── validate_qdrant_delete_path.py # Live Qdrant delete-path validation
 │       │   ├── demo_sync.py
 │       │   ├── demo_transform.py
 │       │   ├── demo_intelligence.py
@@ -254,11 +263,14 @@ source .venv/bin/activate
 # Core runtime dependencies
 pip install -r requirements.txt
 
-# EKIE service with development extras
-pip install -e "services/ekie[dev,mssql]"
+# EKIE service with all production extras
+pip install -e "services/ekie[dev,mssql,storage,richmedia]"
 
-# Optional: rich-media extraction stack (PDF/DOCX/PPTX/images)
-pip install -e "services/ekie[richmedia]"
+# Required for Qwen/Qwen3-VL-Embedding-2B (vision-language embedding model)
+pip install -U "sentence-transformers[image]" torchvision
+
+# Required for HuggingFace intelligence LLM (Qwen/Qwen2.5-7B-Instruct)
+pip install langchain-huggingface torch transformers accelerate
 
 # Shared contracts package
 pip install -e packages/contracts
@@ -275,13 +287,30 @@ cp services/ekie/.env.example services/ekie/.env
 
 Edit `services/ekie/.env` and set your local values. The critical values to configure:
 
+For **Windows Authentication** (recommended for local Windows SQL Server):
 ```dotenv
-# Control Plane database password
-EKIE_CONTROL_PLANE__PASSWORD=YourStrongPassword123!
+# Use Windows Auth — no password needed
+EKIE_CONTROL_PLANE__HOST=localhost\MSSQLSERVER2022
+EKIE_CONTROL_PLANE__PORT=
+EKIE_CONTROL_PLANE__TRUSTED_CONNECTION=true
 
-# MinIO object storage credentials
+# MinIO object storage (port 9005 matches docker-compose.local.yml)
+EKIE_STORAGE__ENDPOINT=localhost:9005
 EKIE_STORAGE__ACCESS_KEY=minioadmin
 EKIE_STORAGE__SECRET_KEY=minioadmin
+
+# Source folder for ingestion worker
+EKIE_SYNC__TARGET_DIRECTORY=D:\Enterprise\Documents
+EKIE_SYNC__TENANT_ID=ekie-tenant
+```
+
+For **SQL Server Authentication** (Docker container or remote SQL):
+```dotenv
+EKIE_CONTROL_PLANE__HOST=localhost
+EKIE_CONTROL_PLANE__PORT=1433
+EKIE_CONTROL_PLANE__USER=sa
+EKIE_CONTROL_PLANE__PASSWORD=YourStrongPassword123!
+EKIE_CONTROL_PLANE__TRUSTED_CONNECTION=false
 ```
 
 ### 5.5 Install ODBC Driver (MS SQL Server)
@@ -413,7 +442,7 @@ EkieSettings
 
 | Variable | Default | Description |
 |---|---|---|
-| `EKIE_STORAGE__ENDPOINT` | `localhost:9000` | MinIO endpoint |
+| `EKIE_STORAGE__ENDPOINT` | `localhost:9005` | MinIO endpoint (port 9005 matches docker-compose.local.yml) |
 | `EKIE_STORAGE__ACCESS_KEY` | *(empty)* | Access key (**set this**) |
 | `EKIE_STORAGE__SECRET_KEY` | *(empty)* | Secret key (**set this**) |
 | `EKIE_STORAGE__BUCKET` | `ekie-assets` | Asset storage bucket |
@@ -454,9 +483,9 @@ EkieSettings
 | `EKIE_INTELLIGENCE__CLASSIFY_CONTENT` | `true` | Classify document type |
 | `EKIE_INTELLIGENCE__DETECT_SENSITIVE_CONTENT` | `true` | Detect PII/sensitive data |
 | `EKIE_INTELLIGENCE__HIGH_COMPLEXITY_SECTION_THRESHOLD` | `12` | Section complexity threshold |
-| `EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS` | `false` | Enable LLM-based topic analysis |
-| `EKIE_INTELLIGENCE__LLM_PROVIDER` | `ollama` | Allowed values: `ollama` or `huggingface` |
-| `EKIE_INTELLIGENCE__LLM_MODEL` | `llama3.1` | LLM model name |
+| `EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS` | `true` | Enable LLM-based topic analysis |
+| `EKIE_INTELLIGENCE__LLM_PROVIDER` | `huggingface` | Allowed values: `ollama` or `huggingface` |
+| `EKIE_INTELLIGENCE__LLM_MODEL` | `Qwen/Qwen2.5-7B-Instruct` | LLM model name |
 | `EKIE_INTELLIGENCE__LLM_BASE_URL` | `http://localhost:11434` | LLM endpoint |
 | `EKIE_INTELLIGENCE__LLM_TEMPERATURE` | `0.0` | LLM temperature (deterministic) |
 
@@ -481,9 +510,9 @@ If an unsupported provider value is configured, EKIE fails configuration validat
 
 | Variable | Default | Description |
 |---|---|---|
-| `EKIE_EMBEDDING__PROVIDER` | `local` | Allowed values: `local`, `ollama`, or `huggingface` |
-| `EKIE_EMBEDDING__DEFAULT_MODEL` | `local-hash-256` | Model identifier |
-| `EKIE_EMBEDDING__DIMENSION` | `256` | Embedding dimensionality |
+| `EKIE_EMBEDDING__PROVIDER` | `huggingface` | Allowed values: `local`, `ollama`, or `huggingface` |
+| `EKIE_EMBEDDING__DEFAULT_MODEL` | `Qwen/Qwen3-VL-Embedding-2B` | Active model — vision-language embedding model |
+| `EKIE_EMBEDDING__DIMENSION` | `1536` | Output dimension of Qwen/Qwen3-VL-Embedding-2B |
 | `EKIE_EMBEDDING__DISTANCE_METRIC` | `cosine` | Allowed values: `cosine`, `dot_product`, or `euclidean` |
 | `EKIE_EMBEDDING__MAX_INPUT_TOKENS` | `8192` | Maximum input token limit |
 | `EKIE_EMBEDDING__BATCH_SIZE` | `16` | Batch size for embedding requests |
@@ -491,7 +520,7 @@ If an unsupported provider value is configured, EKIE fails configuration validat
 | `EKIE_EMBEDDING__MAX_RETRIES` | `3` | Retry count on provider failures |
 | `EKIE_EMBEDDING__OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API endpoint |
 
-> **Note on using HuggingFace locally:** To use HuggingFace embedding models locally without Ollama (e.g., `Qwen/Qwen3-VL-Embedding-8B`), you must first install the dependency (`pip install langchain-huggingface sentence-transformers`). Then set `EKIE_EMBEDDING__PROVIDER=huggingface`, update `EKIE_EMBEDDING__DEFAULT_MODEL` to your model ID, and ensure `EKIE_EMBEDDING__DIMENSION` matches the model's output size. To prevent re-downloading the model weights every time, set the `HF_HOME` environment variable to a persistent local directory (e.g., `HF_HOME=./.hf_cache`).
+> **Note on using HuggingFace locally:** The active embedding model is `Qwen/Qwen3-VL-Embedding-2B` (dim=1536). Required packages: `pip install -U "sentence-transformers[image]" torchvision langchain-huggingface`. Model weights (~4 GB) are cached in `HF_HOME=./storage/hf`. To switch models, update `EKIE_EMBEDDING__DEFAULT_MODEL` and `EKIE_EMBEDDING__DIMENSION` in `.env` then restart.
 
 The embedding dimension must be a plain integer (for example `768`), not a comma-formatted value.
 
@@ -515,11 +544,11 @@ Collection strategy guidance:
 
 | Variable | Default | Description |
 |---|---|---|
-| `EKIE_ORCHESTRATION__RUNNER` | `sequential` | `sequential` or `langgraph` |
+| `EKIE_ORCHESTRATION__RUNNER` | `langgraph` | `sequential` or `langgraph` (active: langgraph for tracing) |
 | `EKIE_ORCHESTRATION__MAX_ATTEMPTS_PER_STAGE` | `3` | Max retries per pipeline stage |
 | `EKIE_ORCHESTRATION__RETRY_BACKOFF_BASE_SECONDS` | `0.0` | Backoff base (0 = no sleep) |
 | `EKIE_ORCHESTRATION__RETRY_BACKOFF_MULTIPLIER` | `2.0` | Exponential backoff multiplier |
-| `EKIE_ORCHESTRATION__ENABLE_TRACING` | `false` | Emit Langfuse traces |
+| `EKIE_ORCHESTRATION__ENABLE_TRACING` | `true` | Emit Langfuse traces (active) |
 
 ### 6.5 Security & Governance Settings
 
@@ -578,17 +607,18 @@ docker compose -f docker-compose.local.yml up -d
 This starts the following services:
 
 | Service | Port | Purpose |
-|---|---|---|
+|---|---|—|
 | **MS SQL Server 2022** | `1433` | Control Plane database |
 | **Qdrant** | `6333` | Vector database |
 | **Redis 7** | `6379` | Cache layer |
-| **MinIO** | `9000` (API), `9001` (Console) | Object storage |
+| **MinIO** | `9005` (API), `9006` (Console) | Object storage |
 | **Langfuse** | `3000` | Observability (LLM tracing) |
+| **ClickHouse** | `8123` | Langfuse internal analytics |
 | **PostgreSQL 16** | *(internal)* | Langfuse internal store only |
 
 > **Important:** The PostgreSQL instance exists solely as Langfuse's internal store. It is NOT an application database. The EK-RAG control plane uses Microsoft SQL Server.
-> **Note on Qdrant:** Qdrant is fully managed by Docker and stores its data in a managed Docker volume. You do not need to manually install or paste any Qdrant files into the services directories.
-> **Note on MinIO Ports:** If MinIO fails to start due to port `9000` being used by a Windows system process, change `MINIO_PORT=9005` in your root `.env` and update the `EKIE_STORAGE__ENDPOINT=localhost:9005` in `services/ekie/.env`.
+> **Note on Qdrant:** Qdrant is fully managed by Docker and stores its data in a managed Docker volume.
+> **MinIO ports:** MinIO API runs on host port **9005** (mapped to container port 9000). Console runs on host port **9006**. These are fixed in `docker-compose.local.yml` to avoid conflicts with Windows reserved ports.
 
 ### 7.2 Verify Services
 
@@ -599,8 +629,8 @@ docker compose -f docker-compose.local.yml ps
 # Verify Qdrant
 curl http://localhost:6333/healthz
 
-# Verify MinIO (Use port 9005 if you changed it due to conflicts)
-curl http://localhost:9000/minio/health/live
+# Verify MinIO
+curl http://localhost:9005/minio/health/live
 
 # Verify MS SQL Server connectivity
 # (requires sqlcmd or equivalent client)
@@ -626,7 +656,7 @@ GO
 
 ### 7.4 Create MinIO Bucket
 
-Access the MinIO Console at `http://localhost:9001` and manually create a bucket named `ekie-assets`.
+Access the MinIO Console at `http://localhost:9006` and manually create a bucket named `ekie-assets`.
 
 *(Optional)* If you have the [MinIO Client (mc)](https://min.io/docs/minio/linux/reference/minio-mc.html) installed on your machine, you can do this via the command line instead:
 ```bash
@@ -634,36 +664,35 @@ mc alias set local http://localhost:9005 minioadmin minioadmin
 mc mb local/ekie-assets
 ```
 
-### 7.5 Optional: Install Ollama for Real Embeddings
+### 7.5 Install HuggingFace Model Dependencies (Required)
 
-For production-quality embeddings (beyond the deterministic hash provider):
+The active configuration uses HuggingFace for both embedding and intelligence. Install the required packages:
 
-```bash
-# Install Ollama (see https://ollama.ai)
-# Pull an embedding model
-ollama pull nomic-embed-text
+```powershell
+# Vision-language embedding model dependencies
+pip install -U "sentence-transformers[image]" torchvision
 
-# Update .env to use Ollama embeddings
-# EKIE_EMBEDDING__PROVIDER=ollama
-# EKIE_EMBEDDING__DEFAULT_MODEL=nomic-embed-text
-# EKIE_EMBEDDING__DIMENSION=768
+# Intelligence LLM dependencies
+pip install langchain-huggingface torch transformers accelerate
 ```
 
-### 7.6 Optional: Use HuggingFace for Real Embeddings
+On first ingest:
+1. `Qwen/Qwen3-VL-Embedding-2B` (~4 GB) downloads to `./storage/hf`.
+2. `Qwen/Qwen2.5-7B-Instruct` (~15 GB) downloads on first document with high complexity.
+3. After download, set `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` for strict offline operation.
 
-Alternatively, you can run HuggingFace embedding models natively within the Python process without needing an external Ollama server:
+### 7.6 Optional: Use Ollama Instead of HuggingFace
 
+To switch to Ollama for embeddings and/or intelligence, apply the Ollama profile:
+
+```powershell
+Copy-Item services/ekie/.env.profile.ollama services/ekie/.env -Force
+```
+
+Then pull the required models:
 ```bash
-# 1. Install the required HuggingFace dependencies
-pip install langchain-huggingface sentence-transformers
-
-# 2. Set a persistent cache directory (so models don't re-download every time)
-export HF_HOME=./.hf_cache
-
-# 3. Update .env to use HuggingFace embeddings
-# EKIE_EMBEDDING__PROVIDER=huggingface
-# EKIE_EMBEDDING__DEFAULT_MODEL=Qwen/Qwen3-VL-Embedding-8B
-# EKIE_EMBEDDING__DIMENSION=4096
+ollama pull nomic-embed-text
+ollama pull llama3.1
 ```
 
 ---
@@ -672,15 +701,19 @@ export HF_HOME=./.hf_cache
 
 ### 8.1 Start the EKIE API Server
 
-```bash
-cd services/ekie
+```powershell
+# Recommended: cwd-safe launcher (works from any directory)
+python services/ekie/scripts/start_api.py
 
-# Start with uvicorn (development)
-uvicorn src.api.app:app --host 0.0.0.0 --port 8001 --reload
+# Or use the entry-point shortcut after pip install -e services/ekie[...]:
+ekie-api
 
-# Or from the project root
-.venv/Scripts/python.exe -m uvicorn api.app:app --host 0.0.0.0 --port 8001 --reload --app-dir services/ekie/src
+# Manual (must run from services/ekie/ for .env to load):
+Push-Location services/ekie
+..\..\.venv\Scripts\python.exe -m uvicorn api.app:app --host 0.0.0.0 --port 8001 --app-dir src
 ```
+
+The API port is controlled by `EKIE_API_PORT` environment variable (default: `8001`).
 
 ### 8.2 Verify the Service
 
@@ -984,7 +1017,7 @@ Analyzes the canonical Markdown to extract rich metadata and quality signals.
 6. **TableAnalyzer** — Extracts table statistics (count, dimensions, headers).
 7. **FigureAnalyzer** — Identifies figure/image references and captions.
 8. **CodeAnalyzer** — Detects code blocks with language identification.
-9. **LlmAnalyzer** *(optional)* — Uses a local Ollama model for advanced topic extraction and summarization.
+9. **LlmAnalyzer** *(active when `ENABLE_LLM_ANALYSIS=true`)* — Uses a local HuggingFace model (`Qwen/Qwen2.5-7B-Instruct`) for advanced topic extraction and summarization.
 
 **Output:** A `DocumentIntelligenceReport` containing:
 - Semantic metadata (title, description, topics, author)
@@ -1031,6 +1064,7 @@ Generates vector embeddings from chunk text.
 | Provider | Configuration | Description |
 |---|---|---|
 | `local` | `EKIE_EMBEDDING__PROVIDER=local` | Deterministic SHA-256 hash-based embeddings. Zero dependencies, fully offline. Produces reproducible vectors for testing and development. |
+| `huggingface` | `EKIE_EMBEDDING__PROVIDER=huggingface` | Real neural embeddings via a local HuggingFace model. **Active default.** Current model: `Qwen/Qwen3-VL-Embedding-2B` (dim=1536). Requires `sentence-transformers[image]` and `torchvision`. |
 | `ollama` | `EKIE_EMBEDDING__PROVIDER=ollama` | Real neural embeddings via a locally-hosted Ollama model. Recommended models: `nomic-embed-text` (768d), `mxbai-embed-large` (1024d). |
 
 **Features:**
@@ -1130,9 +1164,12 @@ with db.session() as session:
 
 Abstraction for immutable, versioned asset persistence.
 
-- `AssetStorage` (protocol): Store and retrieve binary assets by key.
-- `InMemoryAssetStorage`: Default in-process store for development and testing.
+- `AssetStorage` (protocol): Store and retrieve binary assets by key and version.
+- `InMemoryAssetStorage`: Default in-process store for local development and testing. Data is lost on restart.
+- `MinIOAssetStorage`: Durable object storage backend using a self-hosted MinIO instance. Active when `EKIE_ENVIRONMENT=production` and `EKIE_STORAGE__ENDPOINT` is non-empty.
 - `compute_content_hash`: SHA-256 hash for content integrity.
+
+Storage backend selection is automatic: the composition root calls `build_asset_storage(settings)` and returns the correct backend based on `EKIE_ENVIRONMENT`.
 
 ### 11.4 Workflow Orchestration (`domain/orchestration/`)
 
@@ -1589,16 +1626,19 @@ Hybrid profile example:
 ### 18.2 Production Configuration Checklist
 
 - [ ] `EKIE_SECURITY__REQUIRE_AUTHENTICATION=true`
-- [ ] `EKIE_EMBEDDING__PROVIDER=ollama` (or another real provider)
+- [ ] `EKIE_EMBEDDING__PROVIDER=huggingface` (active) or `ollama`
+- [ ] `EKIE_EMBEDDING__DEFAULT_MODEL=Qwen/Qwen3-VL-Embedding-2B` (active, dim=1536)
 - [ ] `EKIE_PUBLISHING__PROVIDER=qdrant`
-- [ ] `EKIE_CONTROL_PLANE__PASSWORD` set to a strong password
+- [ ] `EKIE_ENVIRONMENT=production` (activates MinIO durable storage)
 - [ ] `EKIE_STORAGE__ACCESS_KEY` and `SECRET_KEY` set
+- [ ] `EKIE_CONTROL_PLANE__TRUSTED_CONNECTION=true` (Windows Auth) or PASSWORD set
 - [ ] `EKIE_GOVERNANCE__ENABLE_AUDIT=true`
 - [ ] `EKIE_GOVERNANCE__AUDIT_SINK=logging`
 - [ ] `EKIE_PLUGINS__ALLOW_UNSIGNED=false`
 - [ ] `EKIE_PLUGINS__REQUIRE_SIGNATURE=true`
 - [ ] `EKIE_DEPLOYMENT__REPLICAS=2` (or higher)
-- [ ] `EKIE_OBSERVABILITY__LANGFUSE_ENABLED=true`
+- [ ] `EKIE_OBSERVABILITY__LANGFUSE_ENABLED=true` (active)
+- [ ] `EKIE_ORCHESTRATION__ENABLE_TRACING=true` (active)
 
 ### 18.2.1 Model-switch checklist
 
@@ -1794,9 +1834,9 @@ VerificationError: Missing vectors after publish
 StorageError: Bucket 'ekie-assets' not found
 ```
 
-**Solution:** Create the bucket via MinIO Console (`http://localhost:9001`) or CLI:
+**Solution:** Create the bucket via MinIO Console (`http://localhost:9006`) or CLI:
 ```bash
-mc alias set local http://localhost:9000 minioadmin minioadmin
+mc alias set local http://localhost:9005 minioadmin minioadmin
 mc mb local/ekie-assets
 ```
 
@@ -1894,8 +1934,9 @@ curl http://localhost:6333/collections
 
 4. Start EKIE API from service directory so the correct `.env` is loaded
 ```powershell
-Push-Location services/ekie
-..\..\.venv\Scripts\python.exe -m uvicorn api.app:app --host 0.0.0.0 --port 8001 --app-dir src
+# Recommended: use cwd-safe launcher from any directory
+python services/ekie/scripts/start_api.py
+# Or: ekie-api (if installed via pip install -e)
 ```
 
 5. Verify EKIE health
@@ -1919,7 +1960,7 @@ POST /v1/repositories/{repository_id}/ingest
 
 Example local validation values:
 1. Repository: `0ba1139f-c30c-439c-a2e9-2c1f1a776342`
-2. Tenant: `tenant-default`
+2. Tenant: `ekie-tenant`
 3. Ingested document: `000_pm_owner_validation.md`
 
 PowerShell example:
@@ -1931,7 +1972,7 @@ $mdPath = 'D:\Octave\AI training\test\000_pm_owner_validation.md'
 This markdown file validates end-to-end ingestion.
 '@ | Set-Content -Path $mdPath -Encoding UTF8
 
-$headers = @{ 'X-Tenant-ID' = 'tenant-default'; 'Content-Type' = 'application/json' }
+$headers = @{ 'X-Tenant-ID' = 'ekie-tenant'; 'Content-Type' = 'application/json' }
 $body = '{"sync_before_ingest":true,"max_documents":1}'
 Invoke-RestMethod -Method Post -Uri 'http://localhost:8001/v1/repositories/0ba1139f-c30c-439c-a2e9-2c1f1a776342/ingest' -Headers $headers -Body $body | ConvertTo-Json -Depth 10
 ```
@@ -1951,7 +1992,7 @@ Run SQL checks in the Control Plane database after ingestion.
 
 SQL examples (Windows Authentication):
 ```powershell
-sqlcmd -S "localhost\MSSQLSERVER2022" -E -C -d ekrag_control_plane -Q "SELECT TOP 5 id, source_path, status, updated_at FROM documents WHERE tenant_id='tenant-default' AND source_path LIKE '%000_pm_owner_validation.md' ORDER BY updated_at DESC;"
+sqlcmd -S "localhost\MSSQLSERVER2022" -E -C -d ekrag_control_plane -Q "SELECT TOP 5 id, source_path, status, updated_at FROM documents WHERE tenant_id='ekie-tenant' AND source_path LIKE '%000_pm_owner_validation.md' ORDER BY updated_at DESC;"
 
 sqlcmd -S "localhost\MSSQLSERVER2022" -E -C -d ekrag_control_plane -Q "SELECT TOP 20 document_id, asset_type, version, created_at FROM assets WHERE document_id IN (SELECT id FROM documents WHERE source_path LIKE '%000_pm_owner_validation.md') ORDER BY created_at DESC;"
 ```
@@ -1982,7 +2023,7 @@ Deletion verification for source-removed files:
 
 PowerShell example:
 ```powershell
-$headers = @{ 'X-Tenant-ID' = 'tenant-default'; 'Content-Type' = 'application/json' }
+$headers = @{ 'X-Tenant-ID' = 'ekie-tenant'; 'Content-Type' = 'application/json' }
 Invoke-RestMethod -Method Post -Uri 'http://localhost:8001/v1/repositories/0ba1139f-c30c-439c-a2e9-2c1f1a776342/ingest' -Headers $headers -Body '{"sync_before_ingest":true}' | ConvertTo-Json -Depth 10
 ```
 
@@ -2002,38 +2043,33 @@ If `production_sync.py` is enabled, monitor the polling loop process and API res
 
 ### 21.7 Langfuse Monitoring Path
 
-Target state:
-1. Langfuse stack healthy
-2. EKIE tracing enabled
-3. Ingestion runs visible as traces
+Langfuse observability is active in the current configuration.
 
-Current known caveat:
-1. If Langfuse container fails with `CLICKHOUSE_URL is not configured`, observability stack is incomplete.
-2. In that case, continue operational monitoring via workflow API + SQL + logs, and treat Langfuse as a blocking platform dependency for full trace acceptance.
-3. If startup reports `CLICKHOUSE_MIGRATION_URL is not configured`, ensure your compose stack sets `CLICKHOUSE_MIGRATION_URL` for the Langfuse service.
-4. If startup reports `CLICKHOUSE_USER is not set`, set `CLICKHOUSE_USER` (for local defaults use `default`) and provide `CLICKHOUSE_PASSWORD` in the Langfuse service environment.
-5. If startup reports `CLICKHOUSE_PASSWORD is not set`, set a non-empty `CLICKHOUSE_PASSWORD` for both the ClickHouse service and the Langfuse service.
-6. If startup fails with replicated ClickHouse migration errors mentioning ZooKeeper, force single-node mode (`CLICKHOUSE_CLUSTER_ENABLED=false`) or use a Langfuse deployment profile that bundles the required cluster dependencies.
-7. If startup fails with `LANGFUSE_S3_EVENT_UPLOAD_BUCKET` validation, set `LANGFUSE_S3_EVENT_UPLOAD_BUCKET` explicitly (for local usage, any non-empty bucket name is sufficient).
-
-Local bring-up commands (PowerShell):
-```powershell
-$env:LANGFUSE_DB_USER='langfuse'
-$env:LANGFUSE_DB_PASSWORD='langfuse'
-$env:LANGFUSE_NEXTAUTH_SECRET='local-nextauth-secret'
-$env:LANGFUSE_SALT='local-salt'
-docker compose -f docker-compose.local.yml up -d clickhouse langfuse-db langfuse
-docker compose -f docker-compose.local.yml ps clickhouse langfuse-db langfuse
-```
-
-If Langfuse is healthy, enable EKIE trace emission in `services/ekie/.env`:
+Required `.env` settings (already enabled):
 ```dotenv
 EKIE_OBSERVABILITY__LANGFUSE_ENABLED=true
 EKIE_ORCHESTRATION__RUNNER=langgraph
 EKIE_ORCHESTRATION__ENABLE_TRACING=true
 ```
 
-After restart, trigger one ingest call and validate that a trace appears in Langfuse for the same correlation ID used by EKIE logs.
+Start the Langfuse stack if not already running:
+```powershell
+docker compose -f docker-compose.local.yml up -d clickhouse langfuse-db langfuse
+docker compose -f docker-compose.local.yml ps clickhouse langfuse-db langfuse
+```
+
+All services should show `(healthy)` before starting EKIE. Open http://localhost:3000 to access the Langfuse UI.
+
+Verification:
+1. Trigger an ingestion request with `X-Correlation-ID` header.
+2. Confirm the same correlation ID appears in EKIE structured logs.
+3. Confirm a trace appears in Langfuse for that run.
+
+If the Langfuse container fails to become healthy, check:
+```powershell
+docker logs enterprise-knowledge-rag-system-clickhouse-1 --tail 20
+docker logs enterprise-knowledge-rag-system-langfuse-1 --tail 20
+```
 
 ### 21.8 Production Handover Notes
 

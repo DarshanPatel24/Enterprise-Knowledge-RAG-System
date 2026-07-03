@@ -33,16 +33,23 @@ def build_langfuse_callbacks(settings: LangfuseSettingsLike) -> list[object]:
     if not settings.langfuse_enabled:
         return []
     try:
-        from langfuse.callback import CallbackHandler
+        from langfuse.langchain import CallbackHandler
     except ImportError:
-        logger.warning(
-            "langfuse_unavailable",
-            extra={"detail": "langfuse not installed; falling back to log tracing"},
-        )
-        return []
-    handler = CallbackHandler(
-        host=settings.langfuse_host,
-        public_key=settings.langfuse_public_key,
-        secret_key=settings.langfuse_secret_key,
-    )
+        try:
+            from langfuse.callback import CallbackHandler  # langfuse <2.x fallback
+        except ImportError:
+            logger.warning(
+                "langfuse_unavailable",
+                extra={"detail": "langfuse not installed; falling back to log tracing"},
+            )
+            return []
+
+    # langfuse v2+ reads credentials from LANGFUSE_* environment variables.
+    # Inject them from settings so operators only configure services/ekie/.env.
+    import os
+    os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
+    os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
+    os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_host)
+
+    handler = CallbackHandler()
     return [handler]

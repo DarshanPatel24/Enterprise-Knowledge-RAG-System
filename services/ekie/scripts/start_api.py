@@ -18,13 +18,26 @@ import sys
 from pathlib import Path
 
 _SERVICE_ROOT = Path(__file__).resolve().parents[1]
+_REPO_ROOT = _SERVICE_ROOT.parents[1]
+
+
+def _venv_python() -> str:
+    """Return the venv Python if it exists, otherwise fall back to sys.executable."""
+    candidates = [
+        _REPO_ROOT / ".venv" / "Scripts" / "python.exe",   # Windows
+        _REPO_ROOT / ".venv" / "bin" / "python",            # Linux/macOS
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
 
 
 def main() -> int:
     os.chdir(_SERVICE_ROOT)
     port = os.environ.get("EKIE_API_PORT", "8001")
     cmd = [
-        sys.executable,
+        _venv_python(),
         "-m",
         "uvicorn",
         "api.app:app",

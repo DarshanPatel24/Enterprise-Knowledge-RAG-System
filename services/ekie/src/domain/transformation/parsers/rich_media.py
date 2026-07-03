@@ -98,7 +98,11 @@ class RichMediaParser(DocumentParser):
         """Use library-specific extraction fallback by extension."""
         ext = context.extension.lower()
         if ext == "pdf":
-            return self._extract_pdf(data)
+            # Try text extraction first; if empty (scanned PDF) fall back to OCR.
+            text = self._extract_pdf(data)
+            if not text.strip():
+                text = self._extract_pdf_ocr(data)
+            return text
         if ext in {"doc", "docx"}:
             return self._extract_docx(data)
         if ext in {"ppt", "pptx"}:
@@ -118,6 +122,34 @@ class RichMediaParser(DocumentParser):
             reader = PdfReader(BytesIO(data))
             pages = [page.extract_text() or "" for page in reader.pages]
             return "\n\n".join(chunk.strip() for chunk in pages if chunk.strip())
+        except Exception:
+            return ""
+
+    def _extract_pdf_ocr(self, data: bytes) -> str:
+        """OCR fallback for scanned/image-only PDFs using pymupdf + pytesseract.
+
+        pymupdf renders pages natively without poppler so it works on Windows
+        without any additional system binaries beyond Tesseract itself.
+        """
+        try:
+            import fitz  # pymupdf
+            import pytesseract
+            from PIL import Image
+        except Exception:
+            return ""
+        try:
+            doc = fitz.open(stream=data, filetype="pdf")
+            page_texts: list[str] = []
+            for page in doc:
+                # Render at 2x scale for better OCR quality.
+                matrix = fitz.Matrix(2.0, 2.0)
+                pixmap = page.get_pixmap(matrix=matrix)
+                image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
+                text = pytesseract.image_to_string(image).strip()
+                if text:
+                    page_texts.append(text)
+            doc.close()
+            return "\n\n".join(page_texts)
         except Exception:
             return ""
 

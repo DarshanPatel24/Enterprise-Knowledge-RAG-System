@@ -2,85 +2,139 @@
 # All services are self-hosted; enterprise data never leaves the local environment.
 # The PostgreSQL instance below exists SOLELY as Langfuse's internal tracing store.
 # It is not an application database. The EK-RAG control plane is Microsoft SQL Server.
+#
+# Port assignments (aligned with services/ekie/.env):
+#   Qdrant        6333
+#   Redis         6379
+#   MinIO API     9005   (host port; container always listens on 9000)
+#   MinIO Console 9006   (host port; container always listens on 9001)
+#   MSSQL         1433
+#   ClickHouse    8123
+#   Langfuse UI   3000
+#
 # Usage: docker compose -f docker-compose.local.yml up -d
 services:
   qdrant:
     image: qdrant/qdrant:latest
+    restart: unless-stopped
     ports:
       - "${QDRANT_PORT:-6333}:6333"
     volumes:
       - qdrant_data:/qdrant/storage
+    healthcheck:
+      # Qdrant's minimal image has no curl or wget; use bash TCP check.
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333' 2>/dev/null && echo ok || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   minio:
     image: minio/minio:latest
+    restart: unless-stopped
+    # Container internal API port is always 9000; we expose it on host port 9005
+    # to match EKIE_STORAGE__ENDPOINT=localhost:9005 in services/ekie/.env.
     command: server /data --console-address ":9001"
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${MINIO_PORT:-9005}:9000"
+      - "${MINIO_CONSOLE_PORT:-9006}:9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   mssql:
     # EK-RAG control plane (enterprise-ready). Local container only.
     image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
     ports:
       - "${MSSQL_PORT:-1433}:1433"
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-}
       MSSQL_PID: Developer
     volumes:
       - mssql_data:/var/opt/mssql
+    healthcheck:
+      # TCP-level check: confirms SQL Server is listening on 1433.
+      # Avoids SA credential dependency; EKIE connects via Windows Auth to the host instance.
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/1433' 2>/dev/null && echo ok || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
 
   langfuse-db:
     # Internal store for Langfuse ONLY. Not an application database. Local-only.
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${LANGFUSE_DB_USER}
-      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD}
+      POSTGRES_USER: ${LANGFUSE_DB_USER:-langfuse}
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-langfuse}
       POSTGRES_DB: ${LANGFUSE_DB_NAME:-langfuse}
     volumes:
       - langfuse_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LANGFUSE_DB_USER:-langfuse}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   clickhouse:
     # Internal analytics store for Langfuse ONLY. Not an application database.
     image: clickhouse/clickhouse-server:24.8
+    restart: unless-stopped
     ports:
       - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
     environment:
       CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: langfuse_ch
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-langfuse_ch}
     volumes:
       - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   langfuse:
     # Self-hosted observability (LLM and agent tracing). No data leaves the machine.
     image: langfuse/langfuse:latest
+    restart: unless-stopped
     depends_on:
-      - langfuse-db
-      - clickhouse
+      langfuse-db:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
     ports:
       - "${LANGFUSE_PORT:-3000}:3000"
     environment:
-      DATABASE_URL: postgresql://${LANGFUSE_DB_USER}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}
+      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD:-langfuse}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
       CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: langfuse_ch
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-langfuse_ch}
       CLICKHOUSE_CLUSTER_ENABLED: "false"
-      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse-events
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
-      SALT: ${LANGFUSE_SALT}
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_EVENT_UPLOAD_BUCKET:-langfuse-events}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-local-nextauth-secret}
+      SALT: ${LANGFUSE_SALT:-local-salt}
       NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3000}
       TELEMETRY_ENABLED: "false"
 
