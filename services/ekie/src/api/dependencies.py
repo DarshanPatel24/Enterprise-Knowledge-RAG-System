@@ -38,13 +38,16 @@ def build_resources(settings: EkieSettings) -> AppResources:
     """Construct application resources from settings via the composition root.
 
     Local environments provision the schema on startup; other environments rely
-    on managed migrations. Asset storage defaults to the in-memory backend until
-    a durable object-storage backend is provisioned.
+    on managed migrations. The storage backend is selected by
+    :func:`composition.build_asset_storage` based on environment and endpoint
+    configuration.
     """
+    from composition import build_asset_storage
+
     db = ControlPlaneDatabase(settings.control_plane)
     if settings.environment == "local":
         db.create_all()
-    storage: AssetStorage = InMemoryAssetStorage()
+    storage: AssetStorage = build_asset_storage(settings)
     orchestrator = build_workflow_orchestrator(settings, db, storage)
     return AppResources(
         settings=settings, db=db, storage=storage, orchestrator=orchestrator

@@ -6,11 +6,21 @@ process environment or a local ``.env`` file with the ``EKIE_`` prefix.
 """
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 from urllib.parse import quote_plus
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Absolute path to the .env file co-located with services/ekie/ regardless of
+# the process working directory. Using an absolute path prevents silent settings
+# fall-through when uvicorn or scripts are started from the repository root.
+# Path hierarchy from this file (services/ekie/src/config/settings.py):
+#   parents[0] = config/
+#   parents[1] = src/
+#   parents[2] = services/ekie/   <-- .env lives here
+_ENV_FILE = str(Path(__file__).resolve().parents[2] / ".env")
 
 
 class ControlPlaneSettings(BaseSettings):
@@ -296,7 +306,7 @@ class EkieSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="EKIE_",
-        env_file=".env",
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         extra="ignore",

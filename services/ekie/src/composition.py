@@ -49,10 +49,30 @@ from domain.security import (
     SecurityPolicy,
     StagePolicyGuard,
 )
-from domain.storage import AssetStorage
+from domain.storage import AssetStorage, InMemoryAssetStorage
 from domain.transformation.pipeline import TransformationPipeline
 from domain.transformation.policy import TransformationPolicy
 from domain.validation import PipelineValidator
+
+
+def build_asset_storage(settings: EkieSettings) -> AssetStorage:
+    """Return the appropriate asset storage backend from settings.
+
+    Selects :class:`MinIOAssetStorage` when ``EKIE_STORAGE__ENDPOINT`` is
+    non-empty and ``EKIE_ENVIRONMENT`` is not ``local``.  All other cases
+    use the in-memory fallback so offline and test paths remain dependency-free.
+    """
+    if settings.environment != "local" and settings.storage.endpoint:
+        from domain.storage.minio import MinIOAssetStorage
+
+        return MinIOAssetStorage(
+            endpoint=settings.storage.endpoint,
+            access_key=settings.storage.access_key,
+            secret_key=settings.storage.secret_key,
+            bucket=settings.storage.bucket,
+            secure=settings.storage.secure,
+        )
+    return InMemoryAssetStorage()
 
 
 def build_intelligence_engine(

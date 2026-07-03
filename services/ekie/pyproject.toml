@@ -14,6 +14,9 @@ dependencies = [
 mssql = [
   "pyodbc>=5.1.0",
 ]
+storage = [
+  "minio>=7.2.0",
+]
 richmedia = [
   "unstructured>=0.14.0",
   "pypdf>=4.2.0",
@@ -28,6 +31,12 @@ dev = [
   "httpx>=0.27.0",
   "mypy>=1.10.0",
 ]
+
+[project.scripts]
+ekie-api = "scripts.start_api:main"
+ekie-worker = "scripts.start_worker:main"
+ekie-setup = "scripts.setup:main"
+ekie-cleanup = "scripts.cleanup_dev_artifacts:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "../../packages/contracts/src", "tests"]

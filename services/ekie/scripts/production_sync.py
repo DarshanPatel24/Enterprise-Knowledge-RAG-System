@@ -23,7 +23,10 @@ import requests
 import datetime
 from pathlib import Path
 
-_SRC = Path(__file__).resolve().parents[1] / "src"
+# Resolve the service root absolutely so that config.settings can locate .env
+# regardless of the process working directory at launch time.
+_SERVICE_ROOT = Path(__file__).resolve().parents[1]
+_SRC = _SERVICE_ROOT / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
