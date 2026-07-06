@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
 from pathlib import Path
 from uuid import uuid4
@@ -11,10 +10,8 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-os.environ["EKIE_EMBEDDING__DIMENSION"] = "4096"
-
-from api.app import create_app
 import api.ingestion as ingestion_api
+from api.app import create_app
 from api.dependencies import AppResources, get_resources
 from api.middleware import TENANT_HEADER
 from composition import build_pipeline_engines
@@ -41,13 +38,15 @@ _SOURCE = (
 
 @pytest.fixture
 def resources() -> AppResources:
-    base = EkieSettings()
+    base = EkieSettings(_env_file=None)
     settings = base.model_copy(
         update={
             "intelligence": base.intelligence.model_copy(
                 update={"enable_llm_analysis": False}
             ),
-            "embedding": base.embedding.model_copy(update={"provider": "local"}),
+            "embedding": base.embedding.model_copy(
+                update={"provider": "local", "dimension": 4096}
+            ),
             "publishing": base.publishing.model_copy(update={"provider": "local"}),
             "orchestration": base.orchestration.model_copy(
                 update={"runner": "sequential"}

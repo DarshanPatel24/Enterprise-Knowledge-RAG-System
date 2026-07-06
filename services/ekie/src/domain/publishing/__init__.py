@@ -1,12 +1,12 @@
 """Vector Publishing Framework (EKIE handbook Chapter 11)."""
 
-from domain.publishing.collections import CollectionResolver, CollectionSpec
 from domain.publishing.cleanup import (
     VectorCleanupError,
     VectorCleanupResult,
     VectorCleanupService,
     cleanup_provider_registry,
 )
+from domain.publishing.collections import CollectionResolver, CollectionSpec
 from domain.publishing.engine import PublishResult, VectorPublishingEngine
 from domain.publishing.errors import PublishError, PublishErrorType
 from domain.publishing.events import PublishEvent, PublishEventType

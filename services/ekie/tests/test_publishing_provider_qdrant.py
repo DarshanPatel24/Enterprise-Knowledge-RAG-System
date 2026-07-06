@@ -24,6 +24,8 @@ class _VectorProviderSettings:
 class _QdrantConnection:
     host: str = "localhost"
     port: int = 6333
+    url: str = ""
+    api_key: str = ""
     request_timeout_seconds: float = 30.0
 
 

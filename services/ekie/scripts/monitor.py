@@ -20,6 +20,7 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 _SERVICE_ROOT = Path(__file__).resolve().parents[1]
 _SRC = _SERVICE_ROOT / "src"
@@ -27,12 +28,15 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 os.chdir(_SERVICE_ROOT)
 
-from rich.console import Console
-from rich.layout import Layout
-from rich.live import Live
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
+from rich.console import Console  # noqa: E402 - imports follow sys.path bootstrap
+from rich.layout import Layout  # noqa: E402
+from rich.live import Live  # noqa: E402
+from rich.panel import Panel  # noqa: E402
+from rich.table import Table  # noqa: E402
+from rich.text import Text  # noqa: E402
+
+if TYPE_CHECKING:
+    from domain.control_plane import ControlPlaneDatabase
 
 console = Console()
 
@@ -47,16 +51,19 @@ STAGE_ASSET_TYPES = {a for a, _ in STAGES}
 N_STAGES = len(STAGES)
 
 
-def _elapsed(dt) -> str:
+def _elapsed(dt: datetime | None) -> str:
     if dt is None:
         return "-"
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     s = int((datetime.now(UTC) - dt).total_seconds())
-    if s < 0: return "0s"
-    if s < 60: return f"{s}s"
-    if s < 3600: return f"{s//60}m {s%60}s"
-    return f"{s//3600}h {(s%3600)//60}m"
+    if s < 0:
+        return "0s"
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m {s % 60}s"
+    return f"{s // 3600}h {(s % 3600) // 60}m"
 
 
 def _stage_bar(completed: set) -> Text:
@@ -74,11 +81,13 @@ _STAGE_METRICS: list[tuple[str, str, list[tuple[str, str]]]] = [
     # (asset_type, label_prefix, [(key, short_suffix), ...])
     ("markdown",     "T", [("markdown_chars", "ch")]),
     ("intelligence", "I", [("section_count", "§"), ("token_count", "t"),
-                            ("table_count", "tbl"), ("language", "")]),
+                            ("table_count", "tbl"), ("code_block_count", "cb"),
+                            ("language", "")]),
     ("chunks",       "C", [("chunk_count", "ch"), ("total_tokens", "t")]),
     ("embedding",    "E", [("embedding_count", "em"), ("total_tokens", "t"),
-                            ("dimension", "d")]),
-    ("vector",       "P", [("vector_count", "v"), ("verified_count", "✓")]),
+                            ("batch_count", "b"), ("dimension", "d")]),
+    ("vector",       "P", [("vector_count", "v"), ("verified_count", "✓"),
+                            ("batch_count", "b")]),
 ]
 
 
@@ -106,27 +115,47 @@ def _fmt_metrics(metrics_by_stage: dict[str, dict], completed: set[str]) -> str:
     return "  ".join(parts)
 
 
-def _load_snapshot(db, tenant_id: str) -> dict:
+def _load_snapshot(db: ControlPlaneDatabase, tenant_id: str) -> dict[str, Any]:
     from domain.control_plane.models import Asset, Document
     with db.session() as sess:
-        docs = sess.query(Document).filter(Document.tenant_id == tenant_id).order_by(Document.updated_at.desc()).limit(500).all()
+        docs = (
+            sess.query(Document)
+            .filter(Document.tenant_id == tenant_id)
+            .order_by(Document.updated_at.desc())
+            .limit(500)
+            .all()
+        )
         doc_ids = [d.id for d in docs]
-        assets = sess.query(Asset).filter(Asset.tenant_id == tenant_id, Asset.document_id.in_(doc_ids), Asset.asset_type.in_(list(STAGE_ASSET_TYPES))).all() if doc_ids else []
+        assets = (
+            sess.query(Asset)
+            .filter(
+                Asset.tenant_id == tenant_id,
+                Asset.document_id.in_(doc_ids),
+                Asset.asset_type.in_(list(STAGE_ASSET_TYPES)),
+            )
+            .all()
+            if doc_ids
+            else []
+        )
 
         completed_by_doc: dict[str, set[str]] = {d.id: set() for d in docs}
         latest_asset_time: dict[str, datetime] = {}
-        # stage_metrics_by_doc: {doc_id: {asset_type: dict}}
+        # metrics_by_doc: {doc_id: {asset_type: metrics_dict}}
         metrics_by_doc: dict[str, dict[str, dict]] = {d.id: {} for d in docs}
         for a in assets:
             completed_by_doc.setdefault(a.document_id, set()).add(str(a.asset_type))
             ts = a.created_at
             if ts:
-                if ts.tzinfo is None: ts = ts.replace(tzinfo=UTC)
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=UTC)
                 prev = latest_asset_time.get(a.document_id)
-                if prev is None or ts > prev: latest_asset_time[a.document_id] = ts
+                if prev is None or ts > prev:
+                    latest_asset_time[a.document_id] = ts
             if a.stage_metrics:
                 try:
-                    metrics_by_doc.setdefault(a.document_id, {})[str(a.asset_type)] = json.loads(a.stage_metrics)
+                    metrics_by_doc.setdefault(a.document_id, {})[str(a.asset_type)] = (
+                        json.loads(a.stage_metrics)
+                    )
                 except (ValueError, TypeError):
                     pass
 
@@ -135,27 +164,45 @@ def _load_snapshot(db, tenant_id: str) -> dict:
             completed = completed_by_doc.get(doc.id, set())
             n_done = len(completed)
             is_deleted = str(doc.status) == "deleted"
-            if is_deleted: status = "deleted"
-            elif n_done == N_STAGES: status = "complete"
-            elif n_done > 0: status = "running"
-            else: status = "queued"
+            if is_deleted:
+                status = "deleted"
+            elif n_done == N_STAGES:
+                status = "complete"
+            elif n_done > 0:
+                status = "running"
+            else:
+                status = "queued"
 
-            current_stage = next((lbl for at, lbl in STAGES if at not in completed), None)
-            rows.append({"id": doc.id, "name": Path(doc.source_path).name, "status": status,
-                         "completed": completed, "n_done": n_done, "current_stage": current_stage,
-                         "doc_updated": doc.updated_at, "last_asset": latest_asset_time.get(doc.id),
-                         "is_deleted": is_deleted, "metrics": metrics_by_doc.get(doc.id, {})})
+            current_stage = next(
+                (lbl for at, lbl in STAGES if at not in completed), None
+            )
+            rows.append({
+                "id": doc.id,
+                "name": Path(doc.source_path).name,
+                "status": status,
+                "completed": completed,
+                "n_done": n_done,
+                "current_stage": current_stage,
+                "doc_updated": doc.updated_at,
+                "last_asset": latest_asset_time.get(doc.id),
+                "is_deleted": is_deleted,
+                "metrics": metrics_by_doc.get(doc.id, {}),
+            })
 
-        def _key(r):
+        def _key(r: dict[str, Any]) -> tuple[int, float]:
             order = {"running": 0, "queued": 1, "complete": 2, "deleted": 3}
             ts = r["last_asset"] or r["doc_updated"]
             return (order.get(r["status"], 9), -(ts.timestamp() if ts else 0))
         rows.sort(key=_key)
 
         nd = [r for r in rows if not r["is_deleted"]]
-        return {"rows": rows, "total": len(nd), "done": sum(1 for r in nd if r["status"]=="complete"),
-                "running": sum(1 for r in nd if r["status"]=="running"),
-                "queued": sum(1 for r in nd if r["status"]=="queued")}
+        return {
+            "rows": rows,
+            "total": len(nd),
+            "done": sum(1 for r in nd if r["status"] == "complete"),
+            "running": sum(1 for r in nd if r["status"] == "running"),
+            "queued": sum(1 for r in nd if r["status"] == "queued"),
+        }
 
 
 def _build_header(snap: dict, tenant_id: str, refresh: int) -> Panel:
@@ -207,8 +254,9 @@ def _build_legend() -> Panel:
     body = (
         "  Stages: [bold green]x[/bold green]=done  [dim].[/dim]=pending  "
         "T=Transform  I=Intelligence  C=Chunking  E=Embedding  P=Publish\n"
-        "  Metrics: T=ch(chars)  I=§(sections) t(tokens) tbl(tables) lang"
-        "  C=ch(chunks) t(tokens)  E=em(embeds) t(tokens) d(dim)  P=v(vecs) ✓(verified)\n"
+        "  Metrics: T=ch(chars)  I=§(sections) t(tokens) tbl(tables) cb(code) lang  "
+        "C=ch(chunks) t(tokens)  E=em(embeds) t(tokens) b(batches) d(dim)  "
+        "P=v(vecs) ✓(verified) b(batches)\n"
         "  [dim]Ctrl+C to exit[/dim]"
     )
     return Panel(body, border_style="dim", padding=(0, 1))

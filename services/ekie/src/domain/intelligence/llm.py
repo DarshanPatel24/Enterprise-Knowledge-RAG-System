@@ -48,19 +48,20 @@ def build_chat_model(config: LlmConfigLike) -> ChatModel:
             raise LlmUnavailableError(
                 "langchain-ollama is not installed; install it to enable Ollama analysis"
             ) from exc
-        client = ChatOllama(
+        ollama_client = ChatOllama(
             model=config.llm_model,
             base_url=config.llm_base_url,
             temperature=config.llm_temperature,
             client_kwargs={"timeout": config.llm_request_timeout_seconds},
         )
-        return cast("ChatModel", client)
+        return cast("ChatModel", ollama_client)
     elif config.llm_provider == "huggingface":
         try:
             from langchain_huggingface import ChatHuggingFace, HuggingFacePipeline
         except ImportError as exc:
             raise LlmUnavailableError(
-                "langchain-huggingface is not installed; install it to enable HuggingFace local analysis"
+                "langchain-huggingface is not installed; "
+                "install it to enable HuggingFace local analysis"
             ) from exc
         
         # HuggingFacePipeline downloads the model and runs it in the Python process

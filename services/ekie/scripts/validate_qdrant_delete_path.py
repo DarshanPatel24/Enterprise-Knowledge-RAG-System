@@ -16,9 +16,15 @@ _SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from domain.control_plane import Asset, AssetType, ControlPlaneDatabase, Document, Repository
-from config.settings import ControlPlaneSettings
-from domain.publishing import (
+from config.settings import ControlPlaneSettings  # noqa: E402 - follows sys.path bootstrap
+from domain.control_plane import (  # noqa: E402
+    Asset,
+    AssetType,
+    ControlPlaneDatabase,
+    Document,
+    Repository,
+)
+from domain.publishing import (  # noqa: E402
     PublishedVectorSet,
     SyncState,
     VectorCleanupService,
@@ -27,8 +33,8 @@ from domain.publishing import (
     VectorRecord,
     cleanup_provider_registry,
 )
-from domain.publishing.collections import CollectionSpec
-from domain.storage import InMemoryAssetStorage
+from domain.publishing.collections import CollectionSpec  # noqa: E402
+from domain.storage import InMemoryAssetStorage  # noqa: E402
 
 
 def _timestamp() -> str:

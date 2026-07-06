@@ -21,7 +21,7 @@ from domain.control_plane import (
     Document,
     Lineage,
 )
-from domain.embedding import EmbeddingDocument, batched, run_with_retry
+from domain.embedding import EmbeddingDocument, RateLimiter, batched, run_with_retry
 from domain.publishing.collections import CollectionResolver, CollectionSpec
 from domain.publishing.errors import PublishError, PublishErrorType
 from domain.publishing.events import PublishEvent, PublishEventType
@@ -90,12 +90,14 @@ class VectorPublishingEngine:
         policy: PublishingPolicy,
         *,
         provider_registry: VectorProviderRegistry | None = None,
+        rate_limiter: RateLimiter | None = None,
     ) -> None:
         self._db = db
         self._storage = storage
         self._policy = policy
         self._providers = provider_registry or default_provider_registry()
         self._collections = CollectionResolver(policy)
+        self._rate_limiter = rate_limiter or RateLimiter(policy.max_vectors_per_minute)
 
     def publish(self, document_id: str, tenant_id: str) -> PublishResult:
         """Publish a document's latest embedding set as a versioned vector asset."""
@@ -310,6 +312,7 @@ class VectorPublishingEngine:
         started = time.perf_counter()
         for batch in batched(points, self._policy.batch_size):
             batch_count += 1
+            self._rate_limiter.acquire(len(batch))
             self._upsert_batch(provider, collection, batch)
 
         verified_count = 0

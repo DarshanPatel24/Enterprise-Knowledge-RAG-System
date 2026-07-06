@@ -10,8 +10,9 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
+from _settings_support import local_first_settings
+
 from composition import build_pipeline_engines
-from config.settings import EkieSettings
 from domain.control_plane import (
     ControlPlaneDatabase,
     Document,
@@ -87,7 +88,7 @@ def build_harness(
     max_attempts: int = 1,
 ) -> PipelineHarness:
     """Build a harness whose orchestrator and validator share one storage."""
-    settings = EkieSettings()
+    settings = local_first_settings()
     storage = InMemoryAssetStorage()
     engines = build_pipeline_engines(settings, db, storage)
     orchestrator = WorkflowOrchestrator(

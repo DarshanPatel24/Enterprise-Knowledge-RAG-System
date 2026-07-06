@@ -7,14 +7,7 @@ from domain.transformation.parsers.base import (
     ParserContext,
     UnsupportedFormatError,
 )
-from domain.transformation.parsers.csv_parser import CsvParser
-from domain.transformation.parsers.html import HtmlParser
-from domain.transformation.parsers.rich_media import RichMediaParser
-from domain.transformation.parsers.text import (
-    MarkdownParser,
-    PlainTextParser,
-    SourceCodeParser,
-)
+from domain.transformation.parsers.text import MarkdownParser, PlainTextParser
 
 
 class ParserRegistry:
@@ -51,15 +44,13 @@ class ParserRegistry:
 
 
 def default_registry() -> ParserRegistry:
-    """Return a registry pre-populated with Phase 1 pure-Python parsers."""
+    """Return a registry for Markdown ingestion (EKDC owns format conversion).
+
+    EKIE ingests Markdown produced by the Enterprise Knowledge Document
+    Converter (EKDC); only Markdown and a defensive plain-text fallback are
+    accepted here. All other formats are converted to Markdown upstream.
+    """
     registry = ParserRegistry()
-    for parser in (
-        PlainTextParser(),
-        MarkdownParser(),
-        SourceCodeParser(),
-        CsvParser(),
-        HtmlParser(),
-        RichMediaParser(),
-    ):
+    for parser in (MarkdownParser(), PlainTextParser()):
         registry.register(parser)
     return registry

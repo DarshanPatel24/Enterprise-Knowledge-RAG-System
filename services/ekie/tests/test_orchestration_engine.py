@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import pytest
+from _settings_support import local_first_settings
 
 from composition import build_pipeline_engines
-from config.settings import EkieSettings
 from domain.control_plane import (
     Asset,
     AssetType,
@@ -77,7 +77,7 @@ def _orchestrator(
     checkpointer: InMemoryCheckpointer | None = None,
     stages: tuple[Stage, ...] | None = None,
 ) -> WorkflowOrchestrator:
-    settings = EkieSettings()
+    settings = local_first_settings()
     engines = build_pipeline_engines(settings, db, InMemoryAssetStorage())
     return WorkflowOrchestrator(
         db,

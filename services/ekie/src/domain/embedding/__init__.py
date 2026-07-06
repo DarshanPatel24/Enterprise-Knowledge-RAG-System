@@ -27,6 +27,7 @@ from domain.embedding.providers import (
     default_provider_registry,
     provider_registry_from_settings,
 )
+from domain.embedding.rate_limit import RateLimiter
 from domain.embedding.retry import run_with_retry
 from domain.embedding.selection import ModelSelectionError, ModelSelector
 from domain.embedding.tokens import batched, estimate_cost, estimate_tokens
@@ -63,6 +64,7 @@ __all__ = [
     "ModelSelector",
     "ModelStatus",
     "OllamaEmbeddingProvider",
+    "RateLimiter",
     "UnknownModelError",
     "batched",
     "default_model_registry",

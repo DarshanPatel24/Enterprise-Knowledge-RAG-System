@@ -17,6 +17,7 @@ class PublishingSettingsLike(Protocol):
     max_retries: int
     create_missing_collections: bool
     verify_after_publish: bool
+    max_vectors_per_minute: int
 
 
 class PublishingPolicy(BaseModel):
@@ -35,6 +36,7 @@ class PublishingPolicy(BaseModel):
     max_retries: int = Field(default=3, ge=0)
     create_missing_collections: bool = True
     verify_after_publish: bool = True
+    max_vectors_per_minute: int = Field(default=0, ge=0)
 
     @classmethod
     def from_settings(cls, settings: PublishingSettingsLike) -> PublishingPolicy:
@@ -47,4 +49,5 @@ class PublishingPolicy(BaseModel):
             max_retries=settings.max_retries,
             create_missing_collections=settings.create_missing_collections,
             verify_after_publish=settings.verify_after_publish,
+            max_vectors_per_minute=settings.max_vectors_per_minute,
         )

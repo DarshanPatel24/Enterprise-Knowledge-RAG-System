@@ -15,11 +15,9 @@ _SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 _JSON_REPORT_GLOBS = [
     "storage/acceptance_report_*.json",
-    "storage/rich_media_benchmark_*.json",
     "storage/qdrant_delete_validation_*.json",
     "storage/qdrant_delete_validation_*",
     "services/ekie/storage/acceptance_report_*.json",
-    "services/ekie/storage/rich_media_benchmark_*.json",
     "services/ekie/storage/qdrant_delete_validation_*.json",
 ]
 

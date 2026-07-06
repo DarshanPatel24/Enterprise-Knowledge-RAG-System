@@ -17,11 +17,12 @@ Usage:
 
 from __future__ import annotations
 
+import datetime
 import sys
 import time
-import requests
-import datetime
 from pathlib import Path
+
+import requests
 
 # Resolve the service root absolutely so that config.settings can locate .env
 # regardless of the process working directory at launch time.
@@ -41,6 +42,7 @@ from domain.sync import (  # noqa: E402
     register_repository,
 )
 
+
 def run_worker() -> None:
     settings = get_settings()
     sync_settings = settings.sync
@@ -53,21 +55,24 @@ def run_worker() -> None:
         
     target_path = Path(target_dir)
     if not target_path.exists() or not target_path.is_dir():
-        print(f"ERROR: The configured target directory does not exist or is not a directory: {target_dir}")
+        print(
+            "ERROR: The configured target directory does not exist "
+            f"or is not a directory: {target_dir}"
+        )
         sys.exit(1)
 
     tenant_id = sync_settings.tenant_id
     poll_interval = sync_settings.poll_interval_seconds
     api_url = sync_settings.api_base_url.rstrip('/')
 
-    print(f"==================================================")
-    print(f" EKIE Production Sync Worker Started")
-    print(f"==================================================")
+    print("==================================================")
+    print(" EKIE Production Sync Worker Started")
+    print("==================================================")
     print(f" Target Directory : {target_dir}")
     print(f" Tenant ID        : {tenant_id}")
     print(f" Poll Interval    : {poll_interval} seconds")
     print(f" API Base URL     : {api_url}")
-    print(f"==================================================\n")
+    print("==================================================\n")
 
     # Connect to the Control Plane Database and ensure tables exist
     db = ControlPlaneDatabase(settings.control_plane)
@@ -109,6 +114,7 @@ def run_worker() -> None:
                         response = requests.delete(
                             f"{api_url}/v1/documents/{event.document_id}/vectors",
                             headers={"X-Tenant-ID": tenant_id},
+                            timeout=60,
                         )
                         if response.status_code == 200:
                             print(
@@ -141,11 +147,12 @@ def run_worker() -> None:
                                 "X-Tenant-ID": tenant_id, 
                                 "Content-Type": "application/octet-stream"
                             },
-                            data=raw_bytes
+                            data=raw_bytes,
+                            timeout=300,
                         )
                         
                         if response.status_code == 200:
-                            print(f"     [SUCCESS] Vectorized successfully!")
+                            print("     [SUCCESS] Vectorized successfully!")
                         else:
                             print(f"     [ERROR] Failed: {response.text}")
                     except Exception as e:

@@ -58,8 +58,8 @@ def test_registry_from_settings_selects_ollama() -> None:
 
 
 @pytest.mark.skipif(
-    importlib.util.find_spec("ollama") is not None,
-    reason="the 'ollama' package is installed; the missing-package path is not exercised",
+    importlib.util.find_spec("langchain_ollama") is not None,
+    reason="langchain-ollama is installed; the missing-package path is not exercised",
 )
 def test_ollama_embed_without_package_raises_domain_error() -> None:
     provider = OllamaEmbeddingProvider("nomic-embed-text")

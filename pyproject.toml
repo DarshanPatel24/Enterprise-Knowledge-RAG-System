@@ -15,6 +15,10 @@ select = ["E", "F", "I", "B", "UP", "S", "ANN"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S101", "S106", "ANN"]
+# Operational deploy/setup/ops scripts intentionally invoke external tools
+# (docker, tesseract, sqlcmd) by name via subprocess; those are trusted,
+# fixed command vectors, so the subprocess-hardening rules do not apply.
+"**/scripts/**" = ["S603", "S607"]
 
 [tool.mypy]
 python_version = "3.11"

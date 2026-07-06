@@ -78,6 +78,8 @@ class QdrantSettings(BaseSettings):
 
     host: str = "localhost"
     port: int = 6333
+    url: str = ""
+    api_key: str = ""
     request_timeout_seconds: float = 30.0
 
 
@@ -155,8 +157,6 @@ class TransformationSettings(BaseSettings):
     collapse_blank_lines: bool = True
     include_front_matter: bool = True
     default_language: str = "en"
-    image_handling: str = "reference"
-    ocr_enabled: bool = False
 
 
 class IntelligenceSettings(BaseSettings):
@@ -190,6 +190,8 @@ class ChunkingSettings(BaseSettings):
     preserve_code: bool = True
     respect_section_boundaries: bool = True
     include_breadcrumb_context: bool = True
+    recursive_chunk_size: int = 1000
+    recursive_chunk_overlap: int = 200
 
 
 class EmbeddingSettings(BaseSettings):
@@ -206,6 +208,7 @@ class EmbeddingSettings(BaseSettings):
     normalize_vectors: bool = True
     cost_per_1k_tokens: float = 0.0
     max_retries: int = 3
+    max_requests_per_minute: int = 0
     ollama_base_url: str = "http://localhost:11434"
     request_timeout_seconds: float = 60.0
 
@@ -220,6 +223,7 @@ class PublishingSettings(BaseSettings):
     collection_strategy: Literal["static", "model_scoped"] = "static"
     batch_size: int = 64
     max_retries: int = 3
+    max_vectors_per_minute: int = 0
     create_missing_collections: bool = True
     verify_after_publish: bool = True
 

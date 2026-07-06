@@ -41,7 +41,7 @@ def main() -> int:
         "-m",
         "uvicorn",
         "api.app:app",
-        "--host", "0.0.0.0",
+        "--host", "0.0.0.0",  # noqa: S104 - API server intentionally binds all interfaces
         "--port", port,
         "--app-dir", "src",
     ]

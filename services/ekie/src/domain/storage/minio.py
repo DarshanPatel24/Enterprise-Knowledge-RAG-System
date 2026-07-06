@@ -140,9 +140,9 @@ class MinIOAssetStorage(AssetStorage):
             ) from exc
         finally:
             try:
-                response.close()  # type: ignore[union-attr]
-                response.release_conn()  # type: ignore[union-attr]
-            except Exception:
+                response.close()
+                response.release_conn()
+            except Exception:  # noqa: S110 - best-effort connection cleanup
                 pass
 
     def head(self, key: str, *, version: int) -> StoredAsset:
@@ -157,9 +157,9 @@ class MinIOAssetStorage(AssetStorage):
             ) from exc
         finally:
             try:
-                response.close()  # type: ignore[union-attr]
-                response.release_conn()  # type: ignore[union-attr]
-            except Exception:
+                response.close()
+                response.release_conn()
+            except Exception:  # noqa: S110 - best-effort connection cleanup
                 pass
         return StoredAsset(
             key=meta["key"],

@@ -82,4 +82,4 @@ class LlmAnalyzer(Analyzer):
         prompt = ChatPromptTemplate.from_messages(
             [("system", TOPIC_SYSTEM_PROMPT), ("user", TOPIC_USER_TEMPLATE)]
         )
-        return cast("_TopicChain", prompt | llm | StrOutputParser())
+        return cast("_TopicChain", prompt | llm | StrOutputParser())  # type: ignore[operator]

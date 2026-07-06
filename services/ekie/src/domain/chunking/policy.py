@@ -20,6 +20,8 @@ class ChunkingSettingsLike(Protocol):
     preserve_code: bool
     respect_section_boundaries: bool
     include_breadcrumb_context: bool
+    recursive_chunk_size: int
+    recursive_chunk_overlap: int
 
 
 class ChunkingPolicy(BaseModel):
@@ -35,6 +37,9 @@ class ChunkingPolicy(BaseModel):
     preserve_code: bool = True
     respect_section_boundaries: bool = True
     include_breadcrumb_context: bool = True
+    recursive_chunk_size: int = Field(default=1000, gt=0)
+    recursive_chunk_overlap: int = Field(default=200, ge=0)
+    recursive_separators: tuple[str, ...] = ("\n\n", "\n", " ", "")
 
     @classmethod
     def from_settings(cls, settings: ChunkingSettingsLike) -> ChunkingPolicy:
@@ -48,4 +53,6 @@ class ChunkingPolicy(BaseModel):
             preserve_code=settings.preserve_code,
             respect_section_boundaries=settings.respect_section_boundaries,
             include_breadcrumb_context=settings.include_breadcrumb_context,
+            recursive_chunk_size=settings.recursive_chunk_size,
+            recursive_chunk_overlap=settings.recursive_chunk_overlap,
         )

@@ -1,31 +1,31 @@
 """Ollama-backed embedding provider (real semantic vectors, local-first).
 
 Generates embeddings from a locally hosted Ollama model (for example
-``nomic-embed-text`` or ``mxbai-embed-large``) through the same provider
-contract as the deterministic hash provider (ADR-021). The model is accessed
-directly via the ``ollama`` client rather than through LangChain, keeping this
-seam free of double abstraction. The deterministic ``LocalHashEmbeddingProvider``
-remains the default so the pipeline stays fully offline and reproducible unless
-this provider is explicitly selected by configuration.
+``nomic-embed-text`` or ``mxbai-embed-large``) through the shared LangChain
+resource template, so the embedding model is constructed in one place and is
+easy to swap later. The provider preserves the engine contract (dimension
+validation and optional L2 normalization). The deterministic
+``LocalHashEmbeddingProvider`` remains the default so the pipeline stays fully
+offline and reproducible unless this provider is explicitly selected by
+configuration.
 """
 
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, ClassVar, Protocol, cast
+from typing import TYPE_CHECKING, ClassVar
 
 from domain.embedding.providers.base import EmbeddingProvider, EmbeddingProviderError
+from domain.integrations.langchain_resources import (
+    LangChainResourceError,
+    build_embeddings,
+)
+
+if TYPE_CHECKING:
+    from langchain_core.embeddings import Embeddings
 
 _DEFAULT_BASE_URL = "http://localhost:11434"
 _DEFAULT_TIMEOUT_SECONDS = 60.0
-
-
-if TYPE_CHECKING:
-
-    class _OllamaClient(Protocol):
-        """Structural type for the subset of the Ollama client used here."""
-
-        def embeddings(self, *, model: str, prompt: str) -> dict[str, list[float]]: ...
 
 
 class OllamaEmbeddingProvider(EmbeddingProvider):
@@ -46,6 +46,7 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
         self._model = model
         self._base_url = base_url
         self._request_timeout_seconds = request_timeout_seconds
+        self._embeddings: Embeddings | None = None
 
     def embed(
         self, texts: list[str], *, dimension: int, normalize: bool
@@ -53,36 +54,35 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
         """Return one Ollama-generated vector of ``dimension`` floats per text."""
         if dimension <= 0:
             raise EmbeddingProviderError("dimension must be a positive integer")
-        client = self._build_client()
-        return [self._embed_one(client, text, dimension, normalize) for text in texts]
-
-    def _build_client(self) -> _OllamaClient:
+        embeddings = self._build()
         try:
-            import ollama
-        except ImportError as exc:
-            raise EmbeddingProviderError(
-                "the 'ollama' package is required for the 'ollama' embedding "
-                "provider; install it or use the default 'local' provider"
-            ) from exc
-        client = ollama.Client(host=self._base_url, timeout=self._request_timeout_seconds)
-        return cast("_OllamaClient", client)
-
-    def _embed_one(
-        self, client: _OllamaClient, text: str, dimension: int, normalize: bool
-    ) -> list[float]:
-        try:
-            response = client.embeddings(model=self._model, prompt=text or "\x00")
+            raw_vectors = embeddings.embed_documents(texts)
         except Exception as exc:  # external client boundary: normalize to domain error
             raise EmbeddingProviderError(
                 f"ollama embedding request failed for model {self._model!r}: {exc}"
             ) from exc
-        vector = [float(value) for value in response["embedding"]]
-        if len(vector) != dimension:
+        return [self._finalize(vector, dimension, normalize) for vector in raw_vectors]
+
+    def _build(self) -> Embeddings:
+        if self._embeddings is None:
+            try:
+                self._embeddings = build_embeddings(
+                    "ollama", self._model, base_url=self._base_url
+                )
+            except LangChainResourceError as exc:
+                raise EmbeddingProviderError(str(exc)) from exc
+        return self._embeddings
+
+    def _finalize(
+        self, vector: list[float], dimension: int, normalize: bool
+    ) -> list[float]:
+        values = [float(value) for value in vector]
+        if len(values) != dimension:
             raise EmbeddingProviderError(
-                f"ollama model {self._model!r} returned {len(vector)} dimensions; "
+                f"ollama model {self._model!r} returned {len(values)} dimensions; "
                 f"configuration expects {dimension}"
             )
-        return self._normalize(vector) if normalize else vector
+        return self._normalize(values) if normalize else values
 
     @staticmethod
     def _normalize(vector: list[float]) -> list[float]:

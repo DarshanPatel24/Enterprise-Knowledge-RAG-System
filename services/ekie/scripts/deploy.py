@@ -8,7 +8,7 @@ Usage (from repo root):
     python services/ekie/scripts/deploy.py
 
 Gates:
-    1  Prerequisites check (Python, Docker, ODBC, Tesseract)
+    1  Prerequisites check (Python, Docker, ODBC)
     2  .env configuration validation (required keys present)
     3  Docker infrastructure startup + health
     4  MinIO bucket provisioning (ekie-assets, langfuse-events)
@@ -41,7 +41,7 @@ os.chdir(_SERVICE_ROOT)
 
 # ── Terminal helpers ───────────────────────────────────────────────────────────
 
-_PASS = "\u2705"
+_PASS = "\u2705"  # noqa: S105 - checkmark glyph, not a credential
 _FAIL = "\u274c"
 _WARN = "\u26a0\ufe0f "
 _INFO = "\u2139\ufe0f "
@@ -75,21 +75,13 @@ def _section(title: str) -> None:
 def gate_prerequisites() -> None:
     _section("Gate 1/10 — Prerequisites")
 
-    if sys.version_info < (3, 11):
+    if sys.version_info < (3, 11):  # noqa: UP036 - runtime guard for users on older interpreters
         _fail(f"Python 3.11+ required, found {sys.version.split()[0]}")
     _ok(f"Python {sys.version.split()[0]}")
 
     if not shutil.which("docker"):
         _fail("Docker not found", "Install Docker Desktop from https://www.docker.com/products/docker-desktop/")
     _ok("docker")
-
-    if not shutil.which("tesseract"):
-        _warn("tesseract not on PATH — scanned PDFs will dead-letter")
-        _warn("Install from https://github.com/UB-Mannheim/tesseract/wiki")
-        _warn("Then add C:\\Program Files\\Tesseract-OCR to system PATH")
-    else:
-        result = subprocess.run(["tesseract", "--version"], capture_output=True, text=True)
-        _ok(f"tesseract: {result.stdout.splitlines()[0] if result.stdout else 'found'}")
 
     try:
         import pyodbc  # noqa: F401
@@ -144,7 +136,7 @@ def gate_docker_infra() -> None:
     compose_file = str(_REPO_ROOT / "docker-compose.local.yml")
     subprocess.run(
         ["docker", "compose", "-f", compose_file, "up", "-d",
-         "qdrant", "minio", "mssql", "redis"],
+         "qdrant", "minio", "redis"],
         check=True, capture_output=True,
     )
     _ok("Core services started")
@@ -154,7 +146,7 @@ def gate_docker_infra() -> None:
         ("MinIO", "http://localhost:9005/minio/health/live"),
     ]
     for label, url in checks:
-        for attempt in range(30):
+        for _attempt in range(30):
             try:
                 urllib.request.urlopen(url, timeout=2)  # noqa: S310
                 _ok(f"{label} reachable")
@@ -169,10 +161,17 @@ def gate_docker_infra() -> None:
 
 def gate_minio_buckets() -> None:
     _section("Gate 4/10 — MinIO Buckets")
-    from config.settings import get_settings
     from minio import Minio
+
+    from config.settings import get_settings
+
     s = get_settings()
-    client = Minio(s.storage.endpoint, access_key=s.storage.access_key, secret_key=s.storage.secret_key, secure=False)
+    client = Minio(
+        s.storage.endpoint,
+        access_key=s.storage.access_key,
+        secret_key=s.storage.secret_key,
+        secure=False,
+    )
     for bucket in [s.storage.bucket, "langfuse-events"]:
         if not client.bucket_exists(bucket):
             client.make_bucket(bucket)
@@ -190,11 +189,9 @@ def gate_sql_schema() -> None:
     try:
         s = get_settings()
         db = ControlPlaneDatabase(s.control_plane)
-        if s.environment == "local":
-            db.create_all()
-        else:
-            db.create_all()
-        _ok("Schema applied (create_all)")
+        db.create_all()
+        db.run_migrations()
+        _ok("Schema applied (create_all + migrations)")
     except Exception as exc:
         _fail(f"SQL connectivity failed: {exc}",
               "Check EKIE_CONTROL_PLANE__ settings and SQL Server status")
@@ -211,7 +208,7 @@ def gate_langfuse() -> None:
          "clickhouse", "langfuse-db", "langfuse", "langfuse-worker"],
         check=True, capture_output=True,
     )
-    for attempt in range(30):
+    for _attempt in range(30):
         try:
             urllib.request.urlopen("http://localhost:3000/api/public/health", timeout=2)  # noqa: S310
             _ok("Langfuse reachable at http://localhost:3000")
@@ -226,13 +223,18 @@ def gate_langfuse() -> None:
     s = get_settings()
     if s.observability.langfuse_public_key:
         import base64
+
         import requests
+
         creds = base64.b64encode(
             f"{s.observability.langfuse_public_key}:{s.observability.langfuse_secret_key}".encode()
         ).decode()
         try:
-            r = requests.get("http://localhost:3000/api/public/traces?limit=1",
-                             headers={"Authorization": f"Basic {creds}"}, timeout=5)
+            r = requests.get(
+                "http://localhost:3000/api/public/traces?limit=1",
+                headers={"Authorization": f"Basic {creds}"},
+                timeout=5,
+            )
             if r.status_code == 200:
                 _ok("Langfuse API keys valid")
             else:
@@ -240,7 +242,8 @@ def gate_langfuse() -> None:
         except Exception as exc:
             _warn(f"Langfuse key check failed: {exc}")
     else:
-        _warn("Langfuse keys not set — open http://localhost:3000, register, and copy pk-lf-... / sk-lf-... to .env")
+        _warn("Langfuse keys not set — open http://localhost:3000, register, and")
+        _warn("copy pk-lf-... / sk-lf-... into .env")
 
 
 # ── Gate 7: HuggingFace model cache ──────────────────────────────────────────
@@ -248,21 +251,28 @@ def gate_langfuse() -> None:
 def gate_hf_models() -> None:
     _section("Gate 7/10 — HuggingFace Model Cache")
     from config.settings import get_settings
+
     s = get_settings()
-    hf_home = Path(s.sync.target_directory).parent.parent / "services" / "ekie" / "storage" / "hf"
     hf_home_env = os.environ.get("HF_HOME", str(_SERVICE_ROOT / "storage" / "hf"))
     cache_dir = Path(hf_home_env) / "hub"
 
     embedding_model_dir = f"models--{s.embedding.default_model.replace('/', '--')}"
     intelligence_model_dir = f"models--{s.intelligence.llm_model.replace('/', '--')}"
 
-    for label, model_dir in [("Embedding", embedding_model_dir), ("Intelligence LLM", intelligence_model_dir)]:
+    models = [
+        ("Embedding", embedding_model_dir, s.embedding.default_model),
+        ("Intelligence LLM", intelligence_model_dir, s.intelligence.llm_model),
+    ]
+    for label, model_dir, model_name in models:
         candidate = cache_dir / model_dir
         if candidate.exists():
             _ok(f"{label} model cached: {model_dir}")
         else:
             _warn(f"{label} model NOT cached: {model_dir}")
-            _warn(f"  Run: from huggingface_hub import snapshot_download; snapshot_download('{s.embedding.default_model if label == 'Embedding' else s.intelligence.llm_model}')")
+            _warn(
+                "  Run: from huggingface_hub import snapshot_download; "
+                f"snapshot_download('{model_name}')"
+            )
 
 
 # ── Gate 8: API health ────────────────────────────────────────────────────────
@@ -275,7 +285,6 @@ def gate_api_health() -> None:
         _ok("EKIE API healthy at http://localhost:8001")
     except Exception:
         _warn("EKIE API not running — start it with:")
-        _warn("  $env:PATH = 'C:\\Program Files\\Tesseract-OCR;' + $env:PATH")
         _warn("  python services/ekie/scripts/start_api.py")
 
 
@@ -284,8 +293,10 @@ def gate_api_health() -> None:
 def gate_smoke_ingest(tenant_id: str) -> None:
     _section("Gate 9/10 — Ingestion Smoke Test")
     import requests
+
     from config.settings import get_settings
     from domain.control_plane import ControlPlaneDatabase, Repository
+
     s = get_settings()
     db = ControlPlaneDatabase(s.control_plane)
     with db.session() as sess:
@@ -293,7 +304,10 @@ def gate_smoke_ingest(tenant_id: str) -> None:
             Repository.created_at.asc()
         ).first()
         if repo is None:
-            _warn(f"No repository found for tenant '{tenant_id}' — run the worker first to auto-register")
+            _warn(
+                f"No repository found for tenant '{tenant_id}' — "
+                "run the worker first to auto-register"
+            )
             return
         repo_id = repo.id
         repo_name = repo.name
@@ -366,12 +380,20 @@ def gate_monitoring(tenant_id: str) -> None:
     # MinIO
     from minio import Minio
     try:
-        client = Minio(s.storage.endpoint, access_key=s.storage.access_key, secret_key=s.storage.secret_key, secure=False)
+        client = Minio(
+            s.storage.endpoint,
+            access_key=s.storage.access_key,
+            secret_key=s.storage.secret_key,
+            secure=False,
+        )
         objects = list(client.list_objects(s.storage.bucket, recursive=True))
         if objects:
             _ok(f"MinIO: {len(objects)} asset object(s) in {s.storage.bucket}")
         else:
-            _warn(f"MinIO: bucket {s.storage.bucket} is empty — ingest with EKIE_ENVIRONMENT=production to persist assets")
+            _warn(
+                f"MinIO: bucket {s.storage.bucket} is empty — ingest with "
+                "EKIE_ENVIRONMENT=production to persist assets"
+            )
     except Exception as exc:
         _warn(f"MinIO check failed: {exc}")
 
@@ -388,9 +410,17 @@ def gate_monitoring(tenant_id: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="EKIE Production Deployment Task Runner")
-    parser.add_argument("--tenant-id", default="tenant-default", help="Tenant ID to use for smoke test")
-    parser.add_argument("--skip-docker", action="store_true", help="Skip Docker infrastructure gates (already running)")
-    parser.add_argument("--skip-smoke", action="store_true", help="Skip ingestion smoke test gate")
+    parser.add_argument(
+        "--tenant-id", default="tenant-default", help="Tenant ID to use for smoke test"
+    )
+    parser.add_argument(
+        "--skip-docker",
+        action="store_true",
+        help="Skip Docker infrastructure gates (already running)",
+    )
+    parser.add_argument(
+        "--skip-smoke", action="store_true", help="Skip ingestion smoke test gate"
+    )
     args = parser.parse_args()
 
     print("=" * 60)

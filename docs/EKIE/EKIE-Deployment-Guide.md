@@ -39,7 +39,10 @@
 |---|---|
 | Ollama | When `EKIE_EMBEDDING__PROVIDER=ollama` or `EKIE_INTELLIGENCE__LLM_PROVIDER=ollama` |
 | NVIDIA GPU + CUDA | When using large HuggingFace models locally |
-| Tesseract OCR | When `EKIE_TRANSFORMATION__OCR_ENABLED=true` (image OCR) |
+
+> EKIE ingests Markdown only. Converting other formats (PDF, DOCX, PPTX, HTML,
+> CSV, images, audio, video) to Markdown is handled upstream by the EKDC agent
+> (`services/ekdc`), so no OCR/rich-media libraries are required by EKIE.
 
 ### 1.3 Hardware Minimums
 
@@ -156,7 +159,7 @@ python -m venv .venv
 
 ```powershell
 # Core service + all production extras including VL embedding model support
-pip install -e "services/ekie[dev,mssql,storage,richmedia]"
+pip install -e "services/ekie[dev,mssql,storage]"
 pip install -e packages/contracts
 
 # Required for Qwen3-VL-Embedding-2B (vision-language embedding model)
@@ -172,13 +175,9 @@ pip install "langfuse>=2.0,<3.0"
 pip install langchain-ollama
 ```
 
-> **Tesseract OCR (required for scanned PDFs):**
-> Download the Windows installer from https://github.com/UB-Mannheim/tesseract/wiki
-> After install, add to system PATH permanently (run once in admin PowerShell):
-> ```powershell
-> [System.Environment]::SetEnvironmentVariable("PATH","C:\Program Files\Tesseract-OCR;" + [System.Environment]::GetEnvironmentVariable("PATH","Machine"),"Machine")
-> ```
-> Verify: `tesseract --version`
+> **Document conversion is handled by EKDC, not EKIE.** Point
+> `EKIE_SYNC__TARGET_DIRECTORY` at the EKDC `OUTPUT_DIRECTORY` (Markdown files);
+> EKIE ingests those `.md` files directly. No Tesseract/OCR install is needed.
 
 ### 3.3 Automated One-Command Setup
 
@@ -197,7 +196,7 @@ ekie-deploy
 ```
 
 What it does automatically:
-1. Prerequisite check (Python, Docker, Tesseract, pyodbc)
+1. Prerequisite check (Python, Docker, pyodbc)
 2. `.env` validation (required keys present, target folder exists)
 3. Docker infrastructure startup (Qdrant, MinIO, Redis)
 4. MinIO bucket provisioning (`ekie-assets`, `langfuse-events`)
@@ -250,7 +249,7 @@ These keys have no safe default and **must** be set before starting EKIE:
 |---|---|---|
 | `EKIE_CONTROL_PLANE__HOST` | SQL Server host/instance | `localhost\MSSQLSERVER2022` |
 | `EKIE_CONTROL_PLANE__TRUSTED_CONNECTION` | Windows auth | `true` |
-| `EKIE_SYNC__TARGET_DIRECTORY` | Folder to watch for documents | `D:\Enterprise\Documents` |
+| `EKIE_SYNC__TARGET_DIRECTORY` | Folder of EKDC-generated Markdown to ingest | `D:\Enterprise\Markdown` |
 | `EKIE_SYNC__TENANT_ID` | Default tenant identifier | `tenant-prod` |
 
 ### 4.3 Storage Configuration (MinIO)
@@ -272,6 +271,8 @@ These keys have no safe default and **must** be set before starting EKIE:
 | `EKIE_EMBEDDING__PROVIDER` | `huggingface` | `local` = hash-based (CI/offline), `huggingface` for real embeddings |
 | `EKIE_EMBEDDING__DEFAULT_MODEL` | `Qwen/Qwen3-VL-Embedding-2B` | Vision-language embedding model; 2B parameter variant |
 | `EKIE_EMBEDDING__DIMENSION` | `1536` | Output dimension for Qwen3-VL-Embedding-2B |
+| `EKIE_EMBEDDING__BATCH_SIZE` | `16` | Chunks per embedding request; raise (32-64) for throughput |
+| `EKIE_EMBEDDING__MAX_REQUESTS_PER_MINUTE` | `0` | Optional cap on embedding requests/min (0 = unlimited) |
 | `HF_HOME` | `./storage` | Local cache path for downloaded model weights |
 
 **Prerequisites for Qwen3-VL-Embedding-2B:**
@@ -297,6 +298,18 @@ First-run behavior:
 | `nomic-embed-text` (Ollama) | 768 |
 
 **Warning:** Changing the embedding model after data is already ingested requires re-ingesting all documents because Qdrant collection dimensions cannot change in place.
+
+**Optional ingestion tuning (all off/opt-in by default):**
+
+| Key | Default | Purpose |
+|---|---|---|
+| `EKIE_CHUNKING__DEFAULT_STRATEGY=recursive` | `semantic` | Use LangChain recursive character chunking (opt-in). Requires `pip install langchain-text-splitters` |
+| `EKIE_CHUNKING__RECURSIVE_CHUNK_SIZE` / `_OVERLAP` | `1000` / `200` | Recursive window and overlap (overlap < size) |
+| `EKIE_PUBLISHING__BATCH_SIZE` | `64` | Vectors per Qdrant upsert; raise (128-256) for faster ingest |
+| `EKIE_PUBLISHING__MAX_VECTORS_PER_MINUTE` | `0` | Optional cap on vectors upserted/min (0 = unlimited) |
+| `EKIE_QDRANT__URL` / `EKIE_QDRANT__API_KEY` | *(empty)* | Optional full URL/API key for the LangChain index template |
+
+The **LangChain index template** (`build_langchain_index`) reads `EKIE_EMBEDDING__*` and `EKIE_QDRANT__*` to return a ready embedding model + Qdrant vector store; requires `pip install langchain-qdrant`. It is a convenience/index seam and does not change the verified publishing path.
 
 ### 4.5 Langfuse Observability
 
@@ -458,7 +471,8 @@ Worker configuration from `.env`:
 
 | Key | Default | Purpose |
 |---|---|---|
-| `EKIE_SYNC__TARGET_DIRECTORY` | `` | Folder to watch |
+| `EKIE_SYNC__TARGET_DIRECTORY` | `` | Folder of EKDC-generated Markdown to ingest (set to the EKDC `OUTPUT_DIRECTORY`) |
+| `EKIE_SYNC__ALLOWED_EXTENSIONS` | `md` | Restrict ingestion to Markdown files |
 | `EKIE_SYNC__TENANT_ID` | `tenant-default` | Tenant identifier |
 | `EKIE_SYNC__POLL_INTERVAL_SECONDS` | `300` | How often to scan |
 | `EKIE_SYNC__API_BASE_URL` | `http://localhost:8001` | EKIE API endpoint |
@@ -615,7 +629,6 @@ ekie-cleanup
 
 This removes:
 - `services/ekie/storage/acceptance_report_*.json`
-- `services/ekie/storage/rich_media_benchmark_*.json`
 - `services/ekie/storage/qdrant_delete_validation_*.json`
 - `services/ekie/storage/qdrant/` (local Qdrant state)
 - All `__pycache__/`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/` trees
@@ -629,7 +642,7 @@ This does NOT remove: `.env`, source code, installed packages, or HuggingFace mo
 ### 10.1 Upgrade
 
 1. Pull latest code: `git pull`
-2. Re-install dependencies: `pip install -e "services/ekie[dev,mssql,storage,richmedia]"`
+2. Re-install dependencies: `pip install -e "services/ekie[dev,mssql,storage]"`
 3. Re-apply schema: `ekie-setup` or run `db.create_all()` (safe to re-run)
 4. Restart API and worker
 
@@ -660,5 +673,4 @@ If you change `EKIE_EMBEDDING__DEFAULT_MODEL` or `EKIE_EMBEDDING__DIMENSION`, ex
 | MinIO HA not configured | Single MinIO instance is a single point of failure | P2: Deploy MinIO in distributed mode |
 | No horizontal API scaling | Single API process | P2: Load balancer + replica config |
 | Windows-only automation scripts | Linux/macOS operators need shell equivalents | P2: Add bash/Makefile equivalents |
-| OCR for image-only PDFs requires Tesseract binary | Scanned PDFs dead-letter without Tesseract on PATH | Install Tesseract and add to system PATH (see Section 3.2) |
 | Langfuse SDK pinned to v2.x | langfuse 3.x/4.x OTEL protocol not compatible with local self-hosted stack | Track Langfuse self-hosted OTEL support; upgrade when stable |

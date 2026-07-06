@@ -27,7 +27,9 @@ class LangfuseSettingsLike(Protocol):
     langfuse_secret_key: str
 
 
-def build_langfuse_client(settings: LangfuseSettingsLike) -> Any | None:
+def build_langfuse_client(
+    settings: LangfuseSettingsLike,
+) -> Any | None:  # noqa: ANN401 - returns opaque third-party client
     """Return a Langfuse client for direct trace creation, or None when disabled.
 
     Uses ``langfuse.Langfuse`` directly — no LangChain callback dependency.
@@ -46,7 +48,10 @@ def build_langfuse_client(settings: LangfuseSettingsLike) -> Any | None:
     except ImportError:
         logger.warning(
             "langfuse_unavailable",
-            extra={"detail": "langfuse package not installed; run: pip install 'langfuse>=2.0,<3.0'"},
+            extra={
+                "detail": "langfuse package not installed; "
+                "run: pip install 'langfuse>=2.0,<3.0'"
+            },
         )
         return None
     return Langfuse(

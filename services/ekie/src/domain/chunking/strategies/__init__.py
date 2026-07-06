@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from domain.chunking.models import ChunkStrategy
 from domain.chunking.strategies.base import ChunkDraft, ChunkStrategyPlugin
+from domain.chunking.strategies.recursive import RecursiveCharacterChunkStrategy
 from domain.chunking.strategies.semantic import SemanticChunkStrategy
 from domain.chunking.strategies.token import TokenWindowChunkStrategy
 
@@ -33,7 +34,11 @@ class ChunkStrategyRegistry:
 def default_registry() -> ChunkStrategyRegistry:
     """Return the default registry with the built-in chunking strategies."""
     return ChunkStrategyRegistry(
-        [SemanticChunkStrategy(), TokenWindowChunkStrategy()]
+        [
+            SemanticChunkStrategy(),
+            TokenWindowChunkStrategy(),
+            RecursiveCharacterChunkStrategy(),
+        ]
     )
 
 
@@ -41,6 +46,7 @@ __all__ = [
     "ChunkDraft",
     "ChunkStrategyPlugin",
     "ChunkStrategyRegistry",
+    "RecursiveCharacterChunkStrategy",
     "SemanticChunkStrategy",
     "TokenWindowChunkStrategy",
     "default_registry",

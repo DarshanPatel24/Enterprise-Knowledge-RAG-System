@@ -6,7 +6,9 @@ from pydantic import ValidationError
 from config.settings import ControlPlaneSettings, EkieSettings
 
 
-def test_defaults_are_local_first() -> None:
+def test_defaults_are_local_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Isolate from user's .env which may have langfuse enabled.
+    monkeypatch.setenv("EKIE_OBSERVABILITY__LANGFUSE_ENABLED", "false")
     settings = EkieSettings()
     assert settings.app_name == "ekie"
     assert settings.environment == "local"

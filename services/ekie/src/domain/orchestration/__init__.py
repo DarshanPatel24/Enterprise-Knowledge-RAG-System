@@ -62,6 +62,7 @@ __all__ = [
     "WorkflowState",
     "WorkflowStatus",
     "build_langfuse_callbacks",
+    "build_langfuse_client",
     "default_stages",
     "runner_from_policy",
 ]

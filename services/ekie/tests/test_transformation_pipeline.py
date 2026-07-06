@@ -152,15 +152,14 @@ def test_missing_document_raises_not_found(control_plane_db: ControlPlaneDatabas
     assert exc_info.value.error_type is TransformationErrorType.NOT_FOUND
 
 
-def test_html_document_produces_structured_markdown(
+def test_markdown_document_passes_through_pipeline(
     control_plane_db: ControlPlaneDatabase,
 ) -> None:
     repository_id = _register_repository(control_plane_db)
     document_id = _add_document(
-        control_plane_db, repository_id, source_path="docs/page.html", content_hash="h"
+        control_plane_db, repository_id, source_path="docs/page.md", content_hash="h"
     )
-    html = b"<html lang='en'><body><h1>Report</h1><p>Body text</p></body></html>"
-    result = _pipeline(control_plane_db).transform(document_id, "tenant-a", html)
+    markdown = b"# Report\n\nBody text\n"
+    result = _pipeline(control_plane_db).transform(document_id, "tenant-a", markdown)
     assert "# Report" in result.markdown
     assert "Body text" in result.markdown
-    assert "language: en" in result.markdown

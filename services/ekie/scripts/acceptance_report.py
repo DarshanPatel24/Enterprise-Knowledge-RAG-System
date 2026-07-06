@@ -454,7 +454,10 @@ def main() -> int:
     report["decision"] = _acceptance_decision(report)
     config.report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
-    print(json.dumps({"accepted": report["decision"]["accepted"], "report": str(config.report_path)}, indent=2))
+    print(json.dumps(
+        {"accepted": report["decision"]["accepted"], "report": str(config.report_path)},
+        indent=2,
+    ))
     return 0 if report["decision"]["accepted"] else 1
 
 

@@ -18,6 +18,11 @@ from domain.embedding.policy import EmbeddingPolicy
 from domain.embedding.providers import (
     provider_registry_from_settings as build_embedding_provider_registry,
 )
+from domain.integrations.langchain_resources import (
+    LangChainIndex,
+    build_embeddings,
+    build_qdrant_vector_store,
+)
 from domain.intelligence.analyzers import analyzers_from_settings
 from domain.intelligence.engine import DocumentIntelligenceEngine
 from domain.intelligence.policy import IntelligencePolicy
@@ -25,7 +30,6 @@ from domain.orchestration import (
     OrchestrationPolicy,
     PipelineEngines,
     WorkflowOrchestrator,
-    build_langfuse_callbacks,
     build_langfuse_client,
 )
 from domain.orchestration.checkpointer import Checkpointer
@@ -85,7 +89,9 @@ def build_intelligence_engine(
     return DocumentIntelligenceEngine(
         db,
         storage,
-        IntelligencePolicy.from_settings(settings.intelligence),
+        # Concrete settings expose Literal-typed fields that satisfy the str-typed
+        # *SettingsLike Protocols at runtime (mypy flags Protocol invariance only).
+        IntelligencePolicy.from_settings(settings.intelligence),  # type: ignore[arg-type]
         analyzers=analyzers_from_settings(settings.intelligence),
     )
 
@@ -119,8 +125,10 @@ def build_embedding_engine(
     return EmbeddingEngine(
         db,
         storage,
-        EmbeddingPolicy.from_settings(settings.embedding),
-        provider_registry=build_embedding_provider_registry(settings.embedding),
+        EmbeddingPolicy.from_settings(settings.embedding),  # type: ignore[arg-type]
+        provider_registry=build_embedding_provider_registry(
+            settings.embedding  # type: ignore[arg-type]
+        ),
     )
 
 
@@ -133,9 +141,10 @@ def build_publishing_engine(
     return VectorPublishingEngine(
         db,
         storage,
-        PublishingPolicy.from_settings(settings.publishing),
+        PublishingPolicy.from_settings(settings.publishing),  # type: ignore[arg-type]
         provider_registry=build_vector_provider_registry(
-            settings.publishing, settings.qdrant
+            settings.publishing,  # type: ignore[arg-type]
+            settings.qdrant,
         ),
     )
 
@@ -163,7 +172,11 @@ def build_workflow_orchestrator(
     checkpointer: Checkpointer | None = None,
 ) -> WorkflowOrchestrator:
     """Build the ingestion workflow orchestrator from configuration."""
-    langfuse_client = build_langfuse_client(settings.observability) if settings.orchestration.enable_tracing else None
+    langfuse_client = (
+        build_langfuse_client(settings.observability)
+        if settings.orchestration.enable_tracing
+        else None
+    )
     return WorkflowOrchestrator(
         db,
         build_pipeline_engines(settings, db, storage),
@@ -240,10 +253,40 @@ def build_pipeline_validator(
     return PipelineValidator(db, storage)
 
 
+def build_langchain_index(
+    settings: EkieSettings, *, create_collection: bool = False
+) -> LangChainIndex:
+    """Build a LangChain embedding model + Qdrant vector store from settings.
+
+    A single config-driven template that mirrors a standard RAG index: it uses
+    the configured embedding provider (huggingface/ollama) and the canonical
+    Qdrant connection. This is a convenience/index seam; the verified publishing
+    engine keeps its own Qdrant client and verification path.
+    """
+    embeddings = build_embeddings(
+        settings.embedding.provider,
+        settings.embedding.default_model,
+        base_url=settings.embedding.ollama_base_url,
+    )
+    vector_store = build_qdrant_vector_store(
+        embeddings,
+        collection=settings.publishing.default_collection,
+        host=settings.qdrant.host,
+        port=settings.qdrant.port,
+        url=settings.qdrant.url or None,
+        api_key=settings.qdrant.api_key or None,
+        distance=settings.embedding.distance_metric,
+        vector_size=settings.embedding.dimension,
+        create_collection=create_collection,
+    )
+    return LangChainIndex(embeddings=embeddings, vector_store=vector_store)
+
+
 __all__ = [
     "build_chunking_engine",
     "build_embedding_engine",
     "build_intelligence_engine",
+    "build_langchain_index",
     "build_pipeline_engines",
     "build_pipeline_validator",
     "build_plugin_registry",

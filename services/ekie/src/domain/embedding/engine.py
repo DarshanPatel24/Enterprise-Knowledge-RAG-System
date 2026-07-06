@@ -36,6 +36,7 @@ from domain.embedding.providers import (
     EmbeddingProviderRegistry,
     default_provider_registry,
 )
+from domain.embedding.rate_limit import RateLimiter
 from domain.embedding.retry import run_with_retry
 from domain.embedding.selection import ModelSelectionError, ModelSelector
 from domain.embedding.tokens import batched, estimate_cost, estimate_tokens
@@ -82,6 +83,7 @@ class EmbeddingEngine:
         *,
         provider_registry: EmbeddingProviderRegistry | None = None,
         model_registry: EmbeddingModelRegistry | None = None,
+        rate_limiter: RateLimiter | None = None,
     ) -> None:
         self._db = db
         self._storage = storage
@@ -89,6 +91,7 @@ class EmbeddingEngine:
         self._providers = provider_registry or default_provider_registry()
         self._models = model_registry or default_model_registry(policy)
         self._selector = ModelSelector(self._models)
+        self._rate_limiter = rate_limiter or RateLimiter(policy.max_requests_per_minute)
 
     def embed(
         self,
@@ -202,6 +205,7 @@ class EmbeddingEngine:
         started = time.perf_counter()
         for batch in batched(chunks, self._policy.batch_size):
             batch_count += 1
+            self._rate_limiter.acquire(1)
             vectors = self._embed_batch(
                 provider, [chunk.content for chunk in batch], model.dimensions
             )

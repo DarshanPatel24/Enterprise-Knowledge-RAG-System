@@ -14,6 +14,7 @@ class ChunkingErrorType(StrEnum):
     EMPTY_RESULT = "empty_result"
     VALIDATION_FAILURE = "validation_failure"
     STORAGE_FAILURE = "storage_failure"
+    STRATEGY_UNAVAILABLE = "strategy_unavailable"
 
 
 class ChunkingError(RuntimeError):

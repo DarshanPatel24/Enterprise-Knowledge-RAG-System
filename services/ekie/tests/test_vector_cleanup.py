@@ -11,8 +11,8 @@ from domain.publishing import (
     PublishedVectorSet,
     SyncState,
     VectorCleanupService,
-    VectorPoint,
     VectorMetadata,
+    VectorPoint,
     VectorProviderRegistry,
     VectorRecord,
 )

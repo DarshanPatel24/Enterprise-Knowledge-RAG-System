@@ -53,7 +53,9 @@ def _fail(msg: str) -> None:
     sys.exit(1)
 
 
-def _run(cmd: list[str], *, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess[str]:
+def _run(
+    cmd: list[str], *, check: bool = True, capture: bool = False
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         cmd,
         cwd=str(_SERVICE_ROOT),
@@ -68,12 +70,15 @@ def _run(cmd: list[str], *, check: bool = True, capture: bool = False) -> subpro
 def check_prerequisites() -> None:
     print("\n[1/9] Checking prerequisites...")
 
-    if sys.version_info < (3, 11):
+    if sys.version_info < (3, 11):  # noqa: UP036 - runtime guard for users on older interpreters
         _fail(f"Python 3.11+ required, got {sys.version}")
     _ok(f"Python {sys.version.split()[0]}")
 
     if not shutil.which("docker"):
-        _fail("Docker not found on PATH. Install Docker Desktop from https://www.docker.com/products/docker-desktop/")
+        _fail(
+            "Docker not found on PATH. Install Docker Desktop from "
+            "https://www.docker.com/products/docker-desktop/"
+        )
     _ok("docker found")
 
     odbc_result = _run(
@@ -82,7 +87,10 @@ def check_prerequisites() -> None:
         capture=True,
     )
     if odbc_result.returncode != 0:
-        _warn("pyodbc not installed — run: pip install pyodbc (ODBC Driver 18 required for SQL Server)")
+        _warn(
+            "pyodbc not installed — run: pip install pyodbc "
+            "(ODBC Driver 18 required for SQL Server)"
+        )
     else:
         _ok("pyodbc found")
 
@@ -98,7 +106,10 @@ def setup_env() -> None:
         _fail(f".env.example missing at {_ENV_EXAMPLE}")
     shutil.copy(_ENV_EXAMPLE, _ENV_FILE)
     _ok(f"Created .env from .env.example at {_ENV_FILE}")
-    _warn("Review .env and set required values (SQL password, MinIO credentials, etc.) before continuing.")
+    _warn(
+        "Review .env and set required values "
+        "(SQL password, MinIO credentials, etc.) before continuing."
+    )
     _warn("Re-run ekie-setup after updating .env.")
 
 
@@ -106,7 +117,7 @@ def setup_env() -> None:
 
 def install_dependencies() -> None:
     print("\n[3/9] Installing Python dependencies...")
-    _run([sys.executable, "-m", "pip", "install", "-q", "-e", ".[dev,mssql,storage,richmedia]"])
+    _run([sys.executable, "-m", "pip", "install", "-q", "-e", ".[dev,mssql,storage]"])
     _ok("Dependencies installed")
 
 
@@ -122,7 +133,10 @@ def start_docker_services() -> None:
         "MINIO_ROOT_PASSWORD": os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"),
     }
     subprocess.run(
-        ["docker", "compose", "-f", str(_COMPOSE_FILE), "up", "-d", "qdrant", "minio", "mssql", "redis"],
+        [
+            "docker", "compose", "-f", str(_COMPOSE_FILE),
+            "up", "-d", "qdrant", "minio", "redis",
+        ],
         check=True,
         env=env,
     )
@@ -133,7 +147,7 @@ def start_docker_services() -> None:
 
 def _wait_http(url: str, label: str, max_seconds: int = 60) -> None:
     import urllib.request
-    for attempt in range(max_seconds):
+    for _attempt in range(max_seconds):
         try:
             urllib.request.urlopen(url, timeout=2)  # noqa: S310
             _ok(f"{label} reachable at {url}")
@@ -156,7 +170,10 @@ def wait_for_services() -> None:
 def create_sql_database() -> None:
     print("\n[6/9] Provisioning SQL Server database...")
     if not shutil.which("sqlcmd"):
-        _warn("sqlcmd not on PATH — skipping database creation. Create 'ekrag_control_plane' manually.")
+        _warn(
+            "sqlcmd not on PATH — skipping database creation. "
+            "Create 'ekrag_control_plane' manually."
+        )
         return
     result = subprocess.run(
         [
@@ -177,12 +194,13 @@ def create_sql_database() -> None:
 # --- Step 7: Run schema migration ---
 
 def run_schema_migration() -> None:
-    print("\n[7/9] Applying database schema (create_all)...")
+    print("\n[7/9] Applying database schema (create_all + migrations)...")
     from config.settings import get_settings
     from domain.control_plane import ControlPlaneDatabase
     s = get_settings()
     db = ControlPlaneDatabase(s.control_plane)
     db.create_all()
+    db.run_migrations()
     _ok("Schema applied")
 
 

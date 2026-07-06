@@ -578,7 +578,9 @@ Regardless of the source:
 
 - Emails
 
-every document eventually becomes Markdown.
+every document eventually becomes Markdown. This conversion is performed
+upstream by the EKDC agent (`services/ekdc`); EKIE ingests the resulting
+Markdown.
 
 **Benefits**
 
@@ -936,7 +938,7 @@ Therefore:
 
 - Embedding providers can be replaced.
 
-- OCR engines can be replaced.
+- OCR engines (in the EKDC converter) can be replaced.
 
 The architecture should depend on abstractions, not specific vendors.
 
@@ -2170,9 +2172,7 @@ Common failure scenarios include:
 
 - Repository unavailable
 
-- Parser failure
-
-- OCR failure
+- Markdown parser failure
 
 - Embedding timeout
 
@@ -3506,7 +3506,7 @@ Example policies:
 
   Maximum File Size                     500 MB
 
-  Allowed Extensions                    PDF, DOCX, XLSX
+  Allowed Extensions                    MD (Markdown from EKDC)
 
   Hash Algorithm                        SHA-256
 
@@ -3749,17 +3749,25 @@ consistent operational events.
 ## 7.1 Objective
 
 Once the Repository Synchronization Framework has identified that a
-document requires processing, the next responsibility is to transform
-the original document into EKIE's **canonical representation**.
+document requires processing, the next responsibility is to establish
+EKIE's **canonical representation**.
 
 For EKIE, the canonical representation is:
 
 **Markdown (.md)**
 
-This chapter defines the complete **Document Transformation Framework**,
-responsible for converting heterogeneous enterprise documents into
-deterministic, structured, metadata-rich Markdown suitable for
-downstream chunking and embedding.
+Conversion of heterogeneous source formats (PDF, DOCX, PPTX, HTML, CSV,
+images, audio, video) into Markdown is performed **upstream** by the
+**Enterprise Knowledge Document Converter (EKDC)** agent
+(`services/ekdc`), which writes `.md` files while preserving the source
+folder structure. EKIE ingests that Markdown directly.
+
+This chapter defines the **Document Transformation Framework**, which
+canonicalizes incoming Markdown into deterministic, structured,
+metadata-rich Markdown assets suitable for downstream chunking and
+embedding. It normalizes text, applies YAML front matter, validates
+structure, and creates immutable versions --- it does not convert binary
+document formats.
 
 ## 7.2 Why Markdown?
 
@@ -3796,7 +3804,9 @@ Examples include:
 If chunking is performed directly on every format, every downstream
 framework must understand every document type.
 
-Instead, EKIE standardizes processing through Markdown.
+Instead, the platform standardizes processing through Markdown. The EKDC
+agent performs the format-specific conversion once, upstream of EKIE, so
+EKIE and all downstream frameworks operate on a single format.
 
 PDF
 
@@ -3812,11 +3822,15 @@ EMAIL
 
 ↓
 
-Transformation Framework
+EKDC Converter (format-specific conversion)
 
 ↓
 
 Markdown
+
+↓
+
+EKIE Transformation Framework (canonicalize + validate)
 
 ↓
 
@@ -3830,35 +3844,33 @@ Embedding
 
 Publishing
 
-Every downstream framework processes exactly one format.
+Every EKIE framework processes exactly one format.
 
 ## 7.3 Responsibilities
 
 The Transformation Framework is responsible for:
 
-- File format identification
+- Markdown intake (reading `.md` / plain-text bytes)
 
-- Parser selection
+- Text normalization
 
-- Content extraction
+- Front-matter metadata assembly
 
-- OCR integration
-
-- Metadata extraction
-
-- Table normalization
-
-- Image handling
-
-- Hyperlink preservation
-
-- Markdown generation
+- Canonical Markdown generation
 
 - Validation
+
+- Deduplication by content hash
 
 - Version creation
 
 It is **not** responsible for:
+
+- Format conversion of binary documents (owned by EKDC)
+
+- OCR and rich-media extraction (owned by EKDC)
+
+- Content extraction from PDF/DOCX/PPTX/images/audio/video (owned by EKDC)
 
 - Chunking
 
@@ -3871,42 +3883,36 @@ It is **not** responsible for:
   -----------------------------------------------------------------------
   **Category**         **Formats**
   -------------------- --------------------------------------------------
-  Documents            PDF, DOCX, TXT, RTF
+  Markdown             MD, MARKDOWN
 
-  Spreadsheets         XLSX, CSV
-
-  Presentations        PPTX
-
-  Web                  HTML, Markdown
-
-  Source Code          PY, JAVA, JS, JSON, XML, YAML
-
-  Images               PNG, JPG, TIFF (OCR)
-
-  Email                EML, MSG
+  Plain text           TXT, TEXT, LOG, RTF
   -----------------------------------------------------------------------
 
-The framework is extensible through parser plugins.
+EKIE ingests Markdown only. All other source formats (PDF, DOCX, PPTX,
+XLSX, HTML, XML, CSV, images, email, audio, video) are converted to
+Markdown upstream by the EKDC agent before they reach EKIE. The
+plain-text parser is retained as a defensive fallback. The framework
+remains extensible through parser plugins.
 
 ## 7.5 High-Level Architecture
 
-Repository File
+Source File (any format)
 
 ↓
 
-File Detector
+EKDC Converter (→ Markdown)
 
 ↓
 
-Parser Registry
+Markdown File
 
 ↓
 
-Parser Plugin
+Parser Registry (Markdown / plain text)
 
 ↓
 
-Raw Content
+Markdown Intake
 
 ↓
 
@@ -3933,7 +3939,8 @@ Every stage is independently testable and replaceable.
 ## 7.6 Parser Registry
 
 The Parser Registry selects the appropriate parser based on document
-type.
+type. Because EKIE ingests Markdown, the registry resolves to the
+Markdown parser (or the plain-text fallback).
 
 Extension
 
@@ -3958,39 +3965,33 @@ Example:
   -----------------------------------------------------------------------
   **File**                **Parser**
   ----------------------- -----------------------------------------------
-  PDF                     PDF Parser
+  MD                      Markdown Parser
 
-  DOCX                    Word Parser
+  MARKDOWN                Markdown Parser
 
-  PPTX                    PowerPoint Parser
-
-  XLSX                    Excel Parser
-
-  PNG                     OCR Parser
-
-  HTML                    HTML Parser
+  TXT                     Plain-Text Parser
   -----------------------------------------------------------------------
 
 Parsers implement a common interface, allowing new formats to be added
-without modifying the framework.
+through plugins without modifying the framework.
 
 ## 7.7 Transformation Pipeline
 
 Every document follows the same transformation lifecycle.
 
-Original Document
+Markdown Document (from EKDC)
 
 ↓
 
-Parser Selection
+Parser Selection (Markdown / plain text)
 
 ↓
 
-Content Extraction
+Content Decode
 
 ↓
 
-Metadata Extraction
+Metadata / Front-Matter Assembly
 
 ↓
 
@@ -3998,7 +3999,7 @@ Normalization
 
 ↓
 
-Markdown Generation
+Canonical Markdown Generation
 
 ↓
 
@@ -4134,7 +4135,8 @@ without querying the Control Plane for every operation.
 
 Tables often contain critical enterprise knowledge.
 
-EKIE preserves tables in Markdown format whenever possible.
+Tables are converted to Markdown by EKDC during conversion; EKIE
+preserves them unchanged through normalization and chunking.
 
 Example:
 
@@ -4146,58 +4148,34 @@ Example:
 
 \| Pump B \| Maintenance \| 2026-05-15 \|
 
-If a table cannot be represented cleanly, the framework stores:
-
-- Original table structure
-
-- Markdown approximation
-
-- Parsing confidence score
-
-This allows future improvements without losing information.
+Because tables are already expressed as Markdown on ingestion, EKIE does
+not re-parse tabular source formats. Table extraction quality (layout
+fidelity, merged cells, parsing confidence) is a concern of the EKDC
+converter, upstream of EKIE.
 
 ## 7.12 Handling Images
 
-Images are classified into two categories:
+Image handling and OCR are performed by the EKDC converter before
+ingestion. EKDC decides whether informational images (diagrams,
+flowcharts, screenshots, engineering drawings) are transcribed via OCR
+or image-understanding models, and whether decorative images (logos,
+icons, background graphics) are ignored.
 
-**Informational Images**
-
-Examples:
-
-- Diagrams
-
-- Flowcharts
-
-- Screenshots
-
-- Engineering drawings
-
-These may be processed using OCR and image understanding models
-(configurable).
-
-**Decorative Images**
-
-Examples:
-
-- Logos
-
-- Icons
-
-- Background graphics
-
-These are ignored unless policy dictates otherwise.
-
-Image references are preserved in the Markdown with associated metadata.
+EKIE receives the resulting Markdown and preserves any image references
+and associated metadata unchanged. EKIE performs no OCR or image
+processing.
 
 ## 7.13 OCR Strategy
 
-For scanned documents or image-based PDFs:
+OCR is **not** performed by EKIE. Scanned documents and image-based PDFs
+are transcribed by the EKDC converter, which owns OCR engine selection
+(e.g., Tesseract, Azure Document Intelligence, or future providers).
 
-Image
+Source Image (in EKDC)
 
 ↓
 
-OCR Engine
+OCR Engine (EKDC)
 
 ↓
 
@@ -4205,42 +4183,26 @@ Extracted Text
 
 ↓
 
-Normalization
+Markdown (.md)
 
 ↓
 
-Markdown
+EKIE Transformation (normalize + validate)
 
-The OCR provider is implemented as a plugin, allowing different engines
-(e.g., Azure Document Intelligence, Tesseract, or future providers) to
-be used without changing the framework.
+By the time content reaches EKIE it is already text-based Markdown, so
+EKIE requires no OCR dependencies.
 
 ## 7.14 Handling Embedded Objects
 
-Enterprise documents may contain embedded:
+Enterprise documents may contain embedded objects (Excel sheets,
+PowerPoint slides, PDFs, images, Visio diagrams, CAD drawings). Handling
+of embedded objects --- extraction, referencing, or ignoring --- is
+performed by the EKDC converter, which flattens them into the generated
+Markdown according to its policy.
 
-- Excel sheets
-
-- PowerPoint slides
-
-- PDFs
-
-- Images
-
-- Visio diagrams
-
-- CAD drawings
-
-Policy determines whether these objects are:
-
-- Extracted and processed separately.
-
-- Referenced only.
-
-- Ignored.
-
-Each extracted object becomes its own managed asset with lineage back to
-the parent document.
+EKIE ingests the resulting Markdown. Any object that EKDC exports as a
+separate Markdown file is ingested by EKIE as its own document, with
+lineage maintained through the Digital Twin.
 
 ## 7.15 Validation Framework
 
@@ -4275,7 +4237,7 @@ If:
 
 - Transformation policy changes.
 
-- Parser version changes.
+- Normalization or parser version changes.
 
 A new Markdown version is generated.
 
@@ -4322,11 +4284,9 @@ Transformation failures are categorized for targeted recovery.
   -----------------------------------------------------------------------
   **Error Type**      **Example**             **Recovery**
   ------------------- ----------------------- ---------------------------
-  Unsupported Format  Unknown extension       Reject or route to plugin
+  Unsupported Format  Non-Markdown input      Reject; convert via EKDC
 
-  Parser Failure      Corrupt DOCX            Retry / quarantine
-
-  OCR Failure         Low-quality scan        Retry with alternate OCR
+  Parser Failure      Malformed Markdown      Retry / quarantine
 
   Validation Failure  Missing metadata        Quarantine
 
@@ -4342,17 +4302,15 @@ The Transformation Framework should support enterprise-scale throughput.
 
 Design goals include:
 
-- Streaming large files instead of loading entirely into memory.
+- Streaming large Markdown files instead of loading entirely into memory.
 
-- Parallel parser execution.
+- Lightweight, text-only processing (no binary parsing or OCR overhead).
 
-- Parser worker pools.
-
-- Caching parser capabilities.
+- Deduplication by content hash to skip unchanged Markdown.
 
 - Incremental reprocessing when only metadata changes.
 
-- Efficient handling of large PDFs and Office documents.
+- Parallel intake across documents.
 
 ## 7.20 Security Considerations
 
@@ -4410,16 +4368,32 @@ and configurations.
 Determinism is essential for reproducibility, versioning, and efficient
 change detection.
 
+**ADR-014: Document Conversion Offloaded to EKDC**
+
+**Decision**
+
+Conversion of non-Markdown source formats (PDF, DOCX, PPTX, HTML, CSV,
+images, audio, video) is performed by the Enterprise Knowledge Document
+Converter (EKDC) agent. EKIE ingests Markdown only.
+
+**Rationale**
+
+Offloading conversion keeps EKIE lightweight and free of OCR and
+rich-media dependencies, shortens and stabilizes the ingestion pipeline,
+and lets conversion concerns (new formats, OCR engines, media
+transcription) evolve independently in EKDC without changing EKIE.
+
 ## 7.22 Summary
 
 The Document Transformation Framework establishes the canonical
-knowledge representation for the entire EKIE platform. By converting
-diverse enterprise content into standardized, metadata-rich Markdown, it
-decouples downstream frameworks from document-specific complexity and
-ensures deterministic, extensible, and governable processing.
+knowledge representation for the entire EKIE platform. By canonicalizing
+Markdown --- produced upstream by the EKDC converter --- into
+standardized, metadata-rich assets, it decouples downstream frameworks
+from document-specific complexity and ensures deterministic, extensible,
+and governable processing.
 
-This framework is the bridge between raw enterprise content and AI-ready
-knowledge assets.
+This framework is the bridge between converted enterprise content and
+AI-ready knowledge assets.
 
 **Chapter 8**, with Chunking moving to **Chapter 9**.
 This refinement would make the architecture stronger while remaining
@@ -5166,6 +5140,11 @@ Common issues include:
 
 These limitations reduce retrieval quality and increase embedding costs.
 
+For this reason the **Semantic** strategy is EKIE's default. A recursive
+character splitter is still offered as an opt-in strategy (§9.7) for teams that
+prefer it; EKIE applies it within section boundaries so section metadata is
+retained, mitigating the worst of the issues above.
+
 ## 9.3 EKIE Chunking Philosophy
 
 EKIE follows a fundamentally different philosophy.
@@ -5307,10 +5286,18 @@ EKIE supports multiple chunking strategies.
 
   Code-Based                 Source repositories
 
+  Recursive                  Opt-in LangChain character splitter
+
   Custom Plugin              Organization-specific
   -----------------------------------------------------------------------
 
-Policies determine which strategy is applied.
+Policies determine which strategy is applied. The default is Semantic. The
+opt-in **Recursive** strategy uses LangChain's
+``RecursiveCharacterTextSplitter`` (configurable character window and overlap)
+and splits within each section so section identity, title, and breadcrumb
+metadata are preserved. It is selected with
+``EKIE_CHUNKING__DEFAULT_STRATEGY=recursive`` and requires the
+``langchain-text-splitters`` package.
 
 ## 9.8 Semantic Boundary Detection
 
@@ -5928,6 +5915,12 @@ Supported providers may include:
 Adding a new provider requires implementing the provider contract, not
 modifying the framework.
 
+A single **LangChain resource template** (``domain/integrations``) is the
+configuration-driven init point for the LangChain-backed embedding models
+(HuggingFace, Ollama) and the vector store, so providers and tooling do not each
+construct LangChain clients. The deterministic local hash provider stays
+dependency-free and offline.
+
 ## 10.7 Embedding Model Registry
 
 The Control Plane maintains a registry of approved embedding models.
@@ -6056,7 +6049,9 @@ Embedding Request
 Provider
 
 Batching improves throughput and reduces API overhead while respecting
-provider limits.
+provider limits. The batch size is configuration-driven
+(``EKIE_EMBEDDING__BATCH_SIZE``, default 16); raising it increases throughput on
+large document sets without changing the resulting vectors.
 
 ## 10.12 Rate Limiting
 
@@ -6075,7 +6070,9 @@ Examples:
 - Daily quotas
 
 The Rate Limit Manager ensures compliance without affecting upstream
-workflows.
+workflows. EKIE implements this as an optional token-bucket limiter
+(``EKIE_EMBEDDING__MAX_REQUESTS_PER_MINUTE``, default 0 = unlimited) that paces
+embedding requests per minute; the deterministic offline path is unaffected.
 
 ## 10.13 Retry Strategy
 
@@ -6640,6 +6637,12 @@ Batch size depends on:
 - Network latency
 
 - Infrastructure capacity
+
+The batch size is configuration-driven (``EKIE_PUBLISHING__BATCH_SIZE``, default
+64); raising it speeds up ingest. An optional token-bucket rate limiter
+(``EKIE_PUBLISHING__MAX_VECTORS_PER_MINUTE``, default 0 = unlimited) paces vector
+upserts per minute to protect the vector database, without weakening
+post-publish verification.
 
 ## 11.9 Idempotent Publishing
 
@@ -7376,9 +7379,7 @@ Examples include:
   ------------------------------------ ----------------------------------
   Repository Scan                      Detect changes
 
-  Markdown Generation                  Transform document
-
-  OCR Processing                       Image extraction
+  Markdown Generation                  Canonicalize Markdown
 
   Document Intelligence                Semantic analysis
 

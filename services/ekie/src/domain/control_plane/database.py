@@ -40,13 +40,17 @@ class ControlPlaneDatabase:
 
         Safe to call on every startup: each migration checks whether the change
         is already present before issuing DDL. Supports both SQL Server and
-        SQLite dialects.
+        SQLite dialects. Silently skips if the assets table does not yet exist
+        (create_all handles the initial schema for new deployments).
         """
         inspector = inspect(self._engine)
         dialect = self._engine.dialect.name
 
         # M-001: assets.stage_metrics — per-stage processing metrics (JSON text).
-        existing_columns = {c["name"] for c in inspector.get_columns("assets")}
+        try:
+            existing_columns = {c["name"] for c in inspector.get_columns("assets")}
+        except Exception:  # noqa: BLE001 - table absent on first deploy; create_all handles it
+            return
         if "stage_metrics" not in existing_columns:
             if dialect == "mssql":
                 ddl = "ALTER TABLE assets ADD stage_metrics NVARCHAR(MAX) NULL"

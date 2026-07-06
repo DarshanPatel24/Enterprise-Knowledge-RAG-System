@@ -42,11 +42,15 @@ class QdrantVectorProvider(VectorProvider):
         *,
         host: str,
         port: int,
+        url: str = "",
+        api_key: str = "",
         request_timeout_seconds: float = _DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
         """Configure the Qdrant connection without connecting eagerly."""
         self._host = host
         self._port = port
+        self._url = url
+        self._api_key = api_key
         self._request_timeout_seconds = request_timeout_seconds
         self._client_instance: QdrantClient | None = None
 
@@ -117,7 +121,8 @@ class QdrantVectorProvider(VectorProvider):
         record = records[0]
         payload = record.payload or {}
         metadata = VectorMetadata.model_validate(payload["metadata"])
-        values = [float(value) for value in (record.vector or [])]
+        raw_vector = record.vector if isinstance(record.vector, list) else []
+        values = [float(value) for value in raw_vector]  # type: ignore[arg-type]
         return VectorPoint(
             vector_id=str(payload.get("vector_id", vector_id)),
             values=values,
@@ -153,18 +158,21 @@ class QdrantVectorProvider(VectorProvider):
     def _client(self) -> QdrantClient:
         client = self._client_instance
         if client is None:
-            try:
-                from qdrant_client import QdrantClient
-            except ImportError as exc:
-                raise VectorProviderError(
-                    "the 'qdrant-client' package is required for the 'qdrant' vector "
-                    "provider; install it or use the default 'local' provider"
-                ) from exc
-            client = QdrantClient(
-                host=self._host,
-                port=self._port,
-                timeout=int(self._request_timeout_seconds),
+            from domain.integrations.langchain_resources import (
+                LangChainResourceError,
+                build_qdrant_client,
             )
+
+            try:
+                client = build_qdrant_client(
+                    host=self._host,
+                    port=self._port,
+                    url=self._url or None,
+                    api_key=self._api_key or None,
+                    timeout_seconds=self._request_timeout_seconds,
+                )
+            except LangChainResourceError as exc:
+                raise VectorProviderError(str(exc)) from exc
             self._client_instance = client
         return client
 
@@ -184,8 +192,10 @@ class QdrantVectorProvider(VectorProvider):
         try:
             info = client.get_collection(spec.name)
             vectors = info.config.params.vectors
-            existing_size = int(vectors.size)
-            existing_distance = str(getattr(vectors.distance, "value", vectors.distance))
+            existing_size = int(vectors.size)  # type: ignore[union-attr]
+            existing_distance = str(
+                getattr(vectors.distance, "value", vectors.distance)  # type: ignore[union-attr]
+            )
         except Exception as exc:  # qdrant client boundary: normalize to domain error
             raise VectorProviderError(
                 f"qdrant get_collection failed for {spec.name!r}: {exc}"

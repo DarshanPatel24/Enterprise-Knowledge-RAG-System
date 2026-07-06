@@ -45,8 +45,9 @@ EKIE (Enterprise Knowledge Ingestion Engine) is a dedicated enterprise platform 
 
 | Capability | Description |
 |---|---|
-| Repository synchronization | Continuously syncs enterprise repositories (file systems, SharePoint, Git) |
-| Document transformation | Converts any supported format into canonical Markdown |
+| Document conversion (upstream) | The EKDC agent converts any source format (PDF, DOCX, PPTX, HTML, CSV, images, audio, video) to Markdown before ingestion (`services/ekdc`) |
+| Repository synchronization | Continuously syncs the Markdown output folder (and other repositories) into Document Digital Twins |
+| Document transformation | Normalizes incoming Markdown into canonical Markdown assets (front matter, Unicode normalization, validation) |
 | Document intelligence | Extracts metadata, detects language, classifies content, identifies sensitive data |
 | Intelligent chunking | Splits Markdown into semantically meaningful chunks preserving structure |
 | Embedding generation | Generates vector embeddings via local, Ollama, or HuggingFace providers (active: `Qwen/Qwen3-VL-Embedding-2B`) |
@@ -76,8 +77,14 @@ EKIE strictly owns ingestion. The following capabilities belong to downstream en
 ### 2.1 System Topology
 
 ```
-Enterprise Repositories
+Enterprise Repositories (any format: PDF, DOCX, PPTX, HTML, CSV, images, audio, video)
        │
+       ▼
+┌─────────────────────────────────────────────────────────────┐
+│      EKDC — Enterprise Knowledge Document Converter          │
+│      Converts every source file to Markdown (structure kept)  │
+└─────────────────────────────────────────────────────────────┘
+       │  Markdown (.md) files
        ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    EKIE Platform                             │
@@ -111,13 +118,14 @@ Enterprise Repositories
 ### 2.2 Data Flow
 
 ```
-Source Document
-  → Repository Sync (Digital Twin created/updated)
-    → Transformation (raw bytes → canonical Markdown)
-      → Intelligence (metadata extraction, classification, quality scoring)
-        → Chunking (Markdown → semantic chunks with breadcrumb context)
-          → Embedding (chunks → vector embeddings)
-            → Publishing (embeddings → Qdrant with verified metadata)
+Source Document (any format)
+  → EKDC Conversion (any format → Markdown, folder structure preserved)
+    → Repository Sync of Markdown (Digital Twin created/updated)
+      → Transformation (Markdown intake → canonical Markdown asset)
+        → Intelligence (metadata extraction, classification, quality scoring)
+          → Chunking (Markdown → semantic chunks with breadcrumb context)
+            → Embedding (chunks → vector embeddings)
+              → Publishing (embeddings → Qdrant with verified metadata)
 ```
 
 ### 2.3 Control Plane Database Schema
@@ -152,7 +160,7 @@ The Control Plane (Microsoft SQL Server) is the single source of truth for all i
 |---|---|---|
 | **Ollama** | Latest | Alternative local LLM and embedding model server |
 | **Node.js** | 18+ | Web UI (separate `apps/web-ui/` project) |
-| **Tesseract OCR** | Latest | Required for image OCR in rich-media ingestion |
+| **EKDC agent** | Latest | Converts non-Markdown source files to Markdown for EKIE to ingest (`services/ekdc`) |
 
 ### 3.3 Hardware Recommendations
 
@@ -192,7 +200,6 @@ Enterprise-Knowledge-RAG-System/
 │       │   ├── cleanup_dev_artifacts.py # Pre-production cleanup (ekie-cleanup)
 │       │   ├── production_sync.py    # Continuous folder-polling ingestion worker
 │       │   ├── acceptance_report.py  # One-command acceptance evidence report
-│       │   ├── benchmark_rich_media.py # Rich-media extraction quality benchmark
 │       │   ├── validate_qdrant_delete_path.py # Live Qdrant delete-path validation
 │       │   ├── demo_sync.py
 │       │   ├── demo_transform.py
@@ -265,7 +272,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # EKIE service with all production extras
-pip install -e "services/ekie[dev,mssql,storage,richmedia]"
+pip install -e "services/ekie[dev,mssql,storage]"
 
 # Required for Qwen/Qwen3-VL-Embedding-2B (vision-language embedding model)
 pip install -U "sentence-transformers[image]" torchvision
@@ -277,7 +284,9 @@ pip install langchain-huggingface torch transformers accelerate
 pip install -e packages/contracts
 ```
 
-If image OCR is required, install the Tesseract binary on the host and ensure it is available on PATH.
+EKIE ingests Markdown only. Converting other formats (PDF, DOCX, PPTX, HTML, CSV,
+images, audio, video) to Markdown is performed upstream by the EKDC agent
+(`services/ekdc`); no OCR or rich-media libraries are installed for EKIE.
 
 ### 5.4 Configure Environment Variables
 
@@ -430,6 +439,8 @@ EkieSettings
 |---|---|---|
 | `EKIE_QDRANT__HOST` | `localhost` | Qdrant hostname |
 | `EKIE_QDRANT__PORT` | `6333` | Qdrant gRPC port |
+| `EKIE_QDRANT__URL` | *(empty)* | Optional full Qdrant URL (used by the LangChain index template); blank = use HOST/PORT |
+| `EKIE_QDRANT__API_KEY` | *(empty)* | Optional Qdrant API key for the LangChain index template |
 | `EKIE_QDRANT__REQUEST_TIMEOUT_SECONDS` | `30.0` | Request timeout |
 
 #### Redis (Cache)
@@ -473,8 +484,6 @@ EkieSettings
 | `EKIE_TRANSFORMATION__COLLAPSE_BLANK_LINES` | `true` | Collapse consecutive blank lines |
 | `EKIE_TRANSFORMATION__INCLUDE_FRONT_MATTER` | `true` | Include YAML front matter |
 | `EKIE_TRANSFORMATION__DEFAULT_LANGUAGE` | `en` | Default document language |
-| `EKIE_TRANSFORMATION__IMAGE_HANDLING` | `reference` | `reference`, `ignore_decorative`, or `ocr` |
-| `EKIE_TRANSFORMATION__OCR_ENABLED` | `false` | Enable OCR processing |
 
 #### Document Intelligence
 
@@ -498,7 +507,7 @@ If an unsupported provider value is configured, EKIE fails configuration validat
 
 | Variable | Default | Description |
 |---|---|---|
-| `EKIE_CHUNKING__DEFAULT_STRATEGY` | `semantic` | Strategy: `semantic`, `section_based`, `heading_based`, `paragraph_based`, `token_based`, `table_based`, `code_based` |
+| `EKIE_CHUNKING__DEFAULT_STRATEGY` | `semantic` | Strategy: `semantic`, `section_based`, `heading_based`, `paragraph_based`, `token_based`, `table_based`, `code_based`, `recursive` |
 | `EKIE_CHUNKING__TARGET_TOKEN_BUDGET` | `512` | Target chunk size in tokens |
 | `EKIE_CHUNKING__MAX_TOKEN_BUDGET` | `1024` | Maximum chunk size in tokens |
 | `EKIE_CHUNKING__MIN_CHUNK_TOKENS` | `8` | Minimum chunk size (drop below this) |
@@ -506,6 +515,10 @@ If an unsupported provider value is configured, EKIE fails configuration validat
 | `EKIE_CHUNKING__PRESERVE_CODE` | `true` | Keep code blocks as atomic chunks |
 | `EKIE_CHUNKING__RESPECT_SECTION_BOUNDARIES` | `true` | Do not split across section headings |
 | `EKIE_CHUNKING__INCLUDE_BREADCRUMB_CONTEXT` | `true` | Prepend heading hierarchy to chunks |
+| `EKIE_CHUNKING__RECURSIVE_CHUNK_SIZE` | `1000` | Character window for the `recursive` strategy (opt-in) |
+| `EKIE_CHUNKING__RECURSIVE_CHUNK_OVERLAP` | `200` | Character overlap for the `recursive` strategy (must be < size) |
+
+> **Recursive chunking (opt-in).** Set `EKIE_CHUNKING__DEFAULT_STRATEGY=recursive` to use LangChain's `RecursiveCharacterTextSplitter` (character window + overlap) instead of the structure-aware semantic splitter. It splits within each section, preserving section id/title/breadcrumb metadata. Requires `pip install langchain-text-splitters`. Semantic remains the default.
 
 #### Embedding Framework
 
@@ -516,9 +529,10 @@ If an unsupported provider value is configured, EKIE fails configuration validat
 | `EKIE_EMBEDDING__DIMENSION` | `1536` | Output dimension of Qwen/Qwen3-VL-Embedding-2B |
 | `EKIE_EMBEDDING__DISTANCE_METRIC` | `cosine` | Allowed values: `cosine`, `dot_product`, or `euclidean` |
 | `EKIE_EMBEDDING__MAX_INPUT_TOKENS` | `8192` | Maximum input token limit |
-| `EKIE_EMBEDDING__BATCH_SIZE` | `16` | Batch size for embedding requests |
+| `EKIE_EMBEDDING__BATCH_SIZE` | `16` | Chunks per embedding request. Raise (e.g. 32-64) for higher throughput on large document sets; it does not change the vectors |
 | `EKIE_EMBEDDING__NORMALIZE_VECTORS` | `true` | L2-normalize output vectors |
 | `EKIE_EMBEDDING__MAX_RETRIES` | `3` | Retry count on provider failures |
+| `EKIE_EMBEDDING__MAX_REQUESTS_PER_MINUTE` | `0` | Optional throughput cap on embedding requests per minute (0 = unlimited) |
 | `EKIE_EMBEDDING__OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API endpoint |
 
 > **Note on using HuggingFace locally:** The active embedding model is `Qwen/Qwen3-VL-Embedding-2B` (dim=1536). Required packages: `pip install -U "sentence-transformers[image]" torchvision langchain-huggingface`. Model weights (~4 GB) are cached in `HF_HOME=./storage/hf`. To switch models, update `EKIE_EMBEDDING__DEFAULT_MODEL` and `EKIE_EMBEDDING__DIMENSION` in `.env` then restart.
@@ -532,8 +546,9 @@ The embedding dimension must be a plain integer (for example `768`), not a comma
 | `EKIE_PUBLISHING__PROVIDER` | `local` | `local` (in-memory) or `qdrant` |
 | `EKIE_PUBLISHING__DEFAULT_COLLECTION` | `enterprise_documents` | Target collection name |
 | `EKIE_PUBLISHING__COLLECTION_STRATEGY` | `static` | `static` or `model_scoped` |
-| `EKIE_PUBLISHING__BATCH_SIZE` | `64` | Batch size for upserts |
+| `EKIE_PUBLISHING__BATCH_SIZE` | `64` | Vectors per upsert to the vector DB. Raise (e.g. 128-256) for faster ingest |
 | `EKIE_PUBLISHING__MAX_RETRIES` | `3` | Retry count on publish failures |
+| `EKIE_PUBLISHING__MAX_VECTORS_PER_MINUTE` | `0` | Optional throughput cap on vectors upserted per minute (0 = unlimited) |
 | `EKIE_PUBLISHING__CREATE_MISSING_COLLECTIONS` | `true` | Auto-create collections |
 | `EKIE_PUBLISHING__VERIFY_AFTER_PUBLISH` | `true` | Verify vectors after publish |
 
@@ -790,7 +805,7 @@ Returns readiness status. Response:
 POST /v1/documents/{document_id}/ingest
 ```
 
-Run the full ingestion workflow for a synced document. The raw document bytes are sent in the request body.
+Run the full ingestion workflow for a synced document. The document bytes are sent in the request body. EKIE expects Markdown (or plain text) — non-Markdown source files are converted to Markdown upstream by the EKDC agent before ingestion.
 
 **Parameters:**
 - `document_id` (path, required): The document ID from the Control Plane
@@ -973,31 +988,27 @@ The ingestion pipeline consists of five sequential stages, orchestrated by the W
 **Module:** `domain/transformation/`
 **Handbook Chapter:** 7
 
-Converts raw document bytes into canonical Markdown.
+Converts incoming Markdown into the canonical Markdown asset. Conversion of
+non-Markdown formats is owned by the upstream EKDC agent, so this stage does not
+parse binary formats.
 
 **How it works:**
-1. A format-specific parser is selected from the `ParserRegistry` based on MIME type or file extension.
-2. The parser extracts text content and metadata from the raw bytes.
-3. The content is normalized (Unicode normalization, blank line collapsing).
-4. A `MarkdownDocument` is produced with YAML front matter containing source metadata.
-5. The document passes `MarkdownValidator` checks.
-6. The Markdown and its content hash are stored as an immutable asset in the Control Plane.
+1. The Markdown (or plain-text) bytes are decoded and read by the `ParserRegistry`.
+2. The content is normalized (Unicode normalization, blank line collapsing).
+3. A `MarkdownDocument` is produced with YAML front matter containing source metadata.
+4. The document passes `MarkdownValidator` checks.
+5. The Markdown and its content hash are stored as an immutable asset in the Control Plane.
 
 **Supported Formats:**
 
 | Format | Parser | Extensions |
 |---|---|---|
 | Markdown | `MarkdownParser` | `.md`, `.markdown` |
-| Plain text | `PlainTextParser` | `.txt`, `.text` |
-| CSV | `CsvParser` | `.csv` |
-| HTML | `HtmlParser` | `.html`, `.htm` |
-| Source code | `SourceCodeParser` | `.py`, `.js`, `.ts`, `.java`, etc. |
-| Rich media | `RichMediaParser` | `.pdf`, `.doc`, `.docx`, `.ppt`, `.pptx`, `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.tif`, `.tiff`, `.webp` |
+| Plain text | `PlainTextParser` | `.txt`, `.text`, `.log`, `.rtf` |
 
-**Rich-media extraction notes:**
-1. EKIE attempts extraction in this order: `unstructured` auto-partitioning, format-specific libraries, then OCR for images.
-2. OCR requires `pytesseract`, `Pillow`, and host-level Tesseract installation.
-3. If optional extraction dependencies are not installed, rich-media parsing can fail with a transformation dead-letter.
+> All other formats (PDF, DOCX, PPTX, HTML, CSV, images, audio, video) are
+> converted to Markdown upstream by the EKDC agent (`services/ekdc`) before they
+> reach EKIE. EKIE no longer bundles OCR or rich-media extraction libraries.
 
 **Configuration:** See [Section 6.3 — Document Transformation](#document-transformation).
 
@@ -1045,6 +1056,7 @@ Splits the canonical Markdown into semantically meaningful chunks optimized for 
 | `token_based` | Fixed token-window with overlap |
 | `table_based` | Preserves tables as atomic chunks |
 | `code_based` | Preserves code blocks as atomic chunks |
+| `recursive` | **(Opt-in)** LangChain `RecursiveCharacterTextSplitter`: character window + overlap, split within each section (preserves section metadata). Requires `langchain-text-splitters` |
 
 **Features:**
 - **Breadcrumb context**: Each chunk is prepended with its heading hierarchy path (e.g., `# Document > ## Section > ### Subsection`), providing retrieval context.
@@ -1072,6 +1084,7 @@ Generates vector embeddings from chunk text.
 - **Batch processing**: Chunks are embedded in configurable batches.
 - **Cost estimation**: Tracks estimated token costs per embedding operation.
 - **Retry with backoff**: Provider failures trigger exponential backoff retries.
+- **Optional rate limiting**: `EKIE_EMBEDDING__MAX_REQUESTS_PER_MINUTE` paces embedding requests per minute (0 = unlimited) to respect a throttled provider.
 - **Vector validation**: Verifies dimensionality, normalization, and numeric integrity.
 
 ### 10.5 Stage 5 — Publishing
@@ -1107,6 +1120,7 @@ Every published vector must carry these metadata fields (enforced by the engine)
 - **Collection resolution**: Maps documents to collections via configurable policy.
 - **Auto-creation**: Creates missing Qdrant collections with correct vector dimensions and distance metric.
 - **Batch upsert**: Vectors are published in configurable batches.
+- **Optional rate limiting**: `EKIE_PUBLISHING__MAX_VECTORS_PER_MINUTE` paces vector upserts per minute (0 = unlimited) to protect the vector DB.
 - **Post-publish verification**: Verifies that all vectors are present and metadata is complete after publishing.
 - **Idempotent**: Re-publishing the same content produces the same vector IDs.
 
@@ -1192,6 +1206,34 @@ from composition import build_workflow_orchestrator
 orchestrator = build_workflow_orchestrator(settings, db, storage)
 result = orchestrator.run(document_id, tenant_id, source_bytes=data, mime_type="text/markdown")
 ```
+
+### 11.5 LangChain Resource Template (`domain/integrations/`)
+
+A single, configuration-driven factory that initializes the embedding model and
+the vector store from `.env`, so scripts and tools do not each construct
+LangChain clients. It mirrors a standard RAG index (embedding model + vector
+store) using LangChain building blocks.
+
+**Factory functions** (`domain/integrations/langchain_resources.py`):
+- `build_embeddings(provider, model, ...)`: returns a LangChain `Embeddings` for `huggingface` (local, offline-cached to `HF_HOME`) or `ollama`. The deterministic `local` provider is not a LangChain model and is rejected.
+- `build_qdrant_vector_store(embeddings, *, collection, ...)`: returns a LangChain `QdrantVectorStore`. Connection precedence is `location` (e.g. `":memory:"`) > `url`/`api_key` > `host`/`port`; optionally creates the collection.
+- `LangChainIndex`: bundles the embedding model with its vector store.
+
+**Composition entry point:**
+```python
+from composition import build_langchain_index
+from config.settings import EkieSettings
+
+# Reads EKIE_EMBEDDING__* and EKIE_QDRANT__* from .env
+index = build_langchain_index(EkieSettings(), create_collection=True)
+index.vector_store.add_documents(docs)            # batched ingest
+hits = index.vector_store.similarity_search(query)  # retrieval-ready
+```
+
+Requires `pip install langchain-qdrant` (plus `langchain-huggingface` or
+`langchain-ollama`). This is a convenience/index seam: the production publishing
+engine (Stage 5) keeps its own verified Qdrant client, metadata gate, and
+post-publish verification and is unaffected by this template.
 
 ---
 
@@ -1290,7 +1332,7 @@ manifest = PluginManifest(
     name="my-custom-parser",
     version=SemVer(1, 0, 0),
     plugin_type=PluginType.PARSER,
-    description="Custom PDF parser with OCR",
+    description="Custom Markdown enrichment parser",
     author="Engineering Team",
     min_ekie_version=SemVer(1, 0, 0),
     max_ekie_version=SemVer(2, 0, 0),
@@ -1693,16 +1735,11 @@ docker compose -f docker-compose.local.yml ps
 
 4. Install Python dependencies (run once per machine)
 ```powershell
-pip install -e "services/ekie[dev,mssql,storage,richmedia]"
+pip install -e "services/ekie[dev,mssql,storage]"
 pip install -U "sentence-transformers[image]" torchvision langchain-huggingface torch transformers accelerate "langfuse>=2.0,<3.0"
 ```
 
-5. Install Tesseract OCR (run once per machine, for scanned PDF support)
-   - Download from https://github.com/UB-Mannheim/tesseract/wiki and install.
-   - Add `C:\Program Files\Tesseract-OCR` to system PATH.
-   - Verify: `tesseract --version`
-
-6. Download HuggingFace models (run once; ~19 GB total)
+5. Download HuggingFace models (run once; ~19 GB total)
 ```powershell
 python services/ekie/scripts/setup.py
 # Or manually:
@@ -1712,31 +1749,29 @@ Push-Location services/ekie
 Pop-Location
 ```
 
-7. Set offline flags in `.env` after download completes
+6. Set offline flags in `.env` after download completes
 ```dotenv
 HF_HUB_OFFLINE=1
 TRANSFORMERS_OFFLINE=1
 ```
 
-8. Start EKIE API (Terminal A)
+7. Start EKIE API (Terminal A)
 ```powershell
-$env:PATH = "C:\Program Files\Tesseract-OCR;$env:PATH"
 python services/ekie/scripts/start_api.py
 ```
 
-9. Start ingestion worker (Terminal B)
+8. Start ingestion worker (Terminal B)
 ```powershell
-$env:PATH = "C:\Program Files\Tesseract-OCR;$env:PATH"
 python services/ekie/scripts/start_worker.py
 ```
 
-10. Run API health checks
+9. Run API health checks
 ```powershell
 Invoke-RestMethod http://localhost:8001/health/live
 Invoke-RestMethod http://localhost:8001/health/ready
 ```
 
-11. Get repository ID and trigger first ingest
+10. Get repository ID and trigger first ingest
 ```powershell
 $headers = @{ 'X-Tenant-ID' = 'tenant-default'; 'Content-Type' = 'application/json' }
 Push-Location services/ekie; ..\..\.venv\Scripts\python.exe -c "import sys; sys.path.insert(0,'src'); from config.settings import get_settings; from domain.control_plane import ControlPlaneDatabase, Repository; db = ControlPlaneDatabase(get_settings().control_plane); [print(r.id, r.name) for r in __import__('sqlalchemy.orm', fromlist=['Session']).Session; db.session().__enter__().query(Repository).filter_by(tenant_id='tenant-default').all()]"
@@ -1744,7 +1779,7 @@ Push-Location services/ekie; ..\..\.venv\Scripts\python.exe -c "import sys; sys.
 Invoke-RestMethod -Method Post -Uri 'http://localhost:8001/v1/repositories/<repo-id>/ingest' -Headers $headers -Body '{"sync_before_ingest":true,"max_documents":5}' | ConvertTo-Json -Depth 5
 ```
 
-12. Verify data in all monitoring layers
+11. Verify data in all monitoring layers
    - Qdrant: http://localhost:6333/dashboard
    - MinIO: http://localhost:9006 (minioadmin / minioadmin)
    - Langfuse: http://localhost:3000 → Traces
@@ -2238,51 +2273,41 @@ Default report output directory:
 1. `services/ekie/storage`
 2. Filename format: `acceptance_report_YYYYMMDD_HHMMSS.json`
 
-### 21.11 Rich-Media Dependency Operations Checklist
+### 21.11 Document Conversion (EKDC) Operations Checklist
 
-Use this checklist before benchmarking or ingesting PDF/DOCX/PPTX/image-heavy repositories.
+EKIE ingests Markdown only. Converting source files (PDF, DOCX, PPTX, HTML, CSV,
+images, audio, video) to Markdown is owned by the EKDC agent (`services/ekdc`),
+which runs as a separate process and writes `.md` files, preserving the input
+folder structure. Use this checklist to prepare the Markdown that EKIE ingests.
 
-Install steps:
-1. Install EKIE rich-media extras:
+Setup steps:
+1. Install EKDC dependencies (in the EKDC environment, not EKIE):
 ```powershell
-pip install -e "services/ekie[richmedia]"
+pip install -r services/ekdc/requirements.txt
 ```
-2. Install Tesseract OCR binary and verify it is on PATH:
+2. Configure the EKDC input/output directories (via `services/ekdc/.env`):
+```dotenv
+INPUT_DIRECTORY=D:\Enterprise\SourceDocuments
+OUTPUT_DIRECTORY=D:\Enterprise\Markdown
+```
+3. Run the EKDC agent to convert existing files and watch for changes:
 ```powershell
-tesseract --version
+python services/ekdc/agent.py
 ```
 
-Verification matrix:
-1. Python package availability:
-```powershell
-Push-Location services/ekie
-@'
-import importlib
-
-modules = ["unstructured", "pypdf", "docx", "pptx", "PIL", "pytesseract"]
-for m in modules:
-  try:
-    importlib.import_module(m)
-    print(f"{m}: OK")
-  except Exception as exc:
-    print(f"{m}: MISSING ({exc.__class__.__name__})")
-'@ | ..\..\.venv\Scripts\python.exe
-Pop-Location
+Handoff to EKIE:
+1. Point EKIE at the EKDC output folder so it ingests the generated Markdown:
+```dotenv
+EKIE_SYNC__TARGET_DIRECTORY=D:\Enterprise\Markdown
+EKIE_SYNC__ALLOWED_EXTENSIONS=md
 ```
-2. Benchmark local repository coverage:
-```powershell
-Push-Location services/ekie
-..\..\.venv\Scripts\python.exe scripts/benchmark_rich_media.py --target-dir "D:\Octave\AI training\test"
-Pop-Location
-```
+2. Start the EKIE worker; it syncs and ingests the `.md` files (see Section 8).
 
 Troubleshooting:
-1. If benchmark reports `success_rate=0.0`, install missing optional dependencies and re-run.
-2. If image OCR fails with dependency present, verify `tesseract --version` returns successfully in the same terminal session.
-3. If a specific file still fails extraction, treat it as parser-quality gap and queue a format-specific parser enhancement.
-
-Latest verification evidence (2026-07-02):
-1. `services/ekie/storage/rich_media_benchmark_20260702_151542.json` (success rate `1.0` on current sample set).
+1. If a document is missing from EKIE, confirm EKDC produced the corresponding
+   `.md` file in `OUTPUT_DIRECTORY` (EKDC logs to `ekdc_agent.log`).
+2. EKIE no longer bundles OCR or rich-media libraries; extraction quality issues
+   are addressed in EKDC's converter, not in EKIE.
 
 ---
 

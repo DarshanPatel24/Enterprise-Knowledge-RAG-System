@@ -21,6 +21,7 @@ class EmbeddingSettingsLike(Protocol):
     normalize_vectors: bool
     cost_per_1k_tokens: float
     max_retries: int
+    max_requests_per_minute: int
 
 
 class EmbeddingPolicy(BaseModel):
@@ -37,6 +38,7 @@ class EmbeddingPolicy(BaseModel):
     normalize_vectors: bool = True
     cost_per_1k_tokens: float = Field(default=0.0, ge=0.0)
     max_retries: int = Field(default=3, ge=0)
+    max_requests_per_minute: int = Field(default=0, ge=0)
 
     @classmethod
     def from_settings(cls, settings: EmbeddingSettingsLike) -> EmbeddingPolicy:
@@ -51,4 +53,5 @@ class EmbeddingPolicy(BaseModel):
             normalize_vectors=settings.normalize_vectors,
             cost_per_1k_tokens=settings.cost_per_1k_tokens,
             max_retries=settings.max_retries,
+            max_requests_per_minute=settings.max_requests_per_minute,
         )

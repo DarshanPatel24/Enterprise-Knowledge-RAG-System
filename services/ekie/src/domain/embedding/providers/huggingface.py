@@ -1,8 +1,9 @@
 """HuggingFace embedding provider for generating vector representations.
 
-Uses ``langchain-huggingface`` to load and execute sentence-transformer models
-locally. The dependency is lazy-loaded so it does not bloat the offline base image
-if another provider (like Ollama or LocalHash) is used instead.
+Loads and executes sentence-transformer models locally through the shared
+LangChain resource template. The dependency is lazy-loaded (inside the template)
+so it does not bloat the offline base image when another provider (Ollama or
+LocalHash) is used instead.
 """
 
 from __future__ import annotations
@@ -10,6 +11,10 @@ from __future__ import annotations
 from typing import Any
 
 from domain.embedding.providers.base import EmbeddingProvider, EmbeddingProviderError
+from domain.integrations.langchain_resources import (
+    LangChainResourceError,
+    build_embeddings,
+)
 
 
 class HuggingFaceEmbeddingProvider(EmbeddingProvider):
@@ -17,16 +22,12 @@ class HuggingFaceEmbeddingProvider(EmbeddingProvider):
 
     name = "huggingface"
 
-    def __init__(self, model_name: str, **kwargs: Any) -> None:
+    def __init__(self, model_name: str, **kwargs: Any) -> None:  # noqa: ANN401 - passthrough model kwargs
         try:
-            from langchain_huggingface import HuggingFaceEmbeddings
-        except ImportError as exc:
-            raise EmbeddingProviderError(
-                "langchain-huggingface is not installed; install it to use HuggingFace embeddings"
-            ) from exc
-
+            self._embeddings = build_embeddings("huggingface", model_name, **kwargs)
+        except LangChainResourceError as exc:
+            raise EmbeddingProviderError(str(exc)) from exc
         self._model_name = model_name
-        self._embeddings = HuggingFaceEmbeddings(model_name=model_name, **kwargs)
 
     def embed(
         self, texts: list[str], *, dimension: int, normalize: bool
@@ -34,13 +35,12 @@ class HuggingFaceEmbeddingProvider(EmbeddingProvider):
         """Generate embeddings for a batch of texts."""
         try:
             vectors = self._embeddings.embed_documents(texts)
-            
-            # Sentence transformers encode_kwargs handles normalize, but if it wasn't
-            # applied, the engine validation will check it.
-            # Truncating dimensions if requested by the engine model spec.
+
+            # Truncate dimensions if the engine's model spec requests fewer than
+            # the model produces; engine-side validation checks normalization.
             if dimension is not None:
                 vectors = [v[:dimension] for v in vectors]
-                
+
             return vectors
         except Exception as exc:
             raise EmbeddingProviderError(

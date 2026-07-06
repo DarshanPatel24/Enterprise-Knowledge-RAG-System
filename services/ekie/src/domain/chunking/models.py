@@ -22,6 +22,7 @@ class ChunkStrategy(StrEnum):
     TOKEN_BASED = "token_based"  # noqa: S105 - strategy label, not a credential
     TABLE_BASED = "table_based"
     CODE_BASED = "code_based"
+    RECURSIVE = "recursive"
 
 
 class ChunkMetadata(BaseModel):

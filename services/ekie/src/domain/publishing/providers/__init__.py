@@ -38,6 +38,8 @@ class QdrantConnectionLike(Protocol):
 
     host: str
     port: int
+    url: str
+    api_key: str
     request_timeout_seconds: float
 
 
@@ -63,6 +65,8 @@ def provider_registry_from_settings(
             QdrantVectorProvider(
                 host=qdrant.host,
                 port=qdrant.port,
+                url=qdrant.url,
+                api_key=qdrant.api_key,
                 request_timeout_seconds=qdrant.request_timeout_seconds,
             )
         )

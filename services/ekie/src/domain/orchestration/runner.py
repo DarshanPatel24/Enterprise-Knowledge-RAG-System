@@ -18,6 +18,7 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from enum import StrEnum
+from typing import Any
 
 from domain.orchestration.checkpointer import Checkpointer
 from domain.orchestration.errors import OrchestrationError, OrchestrationErrorType
@@ -175,8 +176,11 @@ class LangGraphWorkflowRunner(WorkflowRunner):
     ) -> None:
         self._sleep = sleep
         # Accept either a Langfuse client (new direct approach) or legacy
-        # callback list for backward compatibility with tests.
-        self._langfuse_client = tracer_callbacks if not isinstance(tracer_callbacks, list) else None
+        # callback list for backward compatibility with tests. The client is an
+        # opaque third-party SDK object, so it is typed as ``Any``.
+        self._langfuse_client: Any = (
+            tracer_callbacks if not isinstance(tracer_callbacks, list) else None
+        )
 
     def run(
         self,
@@ -199,7 +203,7 @@ class LangGraphWorkflowRunner(WorkflowRunner):
             ) from exc
 
         retry = policy.retry_policy()
-        builder: StateGraph = StateGraph(WorkflowState)
+        builder = StateGraph(WorkflowState)
 
         def make_node(stage: Stage) -> Callable[[WorkflowState], WorkflowState]:
             def node(node_state: WorkflowState) -> WorkflowState:
@@ -253,7 +257,7 @@ class LangGraphWorkflowRunner(WorkflowRunner):
 
         previous = START
         for stage in stages:
-            builder.add_node(stage.name.value, make_node(stage))
+            builder.add_node(stage.name.value, make_node(stage))  # type: ignore[call-overload]
             builder.add_edge(previous, stage.name.value)
             previous = stage.name.value
         builder.add_edge(previous, END)
@@ -285,14 +289,19 @@ class LangGraphWorkflowRunner(WorkflowRunner):
             except Exception:  # noqa: BLE001 - tracing must never break ingestion
                 _lf_span = None
 
-        result = app.invoke(state.marked(WorkflowStatus.RUNNING), config=config)
+        result = app.invoke(state.marked(WorkflowStatus.RUNNING), config=config)  # type: ignore[call-overload]
         final = WorkflowState.model_validate(result)
 
         if _lf_span is not None:
             try:
-                _lf_span.end(output={"status": final.status.value if hasattr(final.status, 'value') else str(final.status)})
+                _status = (
+                    final.status.value
+                    if hasattr(final.status, "value")
+                    else str(final.status)
+                )
+                _lf_span.end(output={"status": _status})
                 self._langfuse_client.flush()
-            except Exception:  # noqa: BLE001 - tracing must never break ingestion
+            except Exception:  # noqa: BLE001, S110 - tracing must never break ingestion
                 pass
         if final.status != WorkflowStatus.DEAD_LETTER:
             final = final.marked(WorkflowStatus.COMPLETED)
