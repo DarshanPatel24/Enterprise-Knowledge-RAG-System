@@ -58,6 +58,11 @@ mypy_path = "src:../../packages/contracts/src"
 # (langchain_*, langgraph.*, redis) as those seams come online.
 [[tool.mypy.overrides]]
 module = [
+  "langchain_huggingface",
+  "langchain_ollama",
+  "langchain_core.output_parsers",
+  "langgraph.graph",
+  "langgraph.checkpoint.memory",
   "langfuse.callback",
 ]
 ignore_missing_imports = true

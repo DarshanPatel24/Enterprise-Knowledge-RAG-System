@@ -174,6 +174,8 @@ Assemble intentional context before generation and construct governed prompts wi
 ## EKCP-S3: Model Management And LLM Gateway
 Handbook mapping: Chapter 14 (Enterprise Model Management and LLM Gateway), plus chat model and LCEL standards in [../../.github/instructions/langchain.instructions.md](../../.github/instructions/langchain.instructions.md).
 
+> Status: Approved (80 pytest green, ruff + mypy --strict clean on 66 source files). Implemented in `services/ekcp/src/domain/{gateway,integrations}`: a model-agnostic `LLMGateway` is the single boundary for all model calls, with a `build_chat_model` factory (deterministic offline default, HuggingFace/Ollama config-selected via LCEL), a model registry and deterministic selector, automatic fallback, response normalization, streaming, and mandatory token and cost governance. Surfaced through `POST /model/invoke` and the gateway-backed SSE `POST /chat/stream`.
+
 ### Sprint Objective
 Deliver a model-agnostic LLM gateway with a `build_chat_model(settings)` factory (Ollama default), LCEL response generation, streaming, and token governance.
 
@@ -189,6 +191,11 @@ Deliver a model-agnostic LLM gateway with a `build_chat_model(settings)` factory
 1. EKCP-S3-1 Model gateway abstraction and provider adapter.
 2. EKCP-S3-2 Response generation and response types.
 3. EKCP-S3-3 Token usage and cost governance.
+
+### Delivery Evidence
+1. EKCP-S3-1 Approved: `domain/integrations/langchain_resources.py` exposes the provider-abstracted `build_chat_model` factory (HuggingFace or Ollama, lazily imported), and `domain/gateway/` provides the `ChatModelProvider` ABC with a `DeterministicEchoProvider` (local-first offline default) and a lazy `LangChainChatProvider`, plus a `ModelRegistry` (lifecycle-gated so only approved models serve) and a deterministic `ModelSelector`. No platform component calls a provider directly; all invocations pass through the gateway.
+2. EKCP-S3-2 Approved: the `LLMGateway` normalizes every response into the Model Invocation Contract output, generates via LCEL (prompt | model | parser) with configurable response types, supports token streaming, and applies automatic fallback across the candidate chain; the SSE `POST /chat/stream` endpoint streams gateway tokens and a terminal done frame with usage.
+3. EKCP-S3-3 Approved: `domain/gateway/governance.py` enforces mandatory token accounting on every invocation, per-request token and cost ceilings (token-limit and budget guards), and a per-tenant budget ledger; the normalized response carries token usage and a cost estimate.
 
 ### Deliverables
 1. Model gateway contract.
@@ -207,6 +214,8 @@ Deliver a model-agnostic LLM gateway with a `build_chat_model(settings)` factory
 ## EKCP-S4: Memory Framework
 Handbook mapping: Chapter 8 (Memory Framework).
 
+> Status: Approved (96 pytest green, ruff + mypy --strict clean on 78 source files). Implemented in `services/ekcp/src/domain/memory`: a tiered `MemoryFramework` (working, session, conversation, workspace, user, organizational) with confidence-by-validation-method, deterministic multi-dimensional retrieval that feeds the S2 context assembler, summary and abstract consolidation, per-scope retention with expiry, and right-to-be-forgotten purge. Surfaced through `POST /memory/{store,retrieve,consolidate,purge}` and the `include_memory` option on `POST /context/build`.
+
 ### Sprint Objective
 Deliver governed conversation and long-term memory with retention controls.
 
@@ -223,6 +232,11 @@ Deliver governed conversation and long-term memory with retention controls.
 2. EKCP-S4-2 Memory retrieval and compression.
 3. EKCP-S4-3 Memory retention and governance policy.
 
+### Delivery Evidence
+1. EKCP-S4-1 Approved: `domain/memory/models.py` defines the immutable, scoped `MemoryItem` across the six memory tiers with type, topic, lineage, and a confidence derived from the validation method (`confidence.py`), persisted through a `MemoryStore` (in-memory offline default); active conversation memory and long-term memory are distinguished by scope and consolidation.
+2. EKCP-S4-2 Approved: `domain/memory/retrieval.py` ranks memories by a weighted blend of relevance, recency, importance, frequency, and trust and exposes them as `ContextItem` objects consumed by the S2 assembler (`include_memory`), and `compression.py` consolidates a conversation's memories into a long-term summary or abstract while archiving the sources.
+3. EKCP-S4-3 Approved: `domain/memory/retention.py` applies per-scope TTLs, expires aged memories, and hard-deletes memories for a user or conversation (right-to-be-forgotten), while `routing.py` reuses the S1 intent scope to route personal queries to memory and organizational queries to enterprise knowledge (EKRE).
+
 ### Deliverables
 1. Memory model and lifecycle artifact.
 2. Memory retrieval policy.
@@ -237,6 +251,8 @@ Deliver governed conversation and long-term memory with retention controls.
 
 ## EKCP-S5: Agent Runtime, Tools And Planning
 Handbook mapping: Chapter 9 (Agent Runtime), Chapter 10 (Tool Execution), Chapter 11 (Planning and Orchestration), plus LangGraph standards in [../../.github/instructions/langchain.instructions.md](../../.github/instructions/langchain.instructions.md).
+
+> Status: Approved (120 pytest green, ruff + mypy --strict clean on 99 source files). Implemented in `services/ekcp/src/domain/{tools,agents,planning}`: permission-gated tool execution (tools never called directly), capability-based agent selection and a bounded agent runtime (Sequential offline default plus a lazy LangGraph runner with a checkpointer and a conditional fallback edge), a rule-based planning engine producing an ordered task DAG with human approval gates, and a coordinator that halts at approval. Surfaced through `POST /agent/execute` and `POST /agent/plan`.
 
 ### Sprint Objective
 Deliver governed agent coordination, tool execution with permission checks, and planning orchestration on a LangGraph runtime.
@@ -255,6 +271,12 @@ Deliver governed agent coordination, tool execution with permission checks, and 
 3. EKCP-S5-3 Planning and orchestration engine.
 4. EKCP-S5-4 Failure handling and fallback policy.
 
+### Delivery Evidence
+1. EKCP-S5-1 Approved: `domain/agents/` provides capability-based agent selection (never by name), a bounded agent runtime that runs an optional permitted tool step then a reasoning step via the model gateway, a `SequentialAgentRunner` offline default and a lazy `LangGraphAgentRunner` (typed graph state, `MemorySaver` checkpointer for recovery, conditional fallback edge), and an `AgentCoordinator` for multi-agent plans.
+2. EKCP-S5-2 Approved: `domain/tools/` defines the `Tool` ABC (pure-function capabilities), an authoritative registry with capability discovery, a `PermissionGate` that authorizes before execution (unauthorized execution is blocked), and a `ToolExecutor` pipeline (validate, authorize, execute with bounded retries, normalize, audit) producing an auditable `ToolResult`.
+3. EKCP-S5-3 Approved: `domain/planning/` decomposes an objective into an immutable `ExecutionPlan` of capability-scoped tasks with finish-to-start dependencies, deterministic topological ordering with cycle detection, and human approval checkpoints; the plan drives coordinated agent execution.
+4. EKCP-S5-4 Approved: failure handling is predictable — tools retry then return a failed result, unauthorized or unknown tools degrade to failed results in the agent loop, agent generation failures return a failed outcome with recommended next actions, steps are bounded to prevent runaway loops, and the LangGraph runner adds a conditional fallback path.
+
 ### Deliverables
 1. Agent orchestration policy.
 2. Tool governance and permission matrix.
@@ -272,6 +294,8 @@ Deliver governed agent coordination, tool execution with permission checks, and 
 ## EKCP-S6: Governance, Security And Policy
 Handbook mapping: Chapter 12 (Governance, Security and Policy Framework).
 
+> Status: Approved (137 pytest green, ruff + mypy --strict clean on 111 source files). Implemented in `services/ekcp/src/domain/governance`: an RBAC + ABAC `PolicyEngine` and a `GovernanceGuard` policy-enforcement point wired into the agent, memory, and model endpoints (governance as prerequisite), an immutable append-only audit trail, PII masking of outbound responses, secret log redaction, and security-context propagation to EKRE with monotonic classification. Surfaced through `POST /governance/evaluate` and `GET /governance/audit`.
+
 ### Sprint Objective
 Enforce policy across execution and produce complete audit trails.
 
@@ -287,6 +311,11 @@ Enforce policy across execution and produce complete audit trails.
 1. EKCP-S6-1 Policy enforcement engine.
 2. EKCP-S6-2 Audit trail completeness.
 3. EKCP-S6-3 Security context propagation to EKRE.
+
+### Delivery Evidence
+1. EKCP-S6-1 Approved: `domain/governance/` provides RBAC roles and permissions (`ROLE_PERMISSIONS`), ABAC clearance ranking with no-downgrade enforcement, and a `PolicyEngine` (`evaluate`/`authorize`) surfaced through a `GovernanceGuard` policy-enforcement point that authorizes governed operations before they run; the guard is wired into `/agent/execute` (invoke_agent), `/memory/*` (read/write_memory), and `/model/invoke` (generate_response), and unauthorized operations are blocked with a 403.
+2. EKCP-S6-2 Approved: every governed decision is recorded to an immutable, append-only `AuditSink` (in-memory and logging) with a complete `AuditRecord` (actor, action, result, resource, tenant, correlation, policy version, reason); `GET /governance/audit` returns the trail, PII is masked from outbound responses, and secret values are redacted from all logs via the installed `RedactionFilter`.
+3. EKCP-S6-3 Approved: `domain/governance/propagation.py` packages the validated principal into the shared `SecurityContext` payload (`user_id`, `tenant_id`, `classification_clearance`) injected on downstream EKRE requests, enforcing monotonic classification so a propagated context can never weaken the caller's clearance; propagation is audited (consumed by EKCP-S7).
 
 ### Deliverables
 1. Policy enforcement matrix.

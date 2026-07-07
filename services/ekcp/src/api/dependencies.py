@@ -8,23 +8,49 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException, status
 
 from composition import (
+    build_agent_registry,
+    build_agent_runtime,
+    build_agent_selector,
     build_context_assembler,
     build_context_store,
     build_conversation_engine,
     build_conversation_manager,
     build_conversation_store,
     build_event_sink,
+    build_governance_guard,
+    build_memory_framework,
+    build_model_gateway,
+    build_planning_engine,
     build_prompt_orchestrator,
     build_security_validator,
     build_session_manager,
     build_session_store,
+    build_tool_executor,
 )
 from config.settings import EkcpSettings, get_settings
+from domain.agents import (
+    AgentPolicy,
+    AgentRegistry,
+    AgentRuntime,
+    AgentSelector,
+)
 from domain.context import ContextAssembler, ContextStore
 from domain.conversation import ConversationEngine, ConversationManager
+from domain.gateway import LLMGateway
+from domain.governance import (
+    GovernanceError,
+    GovernanceGuard,
+    GovernancePolicy,
+    Principal,
+    Role,
+    parse_clearance,
+)
+from domain.memory import MemoryFramework
+from domain.planning import PlanningEngine
 from domain.prompt import PromptOrchestrator
 from domain.security import SecurityContextValidator
 from domain.session import SessionManager
+from domain.tools import ToolExecutor
 
 
 def get_app_settings() -> EkcpSettings:
@@ -51,6 +77,16 @@ class AppResources:
     context_assembler: ContextAssembler
     context_store: ContextStore
     prompt_orchestrator: PromptOrchestrator
+    model_gateway: LLMGateway
+    memory_framework: MemoryFramework
+    tool_executor: ToolExecutor
+    agent_registry: AgentRegistry
+    agent_selector: AgentSelector
+    agent_runtime: AgentRuntime
+    agent_policy: AgentPolicy
+    planning_engine: PlanningEngine
+    governance_guard: GovernanceGuard
+    governance_policy: GovernancePolicy
 
 
 def build_resources(settings: EkcpSettings) -> AppResources:
@@ -71,6 +107,16 @@ def build_resources(settings: EkcpSettings) -> AppResources:
         context_assembler=build_context_assembler(settings),
         context_store=build_context_store(settings),
         prompt_orchestrator=build_prompt_orchestrator(settings),
+        model_gateway=build_model_gateway(settings),
+        memory_framework=build_memory_framework(settings),
+        tool_executor=build_tool_executor(settings),
+        agent_registry=build_agent_registry(settings),
+        agent_selector=build_agent_selector(settings),
+        agent_runtime=build_agent_runtime(settings),
+        agent_policy=AgentPolicy.from_settings(settings.agent),  # type: ignore[arg-type]
+        planning_engine=build_planning_engine(settings),
+        governance_guard=build_governance_guard(settings),
+        governance_policy=GovernancePolicy.from_settings(settings.governance),  # type: ignore[arg-type]
     )
 
 
@@ -101,3 +147,35 @@ def require_tenant(
 
 
 TenantId = Annotated[str, Depends(require_tenant)]
+
+
+def build_principal(
+    resources: AppResources,
+    *,
+    user_id: str,
+    tenant_id: str,
+    clearance: str,
+    roles: list[str] | None = None,
+) -> Principal:
+    """Build a governance principal from request identity and role assignment.
+
+    Roles default to the configured default role. An unknown role or clearance
+    is rejected with a 422 so governance never runs on an invalid principal.
+    """
+    try:
+        resolved_roles = (
+            frozenset(Role(role) for role in roles)
+            if roles
+            else frozenset({resources.governance_policy.default_role})
+        )
+        resolved_clearance = parse_clearance(clearance)
+    except (ValueError, GovernanceError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    return Principal(
+        user_id=user_id,
+        tenant_id=tenant_id,
+        roles=resolved_roles,
+        clearance=resolved_clearance,
+    )

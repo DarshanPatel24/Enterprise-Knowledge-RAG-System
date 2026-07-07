@@ -161,6 +161,124 @@ class PromptSettings(BaseSettings):
     default_output_format: str = "markdown"
 
 
+class ModelGatewaySettings(BaseSettings):
+    """Model management and LLM gateway settings.
+
+    The offline default runtime is ``deterministic`` (a dependency-free echo
+    model) so the gateway runs with no external provider. Selecting
+    ``runtime=langchain`` routes to the configured HuggingFace or Ollama chat
+    model behind the gateway seam; no provider is hardcoded and token accounting
+    is always enforced.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EKCP_MODEL__", extra="ignore")
+
+    runtime: Literal["deterministic", "langchain"] = "deterministic"
+    provider: Literal["huggingface", "ollama"] = "huggingface"
+    model_name: str = ""
+    base_url: str = "http://localhost:11434"
+    temperature: float = Field(default=0.0, ge=0.0)
+    context_window: int = Field(default=8192, gt=0)
+    max_output_tokens: int = Field(default=2048, gt=0)
+    prompt_cost_per_1k: float = Field(default=0.0, ge=0.0)
+    completion_cost_per_1k: float = Field(default=0.0, ge=0.0)
+    routing_strategy: Literal[
+        "capability", "cost", "latency", "quality", "policy", "hybrid"
+    ] = "hybrid"
+    default_model_id: str = ""
+    enable_fallback: bool = True
+    require_approved: bool = True
+    max_tokens_per_request: int = Field(default=0, ge=0)
+    max_cost_per_request: float = Field(default=0.0, ge=0.0)
+    chars_per_token: int = Field(default=4, gt=0)
+
+
+class MemorySettings(BaseSettings):
+    """Memory framework (tiers, retrieval, retention) settings.
+
+    Per-scope TTLs govern retention; a TTL of 0 means indefinite retention
+    (organizational memory). Retrieval ranking weights and the confidence
+    threshold are configuration-driven, not hardcoded.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EKCP_MEMORY__", extra="ignore")
+
+    working_ttl_seconds: float = Field(default=1800.0, ge=0.0)
+    session_ttl_seconds: float = Field(default=28800.0, ge=0.0)
+    conversation_ttl_seconds: float = Field(default=2592000.0, ge=0.0)
+    workspace_ttl_seconds: float = Field(default=31536000.0, ge=0.0)
+    user_ttl_seconds: float = Field(default=94608000.0, ge=0.0)
+    organizational_ttl_seconds: float = Field(default=0.0, ge=0.0)
+    default_min_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    default_classification: str = "internal"
+    max_retrieval_limit: int = Field(default=10, gt=0)
+    weight_relevance: float = Field(default=0.4, ge=0.0)
+    weight_recency: float = Field(default=0.2, ge=0.0)
+    weight_importance: float = Field(default=0.15, ge=0.0)
+    weight_frequency: float = Field(default=0.1, ge=0.0)
+    weight_trust: float = Field(default=0.15, ge=0.0)
+    recency_half_life_hours: float = Field(default=24.0, gt=0.0)
+
+
+class ToolSettings(BaseSettings):
+    """Tool execution platform settings."""
+
+    model_config = SettingsConfigDict(env_prefix="EKCP_TOOLS__", extra="ignore")
+
+    default_timeout_seconds: float = Field(default=10.0, gt=0.0)
+    max_attempts: int = Field(default=2, ge=1)
+    enforce_permissions: bool = True
+
+
+class AgentSettings(BaseSettings):
+    """Agent runtime settings.
+
+    The offline default runner is ``sequential`` (deterministic, in-process).
+    Selecting ``langgraph`` routes agent execution through a LangGraph graph with
+    a checkpointer for recovery; steps are bounded to prevent runaway loops.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EKCP_AGENT__", extra="ignore")
+
+    runner: Literal["sequential", "langgraph"] = "sequential"
+    max_steps: int = Field(default=4, gt=0)
+    base_confidence: float = Field(default=0.85, ge=0.0, le=1.0)
+
+
+class PlanningSettings(BaseSettings):
+    """Planning and orchestration settings."""
+
+    model_config = SettingsConfigDict(env_prefix="EKCP_PLANNING__", extra="ignore")
+
+    max_tasks: int = Field(default=12, gt=0)
+    default_task_timeout_seconds: float = Field(default=60.0, gt=0.0)
+
+
+class GovernanceSettings(BaseSettings):
+    """Governance, security, and policy settings.
+
+    Policy enforcement and auditing are on by default so every governed
+    operation is authorized and recorded. Masking and secret redaction protect
+    outbound responses and logs. Classification downgrades are blocked by default.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EKCP_GOVERNANCE__", extra="ignore")
+
+    enforce_authorization: bool = True
+    enable_audit: bool = True
+    audit_sink: Literal["memory", "logging"] = "memory"
+    enable_masking: bool = True
+    mask_email: bool = True
+    mask_phone: bool = True
+    mask_ssn: bool = True
+    mask_credit_card: bool = True
+    allow_classification_downgrade: bool = False
+    policy_version: str = "v1"
+    default_role: Literal["admin", "power_user", "user", "service", "agent"] = (
+        "power_user"
+    )
+
+
 class EkcpSettings(BaseSettings):
     """Top-level EKCP settings composed of engine subsystem settings."""
 
@@ -185,6 +303,12 @@ class EkcpSettings(BaseSettings):
     intent: IntentSettings = Field(default_factory=IntentSettings)
     context: ContextSettings = Field(default_factory=ContextSettings)
     prompt: PromptSettings = Field(default_factory=PromptSettings)
+    model: ModelGatewaySettings = Field(default_factory=ModelGatewaySettings)
+    memory: MemorySettings = Field(default_factory=MemorySettings)
+    tools: ToolSettings = Field(default_factory=ToolSettings)
+    agent: AgentSettings = Field(default_factory=AgentSettings)
+    planning: PlanningSettings = Field(default_factory=PlanningSettings)
+    governance: GovernanceSettings = Field(default_factory=GovernanceSettings)
 
 
 @lru_cache(maxsize=1)

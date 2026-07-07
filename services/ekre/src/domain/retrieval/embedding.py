@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import math
 from abc import ABC, abstractmethod
+from typing import Any
 
 from domain.integrations import LangChainResourceError, build_embeddings
 from domain.retrieval.errors import RetrievalWorkerError, RetrievalWorkerErrorType
@@ -66,12 +67,19 @@ class LangChainEmbeddingAdapter(EmbeddingAdapter):
     """Embeds the query with the EKIE-inherited model via the LangChain seam."""
 
     def __init__(
-        self, provider: str, model: str, *, dimension: int, base_url: str = ""
+        self,
+        provider: str,
+        model: str,
+        *,
+        dimension: int,
+        base_url: str = "",
+        model_kwargs: dict[str, Any] | None = None,
     ) -> None:
         self._provider = provider
         self._model = model
         self._dimension = dimension
         self._base_url = base_url
+        self._model_kwargs: dict[str, Any] = dict(model_kwargs or {})
         self._embeddings: object | None = None
 
     @property
@@ -97,6 +105,11 @@ class LangChainEmbeddingAdapter(EmbeddingAdapter):
 
     def _load(self) -> object:
         if self._embeddings is None:
-            kwargs = {"base_url": self._base_url} if self._base_url else {}
+            # ``model_kwargs`` carries device/precision (e.g. torch_dtype=float16)
+            # for the HuggingFace path so the query model runs on the GPU, exactly
+            # as EKIE loads the same embedding model.
+            kwargs: dict[str, Any] = dict(self._model_kwargs)
+            if self._base_url:
+                kwargs["base_url"] = self._base_url
             self._embeddings = build_embeddings(self._provider, self._model, **kwargs)
         return self._embeddings

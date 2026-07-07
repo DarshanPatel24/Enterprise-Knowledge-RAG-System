@@ -55,8 +55,8 @@ from domain.query import (
     default_vocabulary,
 )
 from domain.ranking import (
+    CrossEncoderReranker,
     IdentityReranker,
-    LlmReranker,
     RankingEngine,
     RankingPolicy,
     Reranker,
@@ -212,16 +212,35 @@ def build_query_embedding_adapter(settings: EkreSettings) -> EmbeddingAdapter:
 
     The ``langchain`` embedder inherits the embedding model and dimension EKIE
     published (never hardcoded); the offline default uses a deterministic hash.
+    Device/precision (for example ``torch_dtype=float16``) are threaded into the
+    HuggingFace model so the query model runs on the GPU, exactly as EKIE.
     """
     if settings.workers.query_embedder == "langchain":
+        embedding = settings.embedding
         profile = resolve_embedding_profile(settings)
         return LangChainEmbeddingAdapter(
-            settings.embedding.provider,
+            embedding.provider,
             profile.embedding_model,
             dimension=profile.dimension,
-            base_url=settings.embedding.base_url,
+            base_url=embedding.base_url,
+            model_kwargs=_huggingface_model_kwargs(embedding.device, embedding.torch_dtype),
         )
     return LocalHashEmbeddingAdapter(settings.workers.local_embedding_dimension)
+
+
+def _huggingface_model_kwargs(device: str, torch_dtype: str) -> dict[str, Any]:
+    """Build HuggingFace sentence-transformers kwargs for device/precision.
+
+    Leaving either value at ``auto`` preserves the library defaults (GPU
+    auto-detect, fp32); ``torch_dtype=float16`` halves VRAM so large models fit a
+    limited-VRAM GPU. Mirrors the EKIE embedding provider.
+    """
+    st_kwargs: dict[str, Any] = {}
+    if device and device != "auto":
+        st_kwargs["device"] = device
+    if torch_dtype and torch_dtype != "auto":
+        st_kwargs["model_kwargs"] = {"torch_dtype": torch_dtype}
+    return {"model_kwargs": st_kwargs} if st_kwargs else {}
 
 
 def build_retrieval_worker_registry(
@@ -279,15 +298,20 @@ def build_candidate_fusion(settings: EkreSettings) -> CandidateFusion:
 
 
 def build_reranker(settings: EkreSettings) -> Reranker:
-    """Build the reranker: the optional LLM reranker or the identity default."""
-    if settings.ranking.enable_llm_reranker:
-        return LlmReranker(settings.ranking)  # type: ignore[arg-type]
+    """Build the reranker: the cross-encoder reranker or the identity default.
+
+    The cross-encoder is used only when enabled and a model is configured;
+    otherwise the deterministic identity reranker preserves the evidence order.
+    """
+    ranking = settings.ranking
+    if ranking.enable_reranker and ranking.reranker_model:
+        return CrossEncoderReranker(ranking)
     return IdentityReranker()
 
 
 def build_ranking_engine(settings: EkreSettings) -> RankingEngine:
     """Build the deterministic, auditable ranking engine from settings."""
-    policy = RankingPolicy.from_settings(settings.ranking)  # type: ignore[arg-type]
+    policy = RankingPolicy.from_settings(settings.ranking)
     return RankingEngine(policy, reranker=build_reranker(settings))
 
 

@@ -222,8 +222,8 @@ class RankingSettings(BaseSettings):
 
     Ranking is deterministic, auditable, and evidence-driven. Evidence weights,
     the candidate limit, and the score threshold are configurable; the optional
-    LLM reranker is feature-flagged and always degrades to the deterministic
-    ordering, so ranking stays reproducible.
+    cross-encoder reranker is feature-flagged and always degrades to the
+    deterministic ordering, so ranking stays reproducible.
     """
 
     model_config = SettingsConfigDict(env_prefix="EKRE_RANKING__", extra="ignore")
@@ -235,12 +235,16 @@ class RankingSettings(BaseSettings):
     metadata_weight: float = Field(default=0.1, ge=0.0)
     fusion_weight: float = Field(default=0.3, ge=0.0)
     policy_version: str = "v1"
-    enable_llm_reranker: bool = False
-    llm_provider: Literal["ollama", "huggingface"] = "huggingface"
-    llm_model: str = ""
-    llm_base_url: str = "http://localhost:11434"
-    llm_temperature: float = 0.0
-    llm_request_timeout_seconds: float = 60.0
+    # Cross-encoder reranker (handbook Chapter 25.11): a purpose-built reranker
+    # model (for example Qwen/Qwen3-VL-Reranker-2B) scores query/document
+    # relevance and reorders the top candidates. It performs no chat generation
+    # (that is EKCP). Disabled by default; when enabled it degrades gracefully to
+    # the deterministic ordering. Device/precision mirror the query embedder.
+    enable_reranker: bool = False
+    reranker_model: str = ""
+    reranker_device: str = "auto"
+    reranker_torch_dtype: str = "auto"
+    reranker_trust_remote_code: bool = False
 
     def weights(self) -> dict[str, float]:
         """Return the evidence factor weights keyed by factor name."""

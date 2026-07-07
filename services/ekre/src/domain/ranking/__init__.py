@@ -5,15 +5,14 @@ from domain.ranking.errors import RankingError, RankingErrorType
 from domain.ranking.models import RankedKnowledgeObject, RankedKnowledgeSet
 from domain.ranking.policy import RankingPolicy, RankingSettingsLike
 from domain.ranking.reranker import (
+    CrossEncoderReranker,
     IdentityReranker,
-    LlmReranker,
     Reranker,
-    RerankOrder,
 )
 
 __all__ = [
+    "CrossEncoderReranker",
     "IdentityReranker",
-    "LlmReranker",
     "RankedKnowledgeObject",
     "RankedKnowledgeSet",
     "RankingEngine",
@@ -21,6 +20,5 @@ __all__ = [
     "RankingErrorType",
     "RankingPolicy",
     "RankingSettingsLike",
-    "RerankOrder",
     "Reranker",
 ]

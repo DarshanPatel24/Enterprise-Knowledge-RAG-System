@@ -49,9 +49,8 @@ async def test_chat_stream_echoes_sse_events(settings: EkcpSettings) -> None:
     assert response.headers["content-type"].startswith("text/event-stream")
     body = response.text
     assert "event: token" in body
-    assert '"text": "hello"' in body
-    assert '"text": "world"' in body
     assert "event: done" in body
+    assert "total_tokens" in body
     assert response.headers["X-Correlation-ID"]
 
 

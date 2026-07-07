@@ -54,6 +54,7 @@ class BuildContextRequest(BaseModel):
     conversation_history: list[str] = Field(default_factory=list)
     knowledge: list[KnowledgeCandidatePayload] = Field(default_factory=list)
     policy_constraints: list[str] = Field(default_factory=list)
+    include_memory: bool = False
 
 
 class BuildContextResponse(BaseModel):
@@ -121,12 +122,21 @@ async def build_context(
         if constraint.strip()
     )
 
+    memory_items = (
+        resources.memory_framework.recall_as_context(
+            tenant_id=tenant_id, query=request.user_intent
+        )
+        if request.include_memory
+        else ()
+    )
+
     package = resources.context_assembler.assemble(
         tenant_id=tenant_id,
         conversation_id=request.conversation_id,
         user_intent=request.user_intent,
         conversation_history=tuple(request.conversation_history),
         retrieval=retrieval,
+        memory_items=memory_items,
         policy_items=policy_items,
     )
     resources.context_store.save(package)

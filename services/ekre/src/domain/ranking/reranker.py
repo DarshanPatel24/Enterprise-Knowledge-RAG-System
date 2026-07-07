@@ -1,9 +1,10 @@
-"""Optional LLM reranker (handbook Chapter 25.11, story S5-2).
+"""Cross-encoder reranker (handbook Chapter 25.11, story S5-2).
 
 Feature-flagged and off by default. The deterministic evidence-weighted ordering
-is always the default and the fallback. When enabled, an LCEL chain
-(``ChatPromptTemplate | llm | PydanticOutputParser``) refines the ordering of the
-top candidates; any failure degrades gracefully to the deterministic order, so
+is always the default and the fallback. When enabled, a purpose-built reranker
+model (for example ``Qwen/Qwen3-VL-Reranker-2B``) scores each (query, passage)
+pair and reorders the top candidates; the model performs no chat generation
+(that is EKCP). Any failure degrades gracefully to the deterministic order, so
 ranking stays reproducible. All model parameters come from settings.
 """
 
@@ -11,35 +12,23 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import Protocol, cast
+from typing import Protocol
 
-from pydantic import BaseModel, Field
-
-from domain.integrations import LangChainResourceError, build_chat_model
+from domain.integrations import LangChainResourceError, build_cross_encoder
 from domain.observability import get_logger
-from domain.ranking.prompts import (
-    RERANK_HUMAN_TEMPLATE,
-    RERANK_SYSTEM_PROMPT,
-    truncate_passage,
-)
+from domain.ranking.prompts import truncate_passage
 
 _logger = get_logger("ekre.ranking.reranker")
 
 
 class RerankConfigLike(Protocol):
-    """Structural view of the reranker configuration."""
+    """Structural view of the cross-encoder reranker configuration."""
 
-    enable_llm_reranker: bool
-    llm_provider: str
-    llm_model: str
-    llm_base_url: str
-    llm_temperature: float
-
-
-class RerankOrder(BaseModel):
-    """Validated ordered candidate ids returned by the LLM reranker."""
-
-    ordered_ids: list[str] = Field(default_factory=list)
+    enable_reranker: bool
+    reranker_model: str
+    reranker_device: str
+    reranker_torch_dtype: str
+    reranker_trust_remote_code: bool
 
 
 class Reranker(ABC):
@@ -68,62 +57,59 @@ class IdentityReranker(Reranker):
         return [identifier for identifier, _ in items]
 
 
-class LlmReranker(Reranker):
-    """LangChain LCEL reranker with a deterministic fallback."""
+class CrossEncoderReranker(Reranker):
+    """Cross-encoder reranker that scores query/document relevance.
+
+    Loads a purpose-built reranker model (for example ``Qwen/Qwen3-VL-Reranker-2B``)
+    lazily, scores each (query, passage) pair, and reorders by score. The model
+    is loaded once and cached. Any failure (model unavailable, scoring error)
+    degrades gracefully to the deterministic input order.
+    """
 
     def __init__(self, config: RerankConfigLike) -> None:
         self._config = config
+        self._model: object | None = None
 
     @property
     def enabled(self) -> bool:
-        """Return whether the LLM reranker is enabled by configuration."""
-        return self._config.enable_llm_reranker
+        """Return whether the cross-encoder reranker is configured and enabled."""
+        return self._config.enable_reranker and bool(self._config.reranker_model)
 
     def rerank(self, query: str, items: Sequence[tuple[str, str]]) -> list[str]:
-        """Return an LLM-refined order, or the input order on graceful failure."""
+        """Return the cross-encoder order, or the input order on graceful failure."""
         original = [identifier for identifier, _ in items]
-        if not self._config.enable_llm_reranker or not items:
+        if not self.enabled or not items:
             return original
         try:
-            from langchain_core.output_parsers import PydanticOutputParser
-            from langchain_core.prompts import ChatPromptTemplate
-
-            parser = PydanticOutputParser(pydantic_object=RerankOrder)
-            prompt = ChatPromptTemplate.from_messages(
-                [("system", RERANK_SYSTEM_PROMPT), ("human", RERANK_HUMAN_TEMPLATE)]
-            ).partial(format_instructions=parser.get_format_instructions())
-            llm = build_chat_model(
-                self._config.llm_provider,
-                self._config.llm_model,
-                base_url=self._config.llm_base_url,
-                temperature=self._config.llm_temperature,
-            )
-            chain = prompt | llm | parser  # type: ignore[operator]
-            result = cast(
-                "RerankOrder",
-                chain.invoke({"query": query, "candidates": _render(items)}),
-            )
-            return _reconcile(result.ordered_ids, original)
+            model = self._load()
+            pairs = [[query, truncate_passage(content)] for _, content in items]
+            scores = model.predict(pairs)  # type: ignore[attr-defined]
+            return _order_by_scores(original, [float(score) for score in scores])
         except LangChainResourceError as exc:
             _logger.warning("reranker_unavailable", extra={"reason": str(exc)})
             return original
         except Exception as exc:  # noqa: BLE001 - degrade gracefully to deterministic
-            _logger.warning(
-                "reranker_degraded", extra={"reason": type(exc).__name__}
-            )
+            _logger.warning("reranker_degraded", extra={"reason": type(exc).__name__})
             return original
 
+    def _load(self) -> object:
+        if self._model is None:
+            self._model = build_cross_encoder(
+                self._config.reranker_model,
+                device=self._config.reranker_device,
+                torch_dtype=self._config.reranker_torch_dtype,
+                trust_remote_code=self._config.reranker_trust_remote_code,
+            )
+        return self._model
 
-def _render(items: Sequence[tuple[str, str]]) -> str:
-    return "\n".join(
-        f"- {identifier}: {truncate_passage(content)}" for identifier, content in items
-    )
 
+def _order_by_scores(ids: Sequence[str], scores: Sequence[float]) -> list[str]:
+    """Return ``ids`` ordered by descending score with a stable original-order tie-break.
 
-def _reconcile(ordered: Sequence[str], original: Sequence[str]) -> list[str]:
-    """Keep only known ids in the model order, then append any that are missing."""
-    known = set(original)
-    result = [identifier for identifier in ordered if identifier in known]
-    seen = set(result)
-    result.extend(identifier for identifier in original if identifier not in seen)
-    return result
+    If the score count does not match the ids, the deterministic input order is
+    returned so ranking never breaks on an unexpected model output shape.
+    """
+    if len(scores) != len(ids):
+        return list(ids)
+    indexed = sorted(enumerate(ids), key=lambda pair: (-scores[pair[0]], pair[0]))
+    return [identifier for _, identifier in indexed]

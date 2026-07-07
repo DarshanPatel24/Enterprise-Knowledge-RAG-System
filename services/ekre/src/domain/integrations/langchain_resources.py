@@ -43,6 +43,12 @@ class ChatModelLike(Protocol):
     def invoke(self, input: Any, **kwargs: Any) -> Any: ...  # noqa: A002, ANN401
 
 
+class CrossEncoderLike(Protocol):
+    """Minimal structural view of a sentence-transformers cross-encoder reranker."""
+
+    def predict(self, sentences: Any, **kwargs: Any) -> Any: ...  # noqa: ANN401
+
+
 @dataclass(frozen=True)
 class RetrievalResources:
     """A ready-to-use embedding model, vector store, and retriever."""
@@ -130,6 +136,36 @@ def build_chat_model(
     raise LangChainResourceError(
         f"chat model provider {provider!r} is not supported; use 'huggingface' or 'ollama'"
     )
+
+
+def build_cross_encoder(
+    model: str,
+    *,
+    device: str = "auto",
+    torch_dtype: str = "auto",
+    trust_remote_code: bool = False,
+) -> CrossEncoderLike:
+    """Build a sentence-transformers cross-encoder reranker model.
+
+    A cross-encoder scores query/document relevance directly (no chat
+    generation), the purpose-built way to rerank candidates. The model (for
+    example ``Qwen/Qwen3-VL-Reranker-2B``) and device/precision come from
+    settings, so no runtime is hardcoded. The import is lazy so the offline path
+    never loads the model.
+    """
+    try:
+        from sentence_transformers import CrossEncoder
+    except ImportError as exc:
+        raise LangChainResourceError(
+            "sentence-transformers is not installed; install it to use the "
+            "cross-encoder reranker"
+        ) from exc
+    kwargs: dict[str, Any] = {"trust_remote_code": trust_remote_code}
+    if device and device != "auto":
+        kwargs["device"] = device
+    if torch_dtype and torch_dtype != "auto":
+        kwargs["model_kwargs"] = {"torch_dtype": torch_dtype}
+    return cast("CrossEncoderLike", CrossEncoder(model, **kwargs))
 
 
 def build_qdrant_client(

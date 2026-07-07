@@ -5,13 +5,17 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.agent import router as agent_router
 from api.chat import router as chat_router
 from api.context import router as context_router
 from api.conversation import router as conversation_router
+from api.governance import router as governance_router
 from api.health import router as health_router
+from api.memory import router as memory_router
 from api.middleware import CorrelationMiddleware
+from api.model import router as model_router
 from api.prompt import router as prompt_router
-from composition import configure_observability
+from composition import configure_observability, configure_security
 from config.settings import EkcpSettings, get_settings
 from domain.observability import get_logger
 
@@ -25,6 +29,7 @@ def create_app(settings: EkcpSettings | None = None) -> FastAPI:
     """Build and configure the EKCP FastAPI application (single entry point)."""
     settings = settings or get_settings()
     configure_observability(settings)
+    configure_security(settings)
     logger = get_logger("ekcp.api")
 
     app = FastAPI(
@@ -48,6 +53,10 @@ def create_app(settings: EkcpSettings | None = None) -> FastAPI:
     app.include_router(conversation_router)
     app.include_router(context_router)
     app.include_router(prompt_router)
+    app.include_router(model_router)
+    app.include_router(memory_router)
+    app.include_router(agent_router)
+    app.include_router(governance_router)
     app.include_router(chat_router)
 
     logger.info("ekcp_app_initialized", extra={"environment": settings.environment})
