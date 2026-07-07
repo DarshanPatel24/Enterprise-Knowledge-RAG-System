@@ -8,6 +8,7 @@ from domain.storage.base import (
     StoredAsset,
     compute_content_hash,
 )
+from domain.storage.local import LocalFileAssetStorage
 from domain.storage.minio import MinIOAssetStorage
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "AssetNotFoundError",
     "AssetStorage",
     "InMemoryAssetStorage",
+    "LocalFileAssetStorage",
     "MinIOAssetStorage",
     "StoredAsset",
     "compute_content_hash",

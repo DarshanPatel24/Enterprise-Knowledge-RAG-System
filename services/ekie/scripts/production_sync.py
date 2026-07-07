@@ -64,6 +64,8 @@ def run_worker() -> None:
     tenant_id = sync_settings.tenant_id
     poll_interval = sync_settings.poll_interval_seconds
     api_url = sync_settings.api_base_url.rstrip('/')
+    ingest_timeout = sync_settings.ingest_timeout_seconds
+    delete_timeout = sync_settings.delete_timeout_seconds
 
     print("==================================================")
     print(" EKIE Production Sync Worker Started")
@@ -72,6 +74,7 @@ def run_worker() -> None:
     print(f" Tenant ID        : {tenant_id}")
     print(f" Poll Interval    : {poll_interval} seconds")
     print(f" API Base URL     : {api_url}")
+    print(f" Ingest Timeout   : {ingest_timeout:.0f} seconds")
     print("==================================================\n")
 
     # Connect to the Control Plane Database and ensure tables exist
@@ -112,18 +115,19 @@ def run_worker() -> None:
                 if event.event_type is SyncEventType.DOCUMENT_DELETED and event.document_id:
                     try:
                         response = requests.delete(
-                            f"{api_url}/v1/documents/{event.document_id}/vectors",
+                            f"{api_url}/v1/documents/{event.document_id}",
                             headers={"X-Tenant-ID": tenant_id},
-                            timeout=60,
+                            params={"force": "true"},
+                            timeout=delete_timeout,
                         )
                         if response.status_code == 200:
                             print(
-                                "     [DELETE] Vector cleanup completed for deleted document "
-                                f"{event.document_id}"
+                                "     [DELETE] Document and vectors removed for deleted "
+                                f"document {event.document_id}"
                             )
                         else:
                             print(
-                                "     [ERROR] Vector cleanup API failed for deleted document "
+                                "     [ERROR] Delete API failed for deleted document "
                                 f"{event.document_id}: {response.text}"
                             )
                     except Exception as exc:
@@ -148,10 +152,12 @@ def run_worker() -> None:
                                 "Content-Type": "application/octet-stream"
                             },
                             data=raw_bytes,
-                            timeout=300,
+                            timeout=ingest_timeout,
                         )
                         
-                        if response.status_code == 200:
+                        if response.status_code == 202:
+                            print("     [QUEUED] Ingestion job enqueued (async worker).")
+                        elif response.status_code == 200:
                             print("     [SUCCESS] Vectorized successfully!")
                         else:
                             print(f"     [ERROR] Failed: {response.text}")

@@ -67,6 +67,11 @@ def register_repository(
             .first()
         )
         if existing:
+            # Keep the stored URI in sync with the current configuration so a
+            # changed target directory is reflected in the Control Plane record.
+            if existing.uri != uri:
+                existing.uri = uri
+                session.flush()
             return existing.id
 
         repository = Repository(

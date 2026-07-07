@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -10,7 +11,6 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-import api.ingestion as ingestion_api
 from api.app import create_app
 from api.dependencies import AppResources, get_resources
 from api.middleware import TENANT_HEADER
@@ -24,7 +24,7 @@ from domain.control_plane import (
     RepositoryStatus,
 )
 from domain.orchestration import OrchestrationPolicy, WorkflowOrchestrator
-from domain.publishing import VectorCleanupResult
+from domain.jobs import JobQueueStore, SourceStore
 from domain.storage import InMemoryAssetStorage
 
 _TENANT = "tenant-a"
@@ -62,7 +62,11 @@ def resources() -> AppResources:
         OrchestrationPolicy(max_attempts_per_stage=1),
     )
     return AppResources(
-        settings=settings, db=db, storage=storage, orchestrator=orchestrator
+        settings=settings,
+        db=db,
+        storage=storage,
+        orchestrator=orchestrator,
+        job_queue=JobQueueStore(db),
     )
 
 
@@ -268,51 +272,142 @@ async def test_repository_ingest_returns_404_for_missing_repository(
     assert response.status_code == 404
 
 
-async def test_purge_document_vectors_returns_cleanup_result(
+async def test_delete_document_removes_row_and_returns_summary(
     app: FastAPI,
-    monkeypatch: pytest.MonkeyPatch,
+    resources: AppResources,
 ) -> None:
-    class _FakeCleaner:
-        def purge_document_vectors(
-            self, document_id: str, tenant_id: str
-        ) -> VectorCleanupResult:
-            return VectorCleanupResult(
-                document_id=document_id,
-                tenant_id=tenant_id,
-                provider="local",
-                collection="enterprise_documents",
-                deleted_count=3,
-            )
-
-    monkeypatch.setattr(
-        ingestion_api,
-        "_vector_cleanup_service",
-        lambda _resources: _FakeCleaner(),
-    )
+    document_id = _register_document(resources.db)
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
         response = await client.delete(
-            "/v1/documents/doc-123/vectors",
+            f"/v1/documents/{document_id}",
             headers={TENANT_HEADER: _TENANT},
         )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["document_id"] == "doc-123"
-    assert body["tenant_id"] == _TENANT
-    assert body["deleted_count"] == 3
-    assert body["provider"] == "local"
-    assert body["collection"] == "enterprise_documents"
-    assert body["message"] == "vectors deleted"
+    assert body["document_id"] == document_id
+    assert body["row_deleted"] is True
+    assert body["vectors_deleted"] == 0
+    assert body["message"] == "document deleted"
+    with resources.db.session() as session:
+        assert session.get(Document, document_id) is None
 
 
-async def test_repository_ingest_runs_cleanup_for_deleted_document_event(
+async def test_delete_document_unknown_returns_404(
+    app: FastAPI,
+) -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.delete(
+            "/v1/documents/does-not-exist",
+            headers={TENANT_HEADER: _TENANT},
+        )
+
+    assert response.status_code == 404
+
+
+def _enable_async(app: FastAPI, resources: AppResources) -> AppResources:
+    """Rebind the app to resources with async ingestion enabled."""
+    async_settings = resources.settings.model_copy(
+        update={
+            "ingestion": resources.settings.ingestion.model_copy(
+                update={"async_enabled": True}
+            )
+        }
+    )
+    async_resources = replace(resources, settings=async_settings)
+    app.dependency_overrides[get_resources] = lambda: async_resources
+    return async_resources
+
+
+async def test_async_ingest_enqueues_job_and_returns_202(
+    app: FastAPI,
+    resources: AppResources,
+) -> None:
+    async_resources = _enable_async(app, resources)
+    document_id = _register_document(resources.db)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            f"/v1/documents/{document_id}/ingest",
+            content=_SOURCE,
+            headers={
+                TENANT_HEADER: _TENANT,
+                "Content-Type": "application/octet-stream",
+            },
+        )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["kind"] == "ingest"
+    assert body["document_id"] == document_id
+    assert body["status_url"] == f"/v1/documents/{document_id}/job"
+
+    # Source bytes are persisted for the worker.
+    assert SourceStore(async_resources.db).load(_TENANT, document_id) == _SOURCE
+
+    # The job-status endpoint reports the queued job.
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        status_response = await client.get(
+            f"/v1/documents/{document_id}/job",
+            headers={TENANT_HEADER: _TENANT},
+        )
+    assert status_response.status_code == 200
+    assert status_response.json()["status"] == "queued"
+
+
+async def test_async_ingest_sync_override_runs_inline(
+    app: FastAPI,
+    resources: AppResources,
+) -> None:
+    _enable_async(app, resources)
+    document_id = _register_document(resources.db)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            f"/v1/documents/{document_id}/ingest?sync=true",
+            content=_SOURCE,
+            headers={
+                TENANT_HEADER: _TENANT,
+                "Content-Type": "application/octet-stream",
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["document_id"] == document_id
+    assert "completed_stages" in body
+
+
+async def test_document_job_status_unknown_returns_404(
+    app: FastAPI,
+) -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/v1/documents/missing/job",
+            headers={TENANT_HEADER: _TENANT},
+        )
+
+    assert response.status_code == 404
+
+
+async def test_repository_ingest_hard_deletes_removed_document(
     app: FastAPI,
     resources: AppResources,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     docs = tmp_path / "docs"
     docs.mkdir()
@@ -343,21 +438,8 @@ async def test_repository_ingest_runs_cleanup_for_deleted_document_event(
         assert doc is not None
         deleted_document_id = doc.id
 
+    # Removing the source file should hard-delete the document on next sync.
     file_path.unlink()
-    cleanup_calls: list[tuple[str, str]] = []
-
-    class _SpyCleaner:
-        def purge_document_vectors(
-            self, document_id: str, tenant_id: str
-        ) -> VectorCleanupResult | None:
-            cleanup_calls.append((document_id, tenant_id))
-            return None
-
-    monkeypatch.setattr(
-        ingestion_api,
-        "_vector_cleanup_service",
-        lambda _resources: _SpyCleaner(),
-    )
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -369,4 +451,5 @@ async def test_repository_ingest_runs_cleanup_for_deleted_document_event(
         )
 
     assert second.status_code == 200
-    assert cleanup_calls == [(deleted_document_id, _TENANT)]
+    with resources.db.session() as session:
+        assert session.get(Document, deleted_document_id) is None

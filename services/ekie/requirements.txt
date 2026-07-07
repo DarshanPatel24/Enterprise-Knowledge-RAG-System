@@ -4,6 +4,14 @@
 #
 #    pip-compile --output-file=requirements.txt pyproject.toml
 #
+# NOTE: Local HuggingFace models (Embeddings & Intelligence) are an OPTIONAL extra
+# and are intentionally not compiled here. Install them with:
+#     pip install -e "services/ekie[huggingface]"
+# For NVIDIA GPU acceleration install a CUDA build of torch matching your driver
+# INSTEAD of the default CPU wheel, e.g. (CUDA 13):
+#     pip install torch==2.12.1 --index-url https://download.pytorch.org/whl/cu130
+# Then set EKIE_EMBEDDING__DEVICE=auto and EKIE_EMBEDDING__TORCH_DTYPE=float16.
+#
 annotated-doc==0.0.4
     # via fastapi
 annotated-types==0.7.0

@@ -102,6 +102,11 @@ class StorageSettings(BaseSettings):
     secret_key: str = ""
     bucket: str = "ekie-assets"
     secure: bool = False
+    # Local-first persistent asset directory used when MinIO is not configured
+    # (the default local environment). Stage payloads are written here so they
+    # survive API/worker restarts; resolved relative to the service working
+    # directory. Kept out of memory to avoid losing assets on restart.
+    local_path: str = "storage/assets"
 
 
 class ObservabilitySettings(BaseSettings):
@@ -138,6 +143,8 @@ class SyncSettings(BaseSettings):
     tenant_id: str = "tenant-default"
     poll_interval_seconds: int = 300
     api_base_url: str = "http://localhost:8001"
+    ingest_timeout_seconds: float = 1800.0
+    delete_timeout_seconds: float = 120.0
 
     def parsed_extensions(self) -> frozenset[str]:
         """Return the allowed extensions as a normalized set (empty means all)."""
@@ -211,6 +218,11 @@ class EmbeddingSettings(BaseSettings):
     max_requests_per_minute: int = 0
     ollama_base_url: str = "http://localhost:11434"
     request_timeout_seconds: float = 60.0
+    # HuggingFace provider device/precision. "auto" preserves library defaults
+    # (GPU auto-detect, fp32). Set torch_dtype to "float16" to fit large models
+    # on limited-VRAM GPUs; set device to "cuda"/"cpu" to force placement.
+    device: str = "auto"
+    torch_dtype: str = "auto"
 
 
 class PublishingSettings(BaseSettings):
@@ -238,6 +250,35 @@ class OrchestrationSettings(BaseSettings):
     retry_backoff_base_seconds: float = 0.0
     retry_backoff_multiplier: float = 2.0
     enable_tracing: bool = False
+
+
+class IngestionSettings(BaseSettings):
+    """Environment-backed defaults for the durable, queue-backed ingestion path.
+
+    When ``async_enabled`` is true the ingestion API enqueues a durable job and
+    returns immediately, and a separate worker pool executes the pipeline. This
+    decouples request latency from pipeline duration so large documents no longer
+    exhaust HTTP timeouts. All values are operational tunables so throughput and
+    retry behavior can be adjusted without code changes.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EKIE_INGESTION__", extra="ignore")
+
+    async_enabled: bool = False
+    worker_concurrency: int = 1
+    claim_batch_size: int = 1
+    poll_interval_seconds: float = 2.0
+    max_attempts: int = 3
+    retry_backoff_base_seconds: float = 30.0
+    retry_backoff_multiplier: float = 2.0
+    retry_backoff_max_seconds: float = 900.0
+    # A running worker refreshes its job lock every ``heartbeat_interval_seconds``.
+    # A job is treated as orphaned (and reclaimed for resume) once its lock has
+    # not been refreshed for ``visibility_timeout_seconds``. Keep the timeout a
+    # comfortable multiple of the interval so a live worker is never reclaimed,
+    # while a crashed worker's job resumes within roughly the timeout window.
+    heartbeat_interval_seconds: float = 15.0
+    visibility_timeout_seconds: float = 90.0
 
 
 class SecuritySettings(BaseSettings):
@@ -331,6 +372,7 @@ class EkieSettings(BaseSettings):
     embedding: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
     publishing: PublishingSettings = Field(default_factory=PublishingSettings)
     orchestration: OrchestrationSettings = Field(default_factory=OrchestrationSettings)
+    ingestion: IngestionSettings = Field(default_factory=IngestionSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     governance: GovernanceSettings = Field(default_factory=GovernanceSettings)
     plugins: PluginSettings = Field(default_factory=PluginSettings)

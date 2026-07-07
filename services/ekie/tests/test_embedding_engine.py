@@ -157,6 +157,35 @@ def test_embedding_respects_batch_size(
     assert result.batch_count == result.embedding_document.embedding_count
 
 
+def test_embedding_reports_incremental_progress(
+    control_plane_db: ControlPlaneDatabase,
+) -> None:
+    document_id, storage = _prepare(control_plane_db)
+    calls: list[tuple[str, int, int]] = []
+
+    class _SpyReporter:
+        def report(
+            self, *, document_id: str, tenant_id: str, stage: str, processed: int, total: int
+        ) -> None:
+            calls.append((stage, processed, total))
+
+    engine = EmbeddingEngine(
+        control_plane_db,
+        storage,
+        EmbeddingPolicy(batch_size=1),
+        progress_reporter=_SpyReporter(),
+    )
+
+    result = engine.embed(document_id, "tenant-a")
+    total = result.embedding_document.embedding_count
+
+    assert calls[0] == ("embedding", 0, total)
+    assert calls[-1] == ("embedding", total, total)
+    processed_seq = [processed for _, processed, _ in calls]
+    assert processed_seq == sorted(processed_seq)
+    assert all(stage == "embedding" and reported_total == total for stage, _, reported_total in calls)
+
+
 def test_embedding_requires_chunk_asset(
     control_plane_db: ControlPlaneDatabase,
 ) -> None:

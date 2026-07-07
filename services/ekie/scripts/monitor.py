@@ -22,6 +22,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+try:  # Interactive scrolling uses the Windows console keyboard API.
+    import msvcrt
+except ImportError:  # pragma: no cover - non-Windows fallback (no live scroll)
+    msvcrt = None  # type: ignore[assignment]
+
+
 _SERVICE_ROOT = Path(__file__).resolve().parents[1]
 _SRC = _SERVICE_ROOT / "src"
 if str(_SRC) not in sys.path:
@@ -92,14 +98,14 @@ _STAGE_METRICS: list[tuple[str, str, list[tuple[str, str]]]] = [
 
 
 def _fmt_metrics(metrics_by_stage: dict[str, dict], completed: set[str]) -> str:
-    """Render a compact per-stage metrics summary for completed stages only."""
+    """Render per-stage metrics, one completed stage per line for readability."""
     parts: list[str] = []
     for asset_type, prefix, fields in _STAGE_METRICS:
         if asset_type not in completed:
             continue
         m = metrics_by_stage.get(asset_type)
         if not m:
-            parts.append(f"[dim]{prefix}:?[/dim]")
+            parts.append(f"[cyan]{prefix}[/cyan]  [dim]?[/dim]")
             continue
         vals: list[str] = []
         for key, suffix in fields:
@@ -111,12 +117,36 @@ def _fmt_metrics(metrics_by_stage: dict[str, dict], completed: set[str]) -> str:
             else:
                 s = str(v)
             vals.append(f"{s}{suffix}")
-        parts.append(f"{prefix}:{' '.join(vals)}" if vals else f"[dim]{prefix}:?[/dim]")
-    return "  ".join(parts)
+        body = " ".join(vals)
+        parts.append(
+            f"[cyan]{prefix}[/cyan]  {body}" if vals else f"[cyan]{prefix}[/cyan]  [dim]?[/dim]"
+        )
+    return "\n".join(parts)
+
+
+# When a stage has not yet reported live progress, its unit total can be derived
+# from the completed prior stage's metrics so the status shows a real count
+# (e.g. "P 0/258") instead of an opaque stage index. Maps the current stage's
+# asset type to (prior_asset_type, metric_key).
+_DERIVED_TOTAL_SOURCE: dict[str, tuple[str, str]] = {
+    "embedding": ("chunks", "chunk_count"),
+    "vector": ("embedding", "embedding_count"),
+}
+
+
+def _derived_total(current_stage_type: str | None, metrics: dict[str, dict]) -> int | None:
+    """Best-effort unit total for a stage that has not reported progress yet."""
+    source = _DERIVED_TOTAL_SOURCE.get(current_stage_type or "")
+    if source is None:
+        return None
+    prior_type, key = source
+    value = metrics.get(prior_type, {}).get(key)
+    return int(value) if isinstance(value, (int, float)) else None
+
 
 
 def _load_snapshot(db: ControlPlaneDatabase, tenant_id: str) -> dict[str, Any]:
-    from domain.control_plane.models import Asset, Document
+    from domain.control_plane.models import Asset, Document, IngestionJob, ProcessingState
     with db.session() as sess:
         docs = (
             sess.query(Document)
@@ -137,6 +167,77 @@ def _load_snapshot(db: ControlPlaneDatabase, tenant_id: str) -> dict[str, Any]:
             if doc_ids
             else []
         )
+        # Latest job per document (drives queued / failed / dead_letter states).
+        job_rows = (
+            sess.query(IngestionJob)
+            .filter(
+                IngestionJob.tenant_id == tenant_id,
+                IngestionJob.document_id.in_(doc_ids),
+            )
+            .order_by(IngestionJob.created_at.asc())
+            .all()
+            if doc_ids
+            else []
+        )
+        job_by_doc: dict[str, dict[str, Any]] = {}
+        for job in job_rows:
+            job_by_doc[job.document_id] = {
+                "status": str(job.status),
+                "attempts": job.attempts,
+                "error": job.last_error,
+                "priority": job.priority,
+                "available_at": job.available_at,
+                "created_at": job.created_at,
+            }
+        # Compute each queued job's position in the worker's claim order
+        # (priority desc, then earliest available_at, then oldest created_at) so
+        # a waiting/queued document can show how many jobs are ahead of it and
+        # when it will resume. Jobs deferred by retry backoff are ordered by
+        # when they become due.
+        _far = datetime.max.replace(tzinfo=UTC)
+
+        def _aware(dt: datetime | None) -> datetime:
+            if dt is None:
+                return _far
+            return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+
+        queued_docs = [
+            doc_id for doc_id, info in job_by_doc.items()
+            if info["status"] == "queued"
+        ]
+        queued_docs.sort(
+            key=lambda d: (
+                -(job_by_doc[d]["priority"] or 0),
+                _aware(job_by_doc[d]["available_at"]),
+                _aware(job_by_doc[d]["created_at"]),
+            )
+        )
+        now_ts = datetime.now(UTC)
+        for line_no, doc_id in enumerate(queued_docs, start=1):
+            info = job_by_doc[doc_id]
+            info["line_no"] = line_no
+            avail = _aware(info["available_at"])
+            # Seconds until the job is eligible to be claimed (0 when due now).
+            info["defer_seconds"] = max(0, int((avail - now_ts).total_seconds()))
+        # Intra-stage progress (e.g. embedding chunk counts) per document + stage.
+        progress_rows = (
+            sess.query(ProcessingState)
+            .filter(
+                ProcessingState.tenant_id == tenant_id,
+                ProcessingState.document_id.in_(doc_ids),
+            )
+            .all()
+            if doc_ids
+            else []
+        )
+        progress_by_doc: dict[str, dict[str, tuple[int, int]]] = {}
+        for ps in progress_rows:
+            if ps.total is None:
+                continue
+            progress_by_doc.setdefault(ps.document_id, {})[str(ps.stage)] = (
+                int(ps.processed or 0),
+                int(ps.total),
+            )
 
         completed_by_doc: dict[str, set[str]] = {d.id: set() for d in docs}
         latest_asset_time: dict[str, datetime] = {}
@@ -164,17 +265,36 @@ def _load_snapshot(db: ControlPlaneDatabase, tenant_id: str) -> dict[str, Any]:
             completed = completed_by_doc.get(doc.id, set())
             n_done = len(completed)
             is_deleted = str(doc.status) == "deleted"
+            job = job_by_doc.get(doc.id)
+            job_status = job["status"] if job else None
             if is_deleted:
                 status = "deleted"
             elif n_done == N_STAGES:
                 status = "complete"
-            elif n_done > 0:
+            elif job_status == "dead_letter":
+                status = "dead_letter"
+            elif job_status == "running":
+                # A worker holds this job right now -> genuinely in-flight.
                 status = "running"
+            elif n_done > 0 and job_status is None:
+                # No job row (e.g. synchronous path); assume it is progressing.
+                status = "running"
+            elif n_done > 0:
+                # Partial assets from an earlier attempt, but the job is queued
+                # (waiting for a worker) -- not actively running. It resumes at
+                # the first incomplete stage when a worker claims it.
+                status = "waiting"
             else:
                 status = "queued"
 
             current_stage = next(
                 (lbl for at, lbl in STAGES if at not in completed), None
+            )
+            current_stage_type = next(
+                (at for at, lbl in STAGES if at not in completed), None
+            )
+            stage_progress = progress_by_doc.get(doc.id, {}).get(
+                current_stage_type or ""
             )
             rows.append({
                 "id": doc.id,
@@ -183,14 +303,24 @@ def _load_snapshot(db: ControlPlaneDatabase, tenant_id: str) -> dict[str, Any]:
                 "completed": completed,
                 "n_done": n_done,
                 "current_stage": current_stage,
+                "current_stage_type": current_stage_type,
+                "stage_progress": stage_progress,
                 "doc_updated": doc.updated_at,
                 "last_asset": latest_asset_time.get(doc.id),
                 "is_deleted": is_deleted,
                 "metrics": metrics_by_doc.get(doc.id, {}),
+                "job_status": job_status,
+                "job_attempts": job["attempts"] if job else 0,
+                "job_error": job["error"] if job else None,
+                "line_no": job.get("line_no") if job else None,
+                "defer_seconds": job.get("defer_seconds") if job else None,
             })
 
         def _key(r: dict[str, Any]) -> tuple[int, float]:
-            order = {"running": 0, "queued": 1, "complete": 2, "deleted": 3}
+            order = {
+                "dead_letter": 0, "running": 1, "waiting": 2, "queued": 3,
+                "complete": 4, "deleted": 5,
+            }
             ts = r["last_asset"] or r["doc_updated"]
             return (order.get(r["status"], 9), -(ts.timestamp() if ts else 0))
         rows.sort(key=_key)
@@ -201,85 +331,268 @@ def _load_snapshot(db: ControlPlaneDatabase, tenant_id: str) -> dict[str, Any]:
             "total": len(nd),
             "done": sum(1 for r in nd if r["status"] == "complete"),
             "running": sum(1 for r in nd if r["status"] == "running"),
+            "waiting": sum(1 for r in nd if r["status"] == "waiting"),
             "queued": sum(1 for r in nd if r["status"] == "queued"),
+            "dead_letter": sum(1 for r in nd if r["status"] == "dead_letter"),
         }
 
 
 def _build_header(snap: dict, tenant_id: str, refresh: int) -> Panel:
     total, done, running, queued = snap["total"], snap["done"], snap["running"], snap["queued"]
+    waiting = snap.get("waiting", 0)
+    dead = snap.get("dead_letter", 0)
     pct = int((done/total)*100) if total else 0
     filled = int(pct/5)
     bar = "[bold green]" + "x"*filled + "[/bold green][dim]" + "."*(20-filled) + "[/dim]"
-    eta = f"   ~{total-done} remaining" if running > 0 else ""
+    eta = f"   ~{total-done} remaining" if (running + waiting + queued) > 0 else ""
+    wait_txt = f"  [cyan]{waiting}[/cyan] waiting" if waiting else ""
+    dead_txt = f"  [bold red]{dead}[/bold red] dead-letter" if dead else ""
     body = (f"  Tenant: [cyan]{tenant_id}[/cyan]   Refresh: [dim]{refresh}s[/dim]   "
             f"Time: [dim]{datetime.now().strftime('%H:%M:%S')}[/dim]\n\n"
             f"  {bar}  [bold]{pct}%[/bold]  [bold green]{done}[/bold green] complete  "
-            f"[bold yellow]{running}[/bold yellow] running  [dim]{queued}[/dim] queued  "
+            f"[bold yellow]{running}[/bold yellow] running{wait_txt}  "
+            f"[dim]{queued}[/dim] queued{dead_txt}  "
             f"of [bold]{total}[/bold] total{eta}\n")
     return Panel(body, title="[bold cyan]EKIE Ingestion Monitor[/bold cyan]", border_style="cyan")
 
 
-def _build_table(snap: dict, show_all: bool) -> Table:
+def _build_table(window: list[dict]) -> Table:
     table = Table(
         show_header=True, header_style="bold cyan", show_lines=True,
         expand=True, padding=(0, 1),
     )
-    table.add_column("Document", style="white", max_width=36, no_wrap=True)
-    table.add_column("T I C E P", min_width=12, no_wrap=True)
-    table.add_column("Status", min_width=18)
-    table.add_column("Stage Metrics", min_width=34, no_wrap=True)
-    table.add_column("Last", min_width=8, justify="right")
+    # Ratio columns flex to fill the console width; fixed-width columns are
+    # capped so the table never overflows the terminal. Long cells wrap onto
+    # multiple lines (Document, Status, Stage Metrics) instead of being cropped.
+    # Status flexes with a sensible minimum so short states stay on one line and
+    # longer ones (e.g. "waiting . resume E") wrap rather than truncate; Stage
+    # Metrics is trimmed since its content is compact.
+    table.add_column("Document", style="white", ratio=3, overflow="fold")
+    table.add_column("T I C E P", width=11, no_wrap=True, justify="center")
+    table.add_column("Status", ratio=2, min_width=18, overflow="fold")
+    table.add_column("Stage Metrics", ratio=4, overflow="fold")
+    table.add_column("Last", width=8, justify="right", no_wrap=True)
 
-    for r in (snap["rows"] if show_all else snap["rows"][:40]):
+    for r in window:
         if r["is_deleted"]:
             continue
         bar = _stage_bar(r["completed"])
         last = r["last_asset"] or r["doc_updated"]
-        n, cur = r["n_done"], r["current_stage"] or ""
+        cur = r["current_stage"] or ""
         metrics_str = _fmt_metrics(r.get("metrics", {}), r["completed"])
 
         if r["status"] == "complete":
             st = Text("complete", style="bold green")
+        elif r["status"] == "dead_letter":
+            st = Text(f"dead-letter x{r.get('job_attempts', 0)}", style="bold red")
+        elif r["status"] == "waiting":
+            # Partially processed on an earlier attempt but now queued; it will
+            # resume at the first incomplete stage when a worker is free. The
+            # earlier stage's live counter is stale, so show the resume point
+            # plus its position in the worker's claim order (and, if deferred by
+            # retry backoff, roughly how long until it becomes due).
+            st = Text(
+                f"waiting \u00b7 resume {cur} {r['n_done']}/{N_STAGES}"
+                f"{_queue_hint(r)}",
+                style="cyan",
+            )
         elif r["status"] == "running":
-            # Show how many stages are done and which is next
-            st = Text(f">> {cur}  {n}/{N_STAGES} done", style="bold yellow")
+            # Prefer live intra-stage progress (e.g. embedding/publish batches).
+            # Before a stage reports, fall back to a derived unit total from the
+            # prior stage's metrics so it reads "P 0/258" rather than a stage
+            # index. Only the earliest stages (no prior metrics) show N/stages.
+            progress = r.get("stage_progress")
+            if progress is not None:
+                done_units, total_units = progress
+            else:
+                derived = _derived_total(r.get("current_stage_type"), r.get("metrics", {}))
+                done_units, total_units = (0, derived) if derived else (None, None)
+            if total_units:
+                pct = int((done_units / total_units) * 100) if total_units else 0
+                st = Text(f">> {cur} {done_units}/{total_units} {pct}%", style="bold yellow")
+            else:
+                st = Text(f">> {cur}  {r['n_done']}/{N_STAGES} done", style="bold yellow")
         else:
-            st = Text("queued", style="dim")
+            st = Text(f"queued{_queue_hint(r)}", style="dim")
 
         table.add_row(r["name"], bar, st, metrics_str, _elapsed(last))
     return table
 
 
+def _queue_hint(r: dict) -> str:
+    """Position/ETA suffix for a queued or waiting document.
+
+    Shows where the job sits in the worker's claim order ("next" when it is
+    first, otherwise "#N in line") so it is clear how many jobs are ahead. If the
+    job is deferred by retry backoff, appends the rough time until it is due.
+    """
+    line_no = r.get("line_no")
+    if not line_no:
+        return ""
+    place = "next" if line_no == 1 else f"#{line_no} in line"
+    defer = r.get("defer_seconds") or 0
+    if defer > 0:
+        place += f", in {_fmt_duration(defer)}"
+    return f"  [{place}]"
+
+
+def _fmt_duration(seconds: int) -> str:
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
+
+
 def _build_legend() -> Panel:
+    # Category labels are padded to a fixed width so the rows line up into a
+    # clean left "key" column; the second line of Metrics is a continuation.
     body = (
-        "  Stages: [bold green]x[/bold green]=done  [dim].[/dim]=pending  "
-        "T=Transform  I=Intelligence  C=Chunking  E=Embedding  P=Publish\n"
-        "  Metrics: T=ch(chars)  I=§(sections) t(tokens) tbl(tables) cb(code) lang  "
-        "C=ch(chunks) t(tokens)  E=em(embeds) t(tokens) b(batches) d(dim)  "
-        "P=v(vecs) ✓(verified) b(batches)\n"
-        "  [dim]Ctrl+C to exit[/dim]"
+        "  [bold cyan]Stages [/bold cyan]  [bold green]x[/bold green]=done  "
+        "[dim].[/dim]=pending    "
+        "T Transform   I Intelligence   C Chunking   E Embedding   P Publish\n"
+        "  [bold cyan]Status [/bold cyan]  complete    "
+        "[bold yellow]>> E 128/260 49%[/bold yellow] (running: stage + done/total)    "
+        "[cyan]waiting[/cyan] ([green]next[/green]/#N in line, resumes)    "
+        "queued    [bold red]dead-letter[/bold red] (retries exhausted)\n"
+        "  [bold cyan]Metrics[/bold cyan]  "
+        "[cyan]T[/cyan] ch=chars    "
+        "[cyan]I[/cyan] §=sections t=tokens tbl=tables cb=code +lang    "
+        "[cyan]C[/cyan] ch=chunks t=tokens\n"
+        "  [cyan]       [/cyan]  "
+        "[cyan]E[/cyan] em=embeddings t=tokens b=batches d=dim    "
+        "[cyan]P[/cyan] v=vectors ✓=verified b=batches\n"
+        "  [bold cyan]Last   [/bold cyan]  time since newest stage asset"
+        "                              [dim]Ctrl+C to exit[/dim]"
     )
-    return Panel(body, border_style="dim", padding=(0, 1))
+    return Panel(body, title="[dim]Legend[/dim]", border_style="dim", padding=(0, 1))
 
 
-def run_monitor(tenant_id: str, refresh: int, show_all: bool) -> None:
+def _poll_key() -> str | None:
+    """Non-blocking read of a single navigation keystroke (Windows console)."""
+    if msvcrt is None or not msvcrt.kbhit():
+        return None
+    ch = msvcrt.getwch()
+    if ch in ("\x00", "\xe0"):  # extended key: a second code follows
+        code = msvcrt.getwch()
+        return {
+            "H": "up", "P": "down", "I": "pageup", "Q": "pagedown",
+            "G": "home", "O": "end",
+        }.get(code)
+    low = ch.lower()
+    if low == "q":
+        return "quit"
+    if low == "f":
+        return "follow"
+    return None
+
+
+def _row_height(r: dict) -> int:
+    """Estimate how many terminal lines a table row occupies.
+
+    Stage Metrics render one line per completed stage; long document names wrap.
+    A separator line is added because the table draws lines between rows.
+    """
+    metric_lines = sum(1 for at, _ in STAGES if at in r["completed"])
+    lines = max(metric_lines, 1)
+    name_len = len(r["name"])
+    if name_len > 40:
+        lines = max(lines, 3)
+    elif name_len > 22:
+        lines = max(lines, 2)
+    return lines + 1
+
+
+def _max_offset(visible: list[dict], available: int) -> int:
+    """Largest scroll offset that still fills the viewport with the tail rows."""
+    used = 0
+    i = len(visible)
+    while i > 0:
+        h = _row_height(visible[i - 1])
+        if used + h > available:
+            break
+        used += h
+        i -= 1
+    return i
+
+
+def _pack_window(visible: list[dict], offset: int, available: int) -> list[dict]:
+    """Return the slice of rows starting at ``offset`` that fits the viewport."""
+    used = 0
+    end = offset
+    while end < len(visible):
+        h = _row_height(visible[end])
+        if used + h > available and end > offset:
+            break
+        used += h
+        end += 1
+    return visible[offset:end]
+
+
+def _build_footer(start: int, shown: int, total: int, follow: bool) -> Text:
+    mode = "[green]FOLLOW[/green]" if follow else "[yellow]SCROLL[/yellow]"
+    span = f"{start + 1}-{start + shown} of {total}" if total else "0 of 0"
+    return Text.from_markup(
+        f"  rows {span}   {mode}   "
+        "[dim]\u2191/\u2193 PgUp/PgDn Home/End scroll \u00b7 f follow \u00b7 q quit[/dim]"
+    )
+
+
+def run_monitor(tenant_id: str, refresh: int) -> None:
     from config.settings import get_settings
     from domain.control_plane import ControlPlaneDatabase
     db = ControlPlaneDatabase(get_settings().control_plane)
     db.run_migrations()
-    with Live(console=console, refresh_per_second=2, screen=True) as live:
+    offset = 0
+    follow = True
+    snap: dict[str, Any] | None = None
+    next_refresh = 0.0
+    with Live(console=console, refresh_per_second=8, screen=True) as live:
         while True:
             try:
-                snap = _load_snapshot(db, tenant_id)
+                now = time.monotonic()
+                if snap is None or now >= next_refresh:
+                    snap = _load_snapshot(db, tenant_id)
+                    next_refresh = now + refresh
+                visible = [r for r in snap["rows"] if not r["is_deleted"]]
+                # Reserve lines for header (6), footer (1), legend (7) and the
+                # table's own borders/header (~4); the rest holds scrollable rows.
+                available = max(2, console.size.height - 18)
+                max_off = _max_offset(visible, available)
+                if follow:
+                    offset = 0
+                offset = min(offset, max_off)
+                window = _pack_window(visible, offset, available)
                 layout = Layout()
-                layout.split_column(Layout(_build_header(snap, tenant_id, refresh), size=6),
-                                    Layout(_build_table(snap, show_all)),
-                                    Layout(_build_legend(), size=3))
+                layout.split_column(
+                    Layout(_build_header(snap, tenant_id, refresh), size=6),
+                    Layout(_build_table(window)),
+                    Layout(_build_footer(offset, len(window), len(visible), follow), size=1),
+                    Layout(_build_legend(), size=7),
+                )
                 live.update(layout)
-                time.sleep(refresh)
+
+                key = _poll_key()
+                if key == "quit":
+                    break
+                elif key == "up":
+                    offset, follow = max(0, offset - 1), False
+                elif key == "down":
+                    offset, follow = min(max_off, offset + 1), False
+                elif key == "pageup":
+                    offset, follow = max(0, offset - max(1, len(window))), False
+                elif key == "pagedown":
+                    offset, follow = min(max_off, offset + max(1, len(window))), False
+                elif key == "home":
+                    offset, follow = 0, False
+                elif key == "end":
+                    offset, follow = max_off, False
+                elif key == "follow":
+                    follow = not follow
+                time.sleep(0.05)
             except KeyboardInterrupt:
                 break
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - keep the dashboard alive
                 live.update(Panel(f"[red]Error: {exc}[/red]"))
                 time.sleep(refresh)
 
@@ -288,9 +601,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Live EKIE ingestion progress monitor")
     parser.add_argument("--tenant-id", default="tenant-default")
     parser.add_argument("--refresh", type=int, default=2)
-    parser.add_argument("--all", action="store_true", dest="show_all")
+    parser.add_argument(
+        "--all", action="store_true", dest="show_all",
+        help="(deprecated) all rows are always shown; use scroll keys instead",
+    )
     args = parser.parse_args()
-    run_monitor(args.tenant_id, args.refresh, args.show_all)
+    run_monitor(args.tenant_id, args.refresh)
     console.print("\n[dim]Monitor stopped.[/dim]")
     return 0
 

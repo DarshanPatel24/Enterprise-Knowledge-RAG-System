@@ -38,6 +38,16 @@ os.environ.setdefault("HF_HUB_VERBOSITY", "error")
 for _noisy_logger in ("httpx", "urllib3", "filelock"):
     logging.getLogger(_noisy_logger).setLevel(logging.WARNING)
 
+# Supply-chain / local-first control: when EKDC_OFFLINE is set, block ALL remote
+# model & data downloads (HuggingFace, transformers, and Docling's HF-hosted
+# layout/table/OCR models). Cached models are still used; a missing model then
+# fails loudly instead of silently downloading from the internet. Populate the
+# cache once with EKDC_OFFLINE unset, then set EKDC_OFFLINE=true to lock it down.
+if os.environ.get("EKDC_OFFLINE", "").strip().lower() in {"1", "true", "yes", "on"}:
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    logger.info("EKDC_OFFLINE enabled: remote model downloads are blocked (cache-only).")
+
 # Route local model downloads (HuggingFace/transformers/Whisper/torch) to the
 # persistent cache folder configured in the EKDC .env (EKDC_MODEL_CACHE_DIR),
 # so weights are stored in one predictable place and reused across restarts.

@@ -503,6 +503,8 @@ If an unsupported provider value is configured, EKIE fails configuration validat
 
 > **Note on using HuggingFace locally for Intelligence:** To use a HuggingFace LLM (e.g., `Qwen/Qwen2.5-7B-Instruct`) for topic analysis, install the dependencies (`pip install langchain-huggingface torch transformers accelerate`). Then set `EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS=true`, `EKIE_INTELLIGENCE__LLM_PROVIDER=huggingface`, and update `EKIE_INTELLIGENCE__LLM_MODEL` to your model ID. The model weights will be downloaded and cached in your `HF_HOME` directory.
 
+> **Use a text-generation model, not a vision model.** `EKIE_INTELLIGENCE__LLM_MODEL` must be a text/chat instruct model (loaded as a `text-generation` pipeline), for example `Qwen/Qwen2.5-3B-Instruct`. A **vision-language** model such as `Qwen/Qwen2.5-VL-3B-Instruct` cannot be loaded this way; the analyzer logs `llm_analysis_skipped` and falls back to the deterministic heuristic topic (ingestion still completes). CPU inference on multi-billion-parameter models is slow (minutes per document); use a smaller model, an Ollama backend, or set `ENABLE_LLM_ANALYSIS=false` to skip it. See §19.1.
+
 #### Intelligent Chunking
 
 | Variable | Default | Description |
@@ -536,6 +538,8 @@ If an unsupported provider value is configured, EKIE fails configuration validat
 | `EKIE_EMBEDDING__OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API endpoint |
 
 > **Note on using HuggingFace locally:** The active embedding model is `Qwen/Qwen3-VL-Embedding-2B` (dim=1536). Required packages: `pip install -U "sentence-transformers[image]" torchvision langchain-huggingface`. Model weights (~4 GB) are cached in `HF_HOME=./storage/hf`. To switch models, update `EKIE_EMBEDDING__DEFAULT_MODEL` and `EKIE_EMBEDDING__DIMENSION` in `.env` then restart.
+
+> **GPU acceleration:** The default `torch` from PyPI is **CPU-only**. For an NVIDIA GPU, install a CUDA build matching your driver, e.g. (CUDA 13): `pip install --force-reinstall "torch==2.12.1" --index-url https://download.pytorch.org/whl/cu130` (verify with `python -c "import torch; print(torch.cuda.is_available())"`). Set `EKIE_EMBEDDING__DEVICE=auto` and `EKIE_EMBEDDING__TORCH_DTYPE=float16` — fp16 halves VRAM so the 2B model fits a 6 GB GPU (~4.3 GB vs ~8 GB in fp32). The embedding provider then runs on the GPU automatically. Restart the ingest worker (or API) for it to take effect.
 
 The embedding dimension must be a plain integer (for example `768`), not a comma-formatted value.
 
@@ -809,11 +813,14 @@ Run the full ingestion workflow for a synced document. The document bytes are se
 
 **Parameters:**
 - `document_id` (path, required): The document ID from the Control Plane
+- `sync` (query, optional, default false): When async ingestion is enabled, set `sync=true` to force inline execution and receive the full `WorkflowResponse` instead of a `202` acknowledgement. Ignored when async is disabled.
 - `mime_type` (query, optional): MIME type hint (e.g., `text/markdown`, `text/plain`)
 - `intelligence_provider` (query, optional): Override the LLM provider for document analysis (e.g., `huggingface` or `ollama`).
 - `intelligence_model` (query, optional): Override the LLM model used for analysis (e.g., `meta-llama/Llama-3-8b-chat-hf`).
 - `embedding_provider` (query, optional): Override the embedding provider (e.g., `huggingface` or `ollama`).
 - `embedding_model` (query, optional): Override the embedding model used for vector generation.
+
+**Synchronous vs. asynchronous:** When `EKIE_INGESTION__ASYNC_ENABLED=false` (default) the pipeline runs inline and returns `200 OK` with the completed `WorkflowResponse`. When async is enabled the API persists the source, enqueues a durable job, and returns `202 Accepted`; a running ingest worker (`scripts/start_ingest_worker.py`) then executes the pipeline. Track progress via `GET /v1/documents/{document_id}/job`.
 
 **Request:**
 ```bash
@@ -867,6 +874,51 @@ Returned when the workflow is dead-lettered (all retry attempts exhausted):
 }
 ```
 
+**Response (202 Accepted):**
+Returned when async ingestion is enabled. The pipeline runs later in a worker:
+```json
+{
+  "job_id": "b1f2...",
+  "document_id": "doc-123",
+  "tenant_id": "tenant-1",
+  "kind": "ingest",
+  "status": "queued",
+  "status_url": "/v1/documents/doc-123/job",
+  "message": "ingestion job enqueued"
+}
+```
+
+---
+
+```
+GET /v1/documents/{document_id}/job
+```
+
+Return the latest durable ingestion job for a document (async path). Useful for
+polling after a `202 Accepted` ingest response.
+
+**Parameters:**
+- `document_id` (path, required): Document ID from the Control Plane.
+
+**Response (200 OK):**
+```json
+{
+  "job_id": "b1f2...",
+  "document_id": "doc-123",
+  "tenant_id": "tenant-1",
+  "kind": "ingest",
+  "status": "running",
+  "attempts": 1,
+  "max_attempts": 3,
+  "source_path": null,
+  "last_error": null
+}
+```
+
+Job `status` is one of `queued`, `running`, `succeeded`, `failed` (retrying), or
+`dead_letter` (retries exhausted). Returns `404 Not Found` when no job exists for
+the document.
+
 ---
 
 ```
@@ -892,17 +944,23 @@ curl -X POST "http://localhost:8001/v1/documents/doc-123/replay?embedding_provid
 ---
 
 ```
-DELETE /v1/documents/{document_id}/vectors
+DELETE /v1/documents/{document_id}
 ```
 
-Delete published vectors for a document, typically used after source deletion.
+Hard-delete a document. Purges its published vectors from the vector database,
+then removes the document's Control Plane rows. Deleting the document cascades to
+its assets, workflows, and processing-state records. This is the delete path the
+sync worker uses when a source file is removed.
 
 **Parameters:**
 - `document_id` (path, required): Document ID from the Control Plane.
+- `force` (query, optional, default false): When false, a vector-cleanup failure
+  aborts the delete so it can be retried safely. When true, the document rows are
+  removed regardless and any cleanup error is reported in the response.
 
 **Request:**
 ```bash
-curl -X DELETE "http://localhost:8001/v1/documents/doc-123/vectors" \
+curl -X DELETE "http://localhost:8001/v1/documents/doc-123?force=false" \
   -H "X-Tenant-ID: tenant-1"
 ```
 
@@ -911,14 +969,18 @@ curl -X DELETE "http://localhost:8001/v1/documents/doc-123/vectors" \
 {
   "document_id": "doc-123",
   "tenant_id": "tenant-1",
-  "deleted_count": 12,
+  "vectors_deleted": 12,
+  "row_deleted": true,
   "provider": "qdrant",
   "collection": "enterprise_documents",
-  "message": "vectors deleted"
+  "vector_cleanup_error": null,
+  "message": "document deleted"
 }
 ```
 
-If no vector payload is found, EKIE returns `deleted_count: 0` with message `no published vectors found`.
+Returns `404 Not Found` when no matching document exists for the tenant. For bulk
+or orphaned-document cleanup (for example after the sync target directory is
+changed), use `python services/ekie/scripts/purge_documents.py` (see its `--help`).
 
 ---
 
@@ -1864,6 +1926,39 @@ EmbeddingValidationError: Expected dimension 768, got 256
 
 **Solution:** Ensure `EKIE_EMBEDDING__DIMENSION` matches the actual output dimension of your embedding model. For example, `nomic-embed-text` outputs 768 dimensions. Use plain integers only (`768`, not `4,096`).
 
+#### Async jobs stay `queued` and never run
+
+**Symptom:** With `EKIE_INGESTION__ASYNC_ENABLED=true`, the monitor shows documents as `queued` indefinitely.
+
+**Solution:** Async ingestion requires a running ingest worker. Start it:
+```powershell
+python services/ekie/scripts/start_ingest_worker.py   # or: ekie-ingest-worker
+```
+
+#### Job dead-lettered with "source bytes unavailable for ingestion"
+
+**Symptom:** An async job fails three times and lands in `dead_letter`; `last_error` reads `source bytes unavailable for ingestion`.
+
+**Cause:** The API and worker are separate processes, so the source must be handed off through the shared Control Plane (`ingestion_sources` table). This error means the source was not staged there — typically the API and worker are running mismatched code, or the API was not restarted after upgrading.
+
+**Solution:** Restart the API and the ingest worker so both run the current code, then re-ingest the document (remove its twin so the sync worker re-discovers it — a re-save alone won't re-trigger because change detection is content-hash based).
+
+#### Restarting the ingest worker doesn't pick the job back up
+
+**Symptom:** After killing and restarting the worker, the in-flight document stops progressing and the job stays `running` with no activity.
+
+**Cause:** A hard kill leaves the job locked; another worker only reclaims it after `EKIE_INGESTION__VISIBILITY_TIMEOUT_SECONDS` (default 600s). Stopping with **Ctrl+C** avoids this by releasing the job immediately.
+
+**Solution:** Wait for the visibility timeout, or reset the stuck job to `queued` (clear its lock) so the worker claims it now. Prefer Ctrl+C over closing the window when stopping the worker.
+
+#### `llm_analysis_skipped` in the logs
+
+**Symptom:** The worker logs `llm_analysis_skipped` and the document's topic is heuristic rather than LLM-refined.
+
+**Cause:** The configured `EKIE_INTELLIGENCE__LLM_MODEL` could not be loaded as a text-generation chat model — most commonly because a **vision-language** model (e.g. `Qwen/Qwen2.5-VL-3B-Instruct`) was configured. This is non-fatal: ingestion completes using the deterministic topic.
+
+**Solution:** Set a text instruct model such as `Qwen/Qwen2.5-3B-Instruct`, switch to an Ollama backend, or set `EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS=false`. The real reason is recorded in the warning's structured `reason` field.
+
 #### Unsupported provider value in environment
 
 **Symptom:** EKIE fails startup with settings validation error for provider fields.
@@ -2002,7 +2097,12 @@ A run is accepted when all conditions below are true:
 
 ### 21.2 Operator Sequence (No Code Changes)
 
-**Recommended: use the deployment task runner for a full gated deployment:**
+**Quickest day-to-day launcher — the control panel.** From the repository root,
+`.\ekie.ps1` opens a menu to start the API, sync worker, ingest worker, and
+monitor (each in its own window), toggle async mode, check health, and
+list/purge documents. See the Deployment Guide §6.0.
+
+**Recommended for a full gated deployment: use the deployment task runner:**
 
 ```powershell
 # Runs all 10 gates with per-gate pass/fail status:
@@ -2043,6 +2143,19 @@ python services/ekie/scripts/start_api.py
 ```bash
 curl http://localhost:8001/health/live
 curl http://localhost:8001/health/ready
+```
+
+6. Start the sync worker (watches the target folder and submits documents)
+```powershell
+python services/ekie/scripts/start_worker.py
+# Or: ekie-worker
+```
+
+7. (Async mode only) Start the ingest worker pool
+```powershell
+# Required when EKIE_INGESTION__ASYNC_ENABLED=true, otherwise skip.
+python services/ekie/scripts/start_ingest_worker.py
+# Or: ekie-ingest-worker
 ```
 
 ### 21.3 Markdown Ingestion Validation Flow
@@ -2157,21 +2270,123 @@ python services/ekie/scripts/monitor.py --all
 What the monitor shows:
 
 ```
-╭────────────────── EKIE Ingestion Monitor ──────────────────╮
-│  Tenant: tenant-default   Refresh: 3s   Time: 16:05:23               │
-│                                                                        │
-│  ████████░░░░░░░░░░░░  42%  5 complete  2 running  3 queued  1 failed │
+╭──────────────────────── EKIE Ingestion Monitor ────────────────────────╮
+│  Tenant: tenant-default   Refresh: 2s   Time: 19:13:40                   │
+│                                                                          │
+│  xxxxxxxxxx..........  50%  1 complete  1 running  0 queued  of 2 total  │
 ╰──────────────────────────────────────────────────────────────────────────╯
 
- Document               Stages       Pipeline Status    Updated
- dashboard.pdf          █ █ █ ░ ░    ➳ embedding…       45s
- CI101_PPTX.pptx        █ █ █ █ █    ✓ complete         2m 12s
- FDS_Rev00.docx         ░ ░ ░ ░ ░    synced, awaiting   5s
+ Document          T I C E P   Status            Stage Metrics        Last
+ PlantState…       x x x . .   >> E 128/260 49%  T  168467ch          36s
+                                                 I  291§ 25201t ...
+                                                 C  260ch 24451t
+ New Text Doc.txt  x x x x x   complete          T  269ch ...         68h
+
+╭─ Legend ────────────────────────────────────────────────────────────────╮
+│  Stages   x=done  .=pending   T Transform  I Intelligence  C Chunking ... │
+│  Status   complete   >> E 128/260 49% (running: stage + done/total)   ... │
+│  Metrics  T ch=chars   I §=sections t=tokens ...   C ch=chunks t=tokens   │
+│           E em=embeddings t=tokens b=batches d=dim   P v=vectors ✓=verif. │
+│  Last     time since newest stage asset                    Ctrl+C to exit │
+╰──────────────────────────────────────────────────────────────────────────╯
 ```
 
-**Stage bar:** `█`=done `░`=pending across 5 stages: Transformation, Intelligence, Chunking, Embedding, Publishing.
+**Columns:**
+
+| Column | Meaning |
+|--------|---------|
+| **Document** | Source file name. |
+| **T I C E P** | Per-stage pipeline bar: `x` = complete, `.` = pending. |
+| **Status** | `complete`; `>> <stage> <done>/<total> <pct>%` (running, with live intra-stage progress); `queued`; or `dead-letter`. |
+| **Stage Metrics** | Per-stage counters for completed stages, **one stage per line** (decoded in the Legend). |
+| **Last** | Time since the most recent stage asset was written for that document. |
+
+The **Status** column shows real, live within-stage progress: while a document is
+embedding, it advances `>> E 1/260 → 260/260 100%` as each batch of chunks is
+processed (published to the Control Plane per batch). The **Legend** panel at the
+bottom is a static key, organized by category (Stages / Status / Metrics / Last).
+
+**Pipeline stages (`T I C E P`):**
+
+| Stage | Letter | Meaning |
+|-------|--------|---------|
+| Transform | `T` | Document → Markdown conversion |
+| Intelligence | `I` | Structure / section analysis |
+| Chunking | `C` | Splitting into chunks |
+| Embedding | `E` | Vector embedding generation |
+| Publish | `P` | Writing vectors to Qdrant |
+
+**Stage Metrics** — e.g. `T:168467ch I:291§ 25201t 0tbl 10cb en C:260ch 24451t` decodes as:
+
+- **T** (Transform): `ch` = characters in the generated Markdown.
+- **I** (Intelligence): `§` = sections, `t` = tokens, `tbl` = tables, `cb` = code blocks, then the detected language (e.g. `en`).
+- **C** (Chunking): `ch` = chunks produced, `t` = total tokens across chunks.
+- **E** (Embedding): `em` = embeddings created, `t` = total tokens embedded, `b` = batches, `d` = embedding dimension.
+- **P** (Publish): `v` = vectors upserted, `✓` = vectors verified present, `b` = batches.
+
+A condensed version of this legend is always rendered at the bottom of the monitor window for quick reference.
 
 The monitor reads the Control Plane directly (no API call required) so it stays accurate even while a long ingestion is in progress. Press **Ctrl+C** to exit.
+
+### 21.6.1 Asynchronous Ingestion Worker
+
+Large documents can exceed the API's HTTP read timeout when the pipeline runs
+inline. Enable the durable job queue so ingestion runs out of the request path
+with retries and dead-lettering:
+
+```powershell
+# 1. In services/ekie/.env:
+#    EKIE_INGESTION__ASYNC_ENABLED=true
+
+# 2. Run one or more ingest workers alongside the API and sync worker:
+python services/ekie/scripts/start_ingest_worker.py
+# Or: ekie-ingest-worker
+```
+
+Behavior when enabled:
+- `POST /v1/documents/{id}/ingest` stages the source bytes in the Control Plane (`ingestion_sources`), enqueues a job, and returns `202 Accepted` with a `job_id`. Because the worker is a separate process, the source is handed off through the shared database, not process-local memory.
+- The ingest worker claims jobs, runs the pipeline (or a deletion), and marks the job `succeeded` (deleting the staged source), or requeues with exponential backoff up to `EKIE_INGESTION__MAX_ATTEMPTS` before `dead_letter`.
+- **Graceful restart:** stopping the worker with **Ctrl+C** returns its in-flight job to the queue immediately (no retry spent), so a restarted worker resumes it at once.
+- **Hard-kill recovery:** if the worker is killed abruptly, its job is reclaimed once the lock is older than `EKIE_INGESTION__VISIBILITY_TIMEOUT_SECONDS` (default 600s).
+- Poll `GET /v1/documents/{id}/job` for status. The monitor also shows `queued`, live `running` progress, and red `dead-letter` rows.
+
+Tuning keys live under `EKIE_INGESTION__*` (see `.env.example`). With async
+disabled (default), ingestion runs inline and no ingest worker is needed.
+
+### 21.6.2 Deleting Documents and Cleaning Up Orphans
+
+Deletion is a hard delete: it purges the document's vectors from the vector
+store and removes its Control Plane rows (assets, workflows, and processing
+state cascade). The sync worker performs this automatically when a source file
+is removed.
+
+Delete a single document via the API:
+```bash
+curl -X DELETE "http://localhost:8001/v1/documents/{document_id}?force=false" \
+  -H "X-Tenant-ID: tenant-default"
+```
+
+Bulk or orphaned cleanup uses the maintenance tool. Orphaned documents occur
+when `EKIE_SYNC__TARGET_DIRECTORY` is repointed at a new folder: documents from
+the previous folder are no longer scanned and cannot be delete-detected.
+
+```powershell
+# Inspect current documents grouped by repository:
+python services/ekie/scripts/purge_documents.py --list
+
+# Remove documents whose repository no longer matches the current target:
+python services/ekie/scripts/purge_documents.py --orphaned --force --yes
+
+# Remove a specific document, or every soft-deleted row:
+python services/ekie/scripts/purge_documents.py --source-path "old.md" --force --yes
+python services/ekie/scripts/purge_documents.py --status deleted --force --yes
+
+# Drop repository records that have no remaining documents:
+python services/ekie/scripts/purge_documents.py --drop-empty-repositories --yes
+```
+
+The tool prints the affected documents and prompts for confirmation unless
+`--yes` is passed. It also purges the corresponding vectors from Qdrant.
 
 ### 21.7 Langfuse Monitoring Path
 
@@ -2202,6 +2417,19 @@ If the Langfuse container fails to become healthy, check:
 docker logs enterprise-knowledge-rag-system-clickhouse-1 --tail 20
 docker logs enterprise-knowledge-rag-system-langfuse-1 --tail 20
 ```
+
+**Langfuse worker Redis auth errors.** If the `langfuse-worker` container floods
+logs with `ERR AUTH <password> called without any password configured` (its
+`monitor-queue` timing out), the Redis client and server disagree on
+authentication. The compose file now runs Redis with a password
+(`--requirepass ${REDIS_PASSWORD:-langfuse_redis}`) and passes the same value to
+Langfuse via `REDIS_AUTH`, so both sides match. Recreate the affected containers
+to apply it:
+```powershell
+docker compose -f docker-compose.local.yml up -d redis langfuse langfuse-worker
+```
+This Redis instance serves Langfuse only — EKIE's own job queue is Control-Plane
+(database) backed and does not use Redis.
 
 ### 21.8 Production Handover Notes
 

@@ -1,1 +1,17 @@
+# EKRE retrieval platform foundations (EKRE-S0).
+# The service is a REST client of the local container stack; all values are
+# configuration-driven and installed on demand behind engine-owned seams.
+
+fastapi>=0.111.0
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+
+# Live retrieval path (Ollama runtime + Qdrant vector store). Install with the
+# service when connecting to real infrastructure; the offline test path does not
+# require these because all third-party imports are lazy.
+# langchain-core>=0.2.0
+# langchain-ollama>=0.2.0
+# langchain-huggingface>=0.0.3
+# langchain-qdrant>=0.1.0
+# qdrant-client>=1.9.0
 

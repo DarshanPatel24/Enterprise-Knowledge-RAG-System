@@ -1,3 +1,11 @@
+# GPU acceleration (NVIDIA): torch/torchvision (pulled in by docling & whisper)
+# default to CPU-only wheels. For GPU, install CUDA builds matching your driver
+# INSTEAD, e.g. (CUDA 13) into THIS service's venv:
+#   pip install --force-reinstall --no-deps "torch==2.12.1" "torchvision==0.27.1" \
+#       --index-url https://download.pytorch.org/whl/cu130
+# Then Whisper and Docling use the GPU automatically. Control it with EKDC_DEVICE
+# (auto | cuda | cpu). EKDC runs in its OWN venv (services/ekdc/.venv), separate
+# from EKIE's, so install the CUDA build here too.
 python-dotenv
 docling
 watchdog

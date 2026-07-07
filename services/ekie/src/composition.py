@@ -54,7 +54,7 @@ from domain.security import (
     SecurityPolicy,
     StagePolicyGuard,
 )
-from domain.storage import AssetStorage, InMemoryAssetStorage
+from domain.storage import AssetStorage
 from domain.transformation.pipeline import TransformationPipeline
 from domain.transformation.policy import TransformationPolicy
 from domain.validation import PipelineValidator
@@ -64,8 +64,10 @@ def build_asset_storage(settings: EkieSettings) -> AssetStorage:
     """Return the appropriate asset storage backend from settings.
 
     Selects :class:`MinIOAssetStorage` when ``EKIE_STORAGE__ENDPOINT`` is
-    non-empty and ``EKIE_ENVIRONMENT`` is not ``local``.  All other cases
-    use the in-memory fallback so offline and test paths remain dependency-free.
+    non-empty and ``EKIE_ENVIRONMENT`` is not ``local``. The local-first default
+    is :class:`LocalFileAssetStorage`, a persistent on-disk store so stage
+    payloads survive API/worker restarts (an in-memory store would lose them,
+    causing resumed jobs to fail with missing upstream payloads).
     """
     if settings.environment != "local" and settings.storage.endpoint:
         from domain.storage.minio import MinIOAssetStorage
@@ -77,7 +79,9 @@ def build_asset_storage(settings: EkieSettings) -> AssetStorage:
             bucket=settings.storage.bucket,
             secure=settings.storage.secure,
         )
-    return InMemoryAssetStorage()
+    from domain.storage.local import LocalFileAssetStorage
+
+    return LocalFileAssetStorage(settings.storage.local_path)
 
 
 def build_intelligence_engine(
@@ -122,6 +126,8 @@ def build_embedding_engine(
     storage: AssetStorage,
 ) -> EmbeddingEngine:
     """Build the embedding engine with the configured provider registry."""
+    from domain.control_plane.progress import ControlPlaneProgressReporter
+
     return EmbeddingEngine(
         db,
         storage,
@@ -129,6 +135,7 @@ def build_embedding_engine(
         provider_registry=build_embedding_provider_registry(
             settings.embedding  # type: ignore[arg-type]
         ),
+        progress_reporter=ControlPlaneProgressReporter(db),
     )
 
 
@@ -138,6 +145,8 @@ def build_publishing_engine(
     storage: AssetStorage,
 ) -> VectorPublishingEngine:
     """Build the vector publishing engine with the configured provider registry."""
+    from domain.control_plane.progress import ControlPlaneProgressReporter
+
     return VectorPublishingEngine(
         db,
         storage,
@@ -146,6 +155,7 @@ def build_publishing_engine(
             settings.publishing,  # type: ignore[arg-type]
             settings.qdrant,
         ),
+        progress_reporter=ControlPlaneProgressReporter(db),
     )
 
 

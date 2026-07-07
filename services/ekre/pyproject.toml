@@ -1,0 +1,67 @@
+[project]
+name = "ekre"
+version = "0.1.0"
+description = "Enterprise Knowledge Retrieval Engine (EKRE) - retrieval platform foundations"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.111.0",
+  "pydantic>=2.7.0",
+  "pydantic-settings>=2.3.0",
+]
+
+[project.optional-dependencies]
+# Local HuggingFace embedding models for query embedding (must match the model
+# EKIE used to produce the stored vectors). For NVIDIA GPU acceleration, install
+# a CUDA build of torch that matches your driver instead of the default CPU wheel.
+huggingface = [
+  "langchain-huggingface>=0.0.3",
+  "sentence-transformers>=3.0.0",
+  "transformers>=4.0.0",
+  "accelerate>=0.21.0",
+  "torch>=2.0.0",
+]
+# Ollama runtime + Qdrant vector store client for the live retrieval path.
+retrieval = [
+  "langchain-core>=0.2.0",
+  "langchain-ollama>=0.2.0",
+  "langchain-qdrant>=0.1.0",
+  "qdrant-client>=1.9.0",
+]
+dev = [
+  "pytest>=8.2.0",
+  "pytest-asyncio>=0.23.0",
+  "httpx>=0.27.0",
+  "mypy>=1.10.0",
+]
+
+[project.scripts]
+ekre-api = "scripts.start_api:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "../../packages/contracts/src", "tests"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
+mypy_path = "src:../../packages/contracts/src"
+
+# Optional real-provider clients are lazily imported behind engine seams and are
+# not installed on the default offline path; ignore their missing stubs.
+[[tool.mypy.overrides]]
+module = [
+  "qdrant_client",
+  "qdrant_client.models",
+  "langchain_ollama",
+  "langchain_huggingface",
+  "langchain_qdrant",
+  "langchain_core.embeddings",
+  "langchain_core.vectorstores",
+  "langchain_core.runnables",
+  "langchain_core.retrievers",
+  "langfuse.callback",
+  "langgraph.graph",
+]
+ignore_missing_imports = true

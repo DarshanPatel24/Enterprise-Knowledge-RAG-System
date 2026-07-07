@@ -23,8 +23,10 @@ from domain.control_plane import (
     ControlPlaneDatabase,
     Document,
     DocumentStatus,
+    JobKind,
     Repository,
 )
+from domain.jobs import SourceStore
 from domain.observability import get_correlation_id
 from domain.orchestration import (
     WorkflowOrchestrator,
@@ -33,7 +35,13 @@ from domain.orchestration import (
     WorkflowStatus,
 )
 from domain.orchestration.state import StageRecord
-from domain.publishing import VectorCleanupError, VectorCleanupService, cleanup_provider_registry
+from domain.storage import compute_content_hash
+from domain.publishing import (
+    DocumentDeletionService,
+    VectorCleanupError,
+    VectorCleanupService,
+    cleanup_provider_registry,
+)
 from domain.sync import (
     RepositoryConnector,
     RepositoryConnectorConfig,
@@ -113,15 +121,43 @@ class RepositoryIngestResponse(BaseModel):
     results: list[WorkflowResponse] = Field(default_factory=list)
 
 
-class VectorDeleteResponse(BaseModel):
-    """Outcome of purging vectors for a single document."""
+class DocumentDeleteResponse(BaseModel):
+    """Outcome of hard-deleting a document and its derived state."""
 
     document_id: str
     tenant_id: str
-    deleted_count: int
+    vectors_deleted: int
+    row_deleted: bool
     provider: str | None = None
     collection: str | None = None
+    vector_cleanup_error: str | None = None
     message: str
+
+
+class JobAcceptedResponse(BaseModel):
+    """Acknowledgement that an ingestion job was durably enqueued."""
+
+    job_id: str
+    document_id: str
+    tenant_id: str
+    kind: str
+    status: str
+    status_url: str
+    message: str
+
+
+class JobStatusResponse(BaseModel):
+    """Current state of a durable ingestion job."""
+
+    job_id: str
+    document_id: str
+    tenant_id: str
+    kind: str
+    status: str
+    attempts: int
+    max_attempts: int
+    source_path: str | None = None
+    last_error: str | None = None
 
 
 def _records(records: tuple[StageRecord, ...]) -> list[StageRecordResponse]:
@@ -243,24 +279,71 @@ def _vector_cleanup_service(resources: AppResources) -> VectorCleanupService:
         qdrant_port=qdrant.port,
         qdrant_timeout_seconds=qdrant.request_timeout_seconds,
     )
-    return VectorCleanupService(resources.db, resources.storage, providers)
+    publishing = resources.settings.publishing
+    return VectorCleanupService(
+        resources.db,
+        resources.storage,
+        providers,
+        fallback_provider=publishing.provider,
+        fallback_collection=publishing.default_collection,
+    )
 
 
-@router.post("/{document_id}/ingest", response_model=WorkflowResponse)
+def _document_deletion_service(resources: AppResources) -> DocumentDeletionService:
+    """Build a document deletion service from active app resources."""
+    return DocumentDeletionService(resources.db, _vector_cleanup_service(resources))
+
+
+@router.post("/{document_id}/ingest", response_model=None)
 async def ingest_document(
     document_id: str,
     request: Request,
     response: Response,
     tenant_id: TenantId,
     orchestrator: Orchestrator,
+    resources: Resources,
+    sync: bool = False,
     mime_type: str | None = None,
     intelligence_provider: str | None = None,
     intelligence_model: str | None = None,
     embedding_provider: str | None = None,
     embedding_model: str | None = None,
-) -> WorkflowResponse:
-    """Run the full ingestion workflow for a synced document from raw bytes."""
+) -> WorkflowResponse | JobAcceptedResponse:
+    """Ingest a synced document from raw bytes.
+
+    When async ingestion is enabled (and ``sync`` is not requested) the source
+    bytes are persisted, a durable job is enqueued, and the endpoint returns
+    ``202 Accepted`` immediately so long pipelines never exhaust HTTP timeouts.
+    Otherwise the full pipeline runs inline within the request.
+    """
     source_bytes = await request.body()
+
+    if resources.settings.ingestion.async_enabled and not sync:
+        SourceStore(resources.db).store(tenant_id, document_id, source_bytes)
+        job_id = resources.job_queue.enqueue(
+            tenant_id=tenant_id,
+            document_id=document_id,
+            kind=JobKind.INGEST,
+            content_hash=compute_content_hash(source_bytes),
+            max_attempts=resources.settings.ingestion.max_attempts,
+            correlation_id=get_correlation_id(),
+            mime_type=mime_type,
+            intelligence_provider=intelligence_provider,
+            intelligence_model=intelligence_model,
+            embedding_provider=embedding_provider,
+            embedding_model=embedding_model,
+        )
+        response.status_code = status.HTTP_202_ACCEPTED
+        return JobAcceptedResponse(
+            job_id=job_id,
+            document_id=document_id,
+            tenant_id=tenant_id,
+            kind=JobKind.INGEST.value,
+            status="queued",
+            status_url=f"/v1/documents/{document_id}/job",
+            message="ingestion job enqueued",
+        )
+
     result = orchestrator.run(
         document_id,
         tenant_id,
@@ -317,35 +400,67 @@ async def workflow_status(
     return _state_response(state)
 
 
-@router.delete("/{document_id}/vectors", response_model=VectorDeleteResponse)
-async def purge_document_vectors(
+@router.get("/{document_id}/job", response_model=JobStatusResponse)
+async def document_job_status(
     document_id: str,
     tenant_id: TenantId,
     resources: Resources,
-) -> VectorDeleteResponse:
-    """Delete published vectors for a document, typically after source deletion."""
-    cleaner = _vector_cleanup_service(resources)
+) -> JobStatusResponse:
+    """Return the latest durable ingestion job for a document."""
+    record = resources.job_queue.latest_for_document(document_id, tenant_id)
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no ingestion job found for document {document_id!r}",
+        )
+    return JobStatusResponse(
+        job_id=record.id,
+        document_id=record.document_id,
+        tenant_id=record.tenant_id,
+        kind=record.kind.value,
+        status=record.status.value,
+        attempts=record.attempts,
+        max_attempts=record.max_attempts,
+        source_path=record.source_path,
+        last_error=record.last_error,
+    )
+
+
+@router.delete("/{document_id}", response_model=DocumentDeleteResponse)
+async def delete_document(
+    document_id: str,
+    tenant_id: TenantId,
+    resources: Resources,
+    force: bool = False,
+) -> DocumentDeleteResponse:
+    """Hard-delete a document: purge its vectors then remove Control Plane rows.
+
+    Deleting the document row cascades to its assets, workflows, and processing
+    state. With ``force=false`` (default) a vector-cleanup failure aborts the
+    delete so it can be retried; ``force=true`` removes the row regardless.
+    """
+    service = _document_deletion_service(resources)
     try:
-        result = cleaner.purge_document_vectors(document_id, tenant_id)
+        result = service.delete_document(document_id, tenant_id, force=force)
     except VectorCleanupError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
-    if result is None:
-        return VectorDeleteResponse(
-            document_id=document_id,
-            tenant_id=tenant_id,
-            deleted_count=0,
-            message="no published vectors found",
+    if not result.row_deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"document {document_id!r} not found for tenant {tenant_id!r}",
         )
-    return VectorDeleteResponse(
-        document_id=document_id,
-        tenant_id=tenant_id,
-        deleted_count=result.deleted_count,
+    return DocumentDeleteResponse(
+        document_id=result.document_id,
+        tenant_id=result.tenant_id,
+        vectors_deleted=result.vectors_deleted,
+        row_deleted=result.row_deleted,
         provider=result.provider,
         collection=result.collection,
-        message="vectors deleted",
+        vector_cleanup_error=result.vector_cleanup_error,
+        message="document deleted",
     )
 
 
@@ -384,20 +499,21 @@ async def ingest_repository(
         sync_result = RepositorySynchronizer(db, connector, policy).synchronize(
             repository_id, tenant_id
         )
-        cleaner = _vector_cleanup_service(resources)
+        deleter = _document_deletion_service(resources)
         for event in sync_result.events:
             if event.event_type is not SyncEventType.DOCUMENT_DELETED:
                 continue
             if event.document_id is None:
                 continue
-            try:
-                cleaner.purge_document_vectors(event.document_id, tenant_id)
-            except VectorCleanupError as exc:
+            deletion = deleter.delete_document(
+                event.document_id, tenant_id, force=True
+            )
+            if deletion.vector_cleanup_error:
                 errors.append(
                     RepositoryIngestError(
                         document_id=event.document_id,
                         source_path=event.source_path or "",
-                        message=f"vector cleanup failed: {exc}",
+                        message=f"vector cleanup warning: {deletion.vector_cleanup_error}",
                     )
                 )
         synchronized = True

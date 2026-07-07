@@ -20,6 +20,7 @@ from domain.control_plane import (
     Document,
     Lineage,
 )
+from domain.control_plane.progress import NullProgressReporter, ProgressReporter
 from domain.embedding.errors import EmbeddingError, EmbeddingErrorType
 from domain.embedding.events import EmbeddingEvent, EmbeddingEventType
 from domain.embedding.model_registry import EmbeddingModelRegistry, default_model_registry
@@ -84,6 +85,7 @@ class EmbeddingEngine:
         provider_registry: EmbeddingProviderRegistry | None = None,
         model_registry: EmbeddingModelRegistry | None = None,
         rate_limiter: RateLimiter | None = None,
+        progress_reporter: ProgressReporter | None = None,
     ) -> None:
         self._db = db
         self._storage = storage
@@ -92,6 +94,7 @@ class EmbeddingEngine:
         self._models = model_registry or default_model_registry(policy)
         self._selector = ModelSelector(self._models)
         self._rate_limiter = rate_limiter or RateLimiter(policy.max_requests_per_minute)
+        self._progress = progress_reporter or NullProgressReporter()
 
     def embed(
         self,
@@ -137,7 +140,7 @@ class EmbeddingEngine:
                 )
             )
             embedding_document, batch_count, generation_ms = self._generate(
-                document_id, chunk_document, model
+                document_id, tenant_id, chunk_document, model
             )
             events.append(
                 self._event(
@@ -188,7 +191,11 @@ class EmbeddingEngine:
             raise EmbeddingError(EmbeddingErrorType.UNSUPPORTED_MODEL, str(exc)) from exc
 
     def _generate(
-        self, document_id: str, chunk_document: ChunkDocument, model: EmbeddingModelSpec
+        self,
+        document_id: str,
+        tenant_id: str,
+        chunk_document: ChunkDocument,
+        model: EmbeddingModelSpec,
     ) -> tuple[EmbeddingDocument, int, float]:
         try:
             provider = self._providers.get(model.provider)
@@ -197,12 +204,18 @@ class EmbeddingEngine:
 
         validator = EmbeddingValidator(model.dimensions)
         chunks = list(chunk_document.chunks)
+        total_chunks = len(chunks)
         self._validate_tokens(chunks, model)
 
         records: list[EmbeddingRecord] = []
         batch_count = 0
         total_tokens = 0
         started = time.perf_counter()
+        # Publish 0/total up front so observers see the stage begin immediately.
+        self._progress.report(
+            document_id=document_id, tenant_id=tenant_id, stage="embedding",
+            processed=0, total=total_chunks,
+        )
         for batch in batched(chunks, self._policy.batch_size):
             batch_count += 1
             self._rate_limiter.acquire(1)
@@ -224,6 +237,10 @@ class EmbeddingEngine:
                         values=vector,
                     )
                 )
+            self._progress.report(
+                document_id=document_id, tenant_id=tenant_id, stage="embedding",
+                processed=len(records), total=total_chunks,
+            )
         generation_ms = round((time.perf_counter() - started) * 1000.0, 3)
 
         embedding_document = EmbeddingDocument(

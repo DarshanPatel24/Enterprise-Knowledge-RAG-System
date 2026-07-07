@@ -21,6 +21,7 @@ from domain.control_plane import (
     Document,
     Lineage,
 )
+from domain.control_plane.progress import NullProgressReporter, ProgressReporter
 from domain.embedding import EmbeddingDocument, RateLimiter, batched, run_with_retry
 from domain.publishing.collections import CollectionResolver, CollectionSpec
 from domain.publishing.errors import PublishError, PublishErrorType
@@ -91,6 +92,7 @@ class VectorPublishingEngine:
         *,
         provider_registry: VectorProviderRegistry | None = None,
         rate_limiter: RateLimiter | None = None,
+        progress_reporter: ProgressReporter | None = None,
     ) -> None:
         self._db = db
         self._storage = storage
@@ -98,6 +100,7 @@ class VectorPublishingEngine:
         self._providers = provider_registry or default_provider_registry()
         self._collections = CollectionResolver(policy)
         self._rate_limiter = rate_limiter or RateLimiter(policy.max_vectors_per_minute)
+        self._progress = progress_reporter or NullProgressReporter()
 
     def publish(self, document_id: str, tenant_id: str) -> PublishResult:
         """Publish a document's latest embedding set as a versioned vector asset."""
@@ -165,7 +168,7 @@ class VectorPublishingEngine:
                 )
 
             batch_count, verified_count, publish_ms = self._publish_points(
-                provider, spec.name, points
+                provider, spec.name, points, document_id, tenant_id
             )
             events.append(
                 self._event(
@@ -306,14 +309,31 @@ class VectorPublishingEngine:
         )
 
     def _publish_points(
-        self, provider: VectorProvider, collection: str, points: list[VectorPoint]
+        self,
+        provider: VectorProvider,
+        collection: str,
+        points: list[VectorPoint],
+        document_id: str,
+        tenant_id: str,
     ) -> tuple[int, int, float]:
         batch_count = 0
+        published = 0
+        total_points = len(points)
         started = time.perf_counter()
+        # Publish 0/total up front so observers see the stage begin immediately.
+        self._progress.report(
+            document_id=document_id, tenant_id=tenant_id, stage="vector",
+            processed=0, total=total_points,
+        )
         for batch in batched(points, self._policy.batch_size):
             batch_count += 1
             self._rate_limiter.acquire(len(batch))
             self._upsert_batch(provider, collection, batch)
+            published += len(batch)
+            self._progress.report(
+                document_id=document_id, tenant_id=tenant_id, stage="vector",
+                processed=published, total=total_points,
+            )
 
         verified_count = 0
         if self._policy.verify_after_publish:

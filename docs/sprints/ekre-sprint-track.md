@@ -45,6 +45,8 @@ Determinism and security: LLM stages are configuration-selectable with determini
 ## EKRE-S0: Retrieval Platform Foundations
 Handbook mapping: Chapter 5 (NFR), Chapter 6 (Architecture Overview), Chapter 7 (Query Lifecycle), Chapter 28 (Observability), Chapter 29 (Security baseline).
 
+> Status: Approved (25 pytest green, ruff + mypy --strict clean). Implemented in `services/ekre/` mirroring EKIE conventions; LangChain LCEL retriever seam follows the reference notebook structure with Qdrant/Ollama (models inherited from EKIE, never copied from the notebook).
+
 ### Sprint Objective
 Establish the retrieval platform substrate: security context handling, observability, configuration, and dynamic inheritance of embedding and distance metric settings from EKIE.
 
@@ -64,6 +66,12 @@ Establish the retrieval platform substrate: security context handling, observabi
 3. EKRE-S0-3 Observability baseline (query id, trace id, latency breakdown).
 4. EKRE-S0-4 Retrieval configuration and profile management.
 
+### Delivery Evidence
+1. EKRE-S0-1 Approved: `domain/security/context.py` `SecurityContextValidator` validates every request against the shared `SecurityContext` contract (missing/invalid tenant/user/clearance and tenant-mismatch paths).
+2. EKRE-S0-2 Approved: `domain/inheritance/` resolves distance metric + dimension from the live Qdrant collection schema and the embedding model from vector payload metadata (hybrid), with configured fallbacks only. No metric/model hardcoded.
+3. EKRE-S0-3 Approved: `domain/observability/` binds tenant/correlation/query ids to structured JSON logs and records a per-stage latency breakdown with budget-breach detection.
+4. EKRE-S0-4 Approved: `config/settings.py` (`EKRE_*` env-driven) plus `GET /v1/retrieval/config` expose the resolved profile and latency budgets; provider/retriever wired through `domain/integrations/langchain_resources.py` (LCEL retriever seam).
+
 ### Deliverables
 1. Security context validation contract artifact.
 2. Distance metric inheritance design.
@@ -80,6 +88,8 @@ Establish the retrieval platform substrate: security context handling, observabi
 
 ## EKRE-S1: Query Intelligence Domain
 Handbook mapping: Chapter 8 (Query Intelligence), Chapter 9 (Query Understanding), Chapter 10 (Intent Classification), Chapter 11 (Query Enrichment), Chapter 12 (Knowledge Awareness Engine), Chapter 13 (Query Planner), plus LLM prompting standards in [../../.github/instructions/langchain.instructions.md](../../.github/instructions/langchain.instructions.md).
+
+> Status: Approved (54 pytest green, ruff + mypy --strict clean). Implemented in `services/ekre/src/domain/query/` as a deterministic, immutable, explainable pipeline (understanding → intent → enrichment → planning) producing a Structured Query Model and Retrieval Execution Plan; optional LangChain LLM interpreter is feature-flagged OFF with graceful deterministic fallback. Surfaced via `POST /v1/query/plan` (security-context gated).
 
 ### Sprint Objective
 Transform raw queries into planned, enriched, intent-classified retrieval requests with full traceability, using deterministic rules by default and an optional LangChain LLM interpreter behind a stable seam.
@@ -101,6 +111,13 @@ Transform raw queries into planned, enriched, intent-classified retrieval reques
 4. EKRE-S1-4 Query planner and retrieval plan output.
 5. EKRE-S1-5 Optional LLM query interpreter (LangChain), feature-flagged with deterministic fallback and validated Pydantic output.
 
+### Delivery Evidence
+1. EKRE-S1-1 Approved: `domain/query/understanding.py` normalizes (NFKC/quotes/whitespace), detects language, extracts entities/dates/numbers/metadata filters, and resolves enterprise acronyms into `QueryUnderstanding` (SQM v1) with confidence + warnings.
+2. EKRE-S1-2 Approved: `domain/query/intent.py` deterministic rule table classifies the 8 enterprise intents, complexity, recall/precision, suggested profile + candidate count into `IntentClassification`.
+3. EKRE-S1-3 Approved: `domain/query/enrichment.py` expands synonyms/business vocabulary via an injected `EnterpriseVocabulary` into `QueryEnrichment`.
+4. EKRE-S1-4 Approved: `domain/query/planner.py` selects engines (vector/keyword/metadata), candidate limits, injected timeouts, and ranking strategy into a `RetrievalPlan` (REP). The aggregate `StructuredQuery` records every transformation for explainability.
+5. EKRE-S1-5 Approved: `domain/query/llm.py` optional LangChain `ChatPromptTemplate | llm | PydanticOutputParser` interpreter, feature-flagged OFF, refines understanding only, and degrades gracefully to the deterministic path. Surfaced via `POST /v1/query/plan`.
+
 ### Deliverables
 1. Query understanding and rewrite decision matrix.
 2. Intent classification policy artifact.
@@ -117,6 +134,8 @@ Transform raw queries into planned, enriched, intent-classified retrieval reques
 
 ## EKRE-S2: Retrieval Execution Core
 Handbook mapping: Chapter 14 (Execution Domain Overview), Chapter 15 (Retrieval Orchestrator), Chapter 16 (Execution Runtime), Chapter 17 (Execution Scheduler), Chapter 18 (Retrieval Worker Framework), plus LangGraph standards in [../../.github/instructions/langchain.instructions.md](../../.github/instructions/langchain.instructions.md).
+
+> Status: Approved (71 pytest green, ruff + mypy --strict clean). Implemented in `services/ekre/src/domain/execution/` as the deterministic, parallel, failure-isolating execution core (orchestrator + scheduler + worker framework + runners) that turns a `RetrievalPlan` into a collected `ExecutionSession`. Default `ConcurrentExecutionRunner`; optional `LangGraphExecutionRunner` behind the runner seam. Real workers land in S3.
 
 ### Sprint Objective
 Deliver the parallel execution core that orchestrates and schedules retrieval workers deterministically as a LangGraph graph.
@@ -136,6 +155,12 @@ Deliver the parallel execution core that orchestrates and schedules retrieval wo
 3. EKRE-S2-3 Worker framework contract and lifecycle.
 4. EKRE-S2-4 Partial-failure graceful degradation policy.
 
+### Delivery Evidence
+1. EKRE-S2-1 Approved: `domain/execution/orchestrator.py` `RetrievalOrchestrator` consumes a `RetrievalPlan`, coordinates workers, deduplicates candidates deterministically (by document/chunk, highest score, stable sort), and returns an `ExecutionSession` with status + metrics. It never ranks or assembles context.
+2. EKRE-S2-2 Approved: `domain/execution/scheduler.py` (admission control + computed priority + deterministic ordering) and `domain/execution/runner.py` (`ConcurrentExecutionRunner` default with per-task timeout; optional `LangGraphExecutionRunner` fan-out/fan-in behind the runner seam), driven by `ExecutionPolicy.from_settings`.
+3. EKRE-S2-3 Approved: `domain/execution/worker.py` (`RetrievalWorker` ABC + `WorkerDescriptor` capabilities + `StaticRetrievalWorker`), `registry.py` (`WorkerRegistry`), and `lifecycle.py` (standard CREATED→…→COMPLETED lifecycle with recorded transitions, timing, candidate clamping, and standardized `RetrievalCandidate` results).
+4. EKRE-S2-4 Approved: partial-failure isolation — failed/timed-out/missing workers become isolated `WorkerOutcome`s; session status is `COMPLETED`/`PARTIAL`/`FAILED` with a `degraded` flag; `fail_open` returns an empty result on total failure instead of raising, so one broken engine never terminates a query.
+
 ### Deliverables
 1. Orchestrator and runtime design artifact.
 2. Worker framework contract.
@@ -152,6 +177,8 @@ Deliver the parallel execution core that orchestrates and schedules retrieval wo
 
 ## EKRE-S3: Retrieval Workers And Connectors
 Handbook mapping: Chapter 19 (Vector Worker), Chapter 20 (Keyword Worker), Chapter 21 (Metadata Worker), Chapter 22 (Repository Connector Framework), Chapter 29 (Security filtering).
+
+> Status: Approved (92 pytest green, ruff + mypy --strict clean). Implemented in `services/ekre/src/domain/connectors/` (repository connector framework) and `services/ekre/src/domain/retrieval/` (vector/keyword/metadata workers + embedding adapter + pre-pool security filter). Live `POST /v1/query/execute` wires S1 plan -> S2 orchestration -> S3 workers. Local-first defaults (in-memory connector + deterministic hash embedder) keep it fully offline.
 
 ### Sprint Objective
 Deliver hybrid retrieval workers with database-level security filtering applied before candidates enter the pool.
@@ -172,6 +199,12 @@ Deliver hybrid retrieval workers with database-level security filtering applied 
 3. EKRE-S3-3 Metadata retrieval worker.
 4. EKRE-S3-4 Repository connector framework and pre-pool security filtering.
 
+### Delivery Evidence
+1. EKRE-S3-1 Approved: `domain/retrieval/workers.py` `VectorRetrievalWorker` embeds the query through the inherited-model adapter (`domain/retrieval/embedding.py`), searches via a connector, and normalizes results; the model/dimension are inherited from EKIE, never hardcoded.
+2. EKRE-S3-2 Approved: `KeywordRetrievalWorker` tokenizes the query and executes exact-term lexical search for IDs/codes/tags.
+3. EKRE-S3-3 Approved: `MetadataRetrievalWorker` executes structured attribute/filter search over document metadata.
+4. EKRE-S3-4 Approved: `domain/connectors/` (`RepositoryConnector` ABC + `InMemoryRepositoryConnector` + lazy `QdrantRetrievalConnector`) with the clearance filter applied at the repository (data) boundary, plus `domain/retrieval/security.py` cumulative-clearance resolution and a defense-in-depth post-filter; a public principal never sees higher-classified candidates (verified end to end).
+
 ### Deliverables
 1. Worker execution contracts for vector, keyword, and metadata paths.
 2. Repository connector framework artifact.
@@ -189,6 +222,8 @@ Deliver hybrid retrieval workers with database-level security filtering applied 
 ## EKRE-S4: Candidate Collection And Fusion
 Handbook mapping: Chapter 23 (Unified Candidate Collection), Chapter 24 (Candidate Fusion).
 
+> Status: Approved (103 pytest green, ruff + mypy --strict clean). Implemented in `services/ekre/src/domain/fusion/` as deterministic collection (Unified Candidate Set) + Reciprocal Rank Fusion into Knowledge Objects (Fused Knowledge Set), preserving all evidence and citation provenance. Surfaced via `POST /v1/query/candidates` (plan -> execute -> collect -> fuse).
+
 ### Sprint Objective
 Collect multi-source candidates and fuse them with deterministic, explainable strategy.
 
@@ -204,6 +239,11 @@ Collect multi-source candidates and fuse them with deterministic, explainable st
 1. EKRE-S4-1 Unified candidate collection framework.
 2. EKRE-S4-2 Candidate fusion policy and tie-break rules.
 3. EKRE-S4-3 Duplicate minimization and provenance retention.
+
+### Delivery Evidence
+1. EKRE-S4-1 Approved: `domain/fusion/collection.py` `CandidateCollector` aggregates worker outcomes into an immutable `UnifiedCandidateSet` with per-source provenance (worker/engine/rank/score), field validation, and deterministic ordering; it performs no deduplication or ranking.
+2. EKRE-S4-2 Approved: `domain/fusion/fusion.py` `CandidateFusion` resolves identity (chunk/document/strict policies), groups same-asset candidates, computes deterministic Reciprocal Rank Fusion scores, and applies tie-breaks (fusion score, best score, citation) into a `FusedKnowledgeSet`.
+3. EKRE-S4-3 Approved: one `KnowledgeObject` per asset with every `EvidenceSource` independently traceable and citation lineage preserved through fusion; verified that multi-engine assets fuse into a single higher-scored object.
 
 ### Deliverables
 1. Candidate collection contract.
@@ -221,6 +261,8 @@ Collect multi-source candidates and fuse them with deterministic, explainable st
 ## EKRE-S5: Ranking Engine
 Handbook mapping: Chapter 25 (Ranking Engine).
 
+> Status: Approved (118 pytest green, ruff + mypy --strict clean). Implemented in `services/ekre/src/domain/ranking/` as the deterministic, auditable, evidence-weighted ranking engine (eligibility -> per-factor scoring -> configurable weighted aggregation -> optional LLM reranking with deterministic fallback -> ranked set). Surfaced via `POST /v1/query/rank`; ranking is separate from retrieval execution.
+
 ### Sprint Objective
 Deliver auditable ranking and reranking that is separate from retrieval execution.
 
@@ -236,6 +278,11 @@ Deliver auditable ranking and reranking that is separate from retrieval executio
 1. EKRE-S5-1 Ranking pipeline and scoring model.
 2. EKRE-S5-2 Reranking behavior and audit field map.
 3. EKRE-S5-3 Configurable candidate limits and performance controls.
+
+### Delivery Evidence
+1. EKRE-S5-1 Approved: `domain/ranking/scoring.py` + `engine.py` `RankingEngine` filters eligibility, scores per-factor evidence (semantic/lexical/metadata/fusion), aggregates a configurable versioned composite, and assigns deterministic final ranks into a `RankedKnowledgeSet`.
+2. EKRE-S5-2 Approved: `domain/ranking/reranker.py` optional LangChain LCEL `LlmReranker` (feature-flagged, graceful deterministic fallback via `IdentityReranker`), and every `RankedKnowledgeObject` carries the full audit map (factor scores, factor weights, composite, explanation, reranked flag, policy version).
+3. EKRE-S5-3 Approved: configurable `candidate_limit` (top-N), `min_composite_score` threshold, and versioned aggregation (`policy_version`) via `EKRE_RANKING__*`; `considered_count` records the pre-limit population.
 
 ### Deliverables
 1. Ranking and reranking policy artifact.
@@ -253,6 +300,8 @@ Deliver auditable ranking and reranking that is separate from retrieval executio
 ## EKRE-S6: Context Assembly And Response Packaging
 Handbook mapping: Chapter 26 (Context Assembly), Chapter 27 (Response Packaging and Handoff).
 
+> Status: Approved (132 pytest green, ruff + mypy --strict clean). Implemented in `services/ekre/src/domain/assembly/` as the deterministic context assembly engine that selects and organizes ranked knowledge within a token budget and packages the citation-preserving `RetrievalContextPackage` (the EKRE->EKCP handoff contract). Surfaced via `POST /v1/query/context` (the full pipeline end to end).
+
 ### Sprint Objective
 Assemble citation-preserving context and package a structured retrieval result for EKCP.
 
@@ -268,6 +317,11 @@ Assemble citation-preserving context and package a structured retrieval result f
 1. EKRE-S6-1 Context assembly with citation non-drop controls.
 2. EKRE-S6-2 Response packaging and handoff contract.
 3. EKRE-S6-3 Explainability payload finalization.
+
+### Delivery Evidence
+1. EKRE-S6-1 Approved: `domain/assembly/selection.py` + `tokens.py` select ranked objects within the token budget/object cap with dedup and relevance threshold; `citations.py` `to_candidate` carries citation lineage (document_id, chunk_id, source_path) verbatim and raises if it would ever be dropped.
+2. EKRE-S6-2 Approved: `domain/assembly/engine.py` `ContextAssemblyEngine` packages the immutable `contracts.retrieval.RetrievalContextPackage` (query, tenant, candidates, security_filtered) --- the model-agnostic EKRE->EKCP handoff.
+3. EKRE-S6-3 Approved: each candidate preserves its ranking explanation and the `ContextMetrics` audit payload records considered/selected counts, tokens vs budget, and drop accounting (budget/duplicates/relevance).
 
 ### Deliverables
 1. Context assembly design with citation guarantees.
@@ -286,6 +340,8 @@ Assemble citation-preserving context and package a structured retrieval result f
 ## EKRE-S7: Observability, Security, Governance And Compliance
 Handbook mapping: Chapter 28 (Observability and Traceability), Chapter 29 (Security, Governance and Compliance).
 
+> Status: Approved (145 pytest green, ruff + mypy --strict clean). Implemented in `services/ekre/src/domain/governance/` as cross-cutting hardening: an end-to-end execution trace (per-stage timeline + latency breakdown + budget check), an immutable security audit trail, and PII masking of the handoff package. The `RetrievalPipeline` runs the full flow with tracing + audit + masking; surfaced via `POST /v1/query/retrieve`. It observes and governs but changes no retrieval logic.
+
 ### Sprint Objective
 Harden end-to-end traceability, security enforcement, and compliance across the retrieval pipeline.
 
@@ -302,6 +358,11 @@ Harden end-to-end traceability, security enforcement, and compliance across the 
 2. EKRE-S7-2 Centralized security policy and audit logging.
 3. EKRE-S7-3 Compliance and sensitive metadata protection.
 
+### Delivery Evidence
+1. EKRE-S7-1 Approved: `domain/governance/trace.py` `RetrievalTrace` records the per-stage execution timeline (understanding, execution, fusion, ranking, assembly, masking) with latency breakdown, total, budget, and over-budget flag, plus execution/trace/correlation ids; every query exposes a complete timeline via `POST /v1/query/retrieve`.
+2. EKRE-S7-2 Approved: `domain/governance/audit.py` immutable `AuditRecord` trail with `AuditSink` implementations (logging + in-memory); the `RetrievalPipeline` audits every authorization decision (actor, clearance, outcome, execution id, policy version).
+3. EKRE-S7-3 Approved: `domain/governance/masking.py` deterministic `Masker` redacts email/phone/SSN/credit-card PII from candidate content before the EKCP handoff while preserving citation lineage; redaction count is recorded in the trace.
+
 ### Deliverables
 1. Traceability and metrics evidence template.
 2. Security and compliance control matrix.
@@ -317,6 +378,8 @@ Harden end-to-end traceability, security enforcement, and compliance across the 
 
 ## EKRE-S8: Deployment, Scalability And EKCP Handoff Readiness
 Handbook mapping: Chapter 30 (Deployment Architecture and Scalability), Chapter 5 (NFR validation).
+
+> Status: Approved (162 pytest green, ruff + mypy --strict clean). Implemented code-level (local-first, no container infra) in `services/ekre/src/domain/{resilience,evaluation,readiness}/`: capability-grouped worker-pool config, a circuit breaker + multi-tenant admission limiter, an accuracy harness (Precision@k/Recall@k/MRR/NDCG), and deployment + EKCP handoff readiness assessments. Surfaced via `GET /v1/readiness`. EKRE track complete (S0-S8).
 
 ### Sprint Objective
 Prove scalability, availability, and readiness for EKCP handoff.
@@ -336,6 +399,13 @@ Prove scalability, availability, and readiness for EKCP handoff.
 3. EKRE-S8-3 Multi-tenant scheduling and tenant-aware observability.
 4. EKRE-S8-4 Accuracy and latency validation (Precision@10, Recall@10, MRR, NDCG, <= 500 ms).
 5. EKRE-S8-5 EKCP handoff readiness package.
+
+### Delivery Evidence
+1. EKRE-S8-1 Approved: `EKRE_DEPLOYMENT__*` capability-grouped worker-pool sizing + `domain/readiness/deployment.py` `assess_deployment_readiness` advisory report (pools, replicas, resilience, tenancy, NFR targets).
+2. EKRE-S8-2 Approved: `domain/resilience/circuit_breaker.py` deterministic `CircuitBreaker` (closed/open/half-open) for fault isolation on top of the pipeline's `fail_open` graceful degradation.
+3. EKRE-S8-3 Approved: `domain/resilience/quota.py` `TenantConcurrencyLimiter` per-tenant admission ceiling; tenant context already propagated through the trace.
+4. EKRE-S8-4 Approved: `domain/evaluation/` metrics (Precision@k, Recall@k, MRR, NDCG) + `evaluate` harness with threshold checks; latency validated via the S7 trace budget.
+5. EKRE-S8-5 Approved: `domain/readiness/handoff.py` `assess_handoff_readiness` proves citation persistence, `security_filtered`, latency budget, and accuracy thresholds over the handoff package.
 
 ### Deliverables
 1. Deployment and scaling design with evidence.

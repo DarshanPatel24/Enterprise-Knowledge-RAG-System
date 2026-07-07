@@ -43,5 +43,17 @@ class VectorProvider(ABC):
         """Remove vectors by identity so no orphan vectors remain (handbook 11.15)."""
 
     @abstractmethod
+    def delete_by_document(
+        self, collection: str, tenant_id: str, document_id: str
+    ) -> int:
+        """Delete every vector whose metadata matches ``document_id`` for a tenant.
+
+        Returns the number of vectors removed. Unlike :meth:`delete`, this does
+        not require knowing individual vector identities, so orphaned vectors can
+        be reclaimed even when the published manifest is unavailable. Providers
+        must return ``0`` when the collection or document is absent.
+        """
+
+    @abstractmethod
     def count(self, collection: str) -> int:
         """Return the number of vectors currently stored in the collection."""

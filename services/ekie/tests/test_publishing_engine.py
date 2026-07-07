@@ -184,6 +184,35 @@ def test_publishing_respects_batch_size(
     assert result.batch_count == result.vector_count
 
 
+def test_publishing_reports_incremental_progress(
+    control_plane_db: ControlPlaneDatabase,
+) -> None:
+    document_id, storage = _prepare(control_plane_db)
+    calls: list[tuple[str, int, int]] = []
+
+    class _SpyReporter:
+        def report(
+            self, *, document_id: str, tenant_id: str, stage: str, processed: int, total: int
+        ) -> None:
+            calls.append((stage, processed, total))
+
+    engine = VectorPublishingEngine(
+        control_plane_db,
+        storage,
+        PublishingPolicy(batch_size=1),
+        progress_reporter=_SpyReporter(),
+    )
+
+    result = engine.publish(document_id, "tenant-a")
+    total = result.vector_count
+
+    assert calls[0] == ("vector", 0, total)
+    assert calls[-1] == ("vector", total, total)
+    processed_seq = [processed for _, processed, _ in calls]
+    assert processed_seq == sorted(processed_seq)
+    assert all(stage == "vector" and reported_total == total for stage, _, reported_total in calls)
+
+
 def test_publish_requires_embedding_asset(
     control_plane_db: ControlPlaneDatabase,
 ) -> None:

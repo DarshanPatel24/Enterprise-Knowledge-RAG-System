@@ -1,6 +1,8 @@
 """Vector Publishing Framework (EKIE handbook Chapter 11)."""
 
 from domain.publishing.cleanup import (
+    DocumentDeletionResult,
+    DocumentDeletionService,
     VectorCleanupError,
     VectorCleanupResult,
     VectorCleanupService,
@@ -44,6 +46,8 @@ __all__ = [
     "MANDATORY_METADATA_FIELDS",
     "CollectionResolver",
     "CollectionSpec",
+    "DocumentDeletionResult",
+    "DocumentDeletionService",
     "InMemoryVectorProvider",
     "VectorCleanupError",
     "VectorCleanupResult",

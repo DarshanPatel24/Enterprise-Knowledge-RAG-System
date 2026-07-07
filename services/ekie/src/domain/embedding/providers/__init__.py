@@ -34,6 +34,8 @@ class EmbeddingProviderSettingsLike(Protocol):
     default_model: str
     ollama_base_url: str
     request_timeout_seconds: float
+    device: str
+    torch_dtype: str
 
 
 def default_provider_registry() -> EmbeddingProviderRegistry:
@@ -62,9 +64,22 @@ def provider_registry_from_settings(
         )
     elif settings.provider == "huggingface":
         from domain.embedding.providers.huggingface import HuggingFaceEmbeddingProvider
+
+        # Build sentence-transformers kwargs for device/precision. Leaving either
+        # at "auto" preserves the library defaults (GPU auto-detect, fp32); set
+        # torch_dtype to "float16" to fit large models on limited-VRAM GPUs.
+        st_kwargs: dict[str, object] = {}
+        device = getattr(settings, "device", "auto")
+        torch_dtype = getattr(settings, "torch_dtype", "auto")
+        if device and device != "auto":
+            st_kwargs["device"] = device
+        if torch_dtype and torch_dtype != "auto":
+            st_kwargs["model_kwargs"] = {"torch_dtype": torch_dtype}
+        provider_kwargs = {"model_kwargs": st_kwargs} if st_kwargs else {}
         providers.append(
             HuggingFaceEmbeddingProvider(
                 model_name=settings.default_model,
+                **provider_kwargs,
             )
         )
     return EmbeddingProviderRegistry(providers)

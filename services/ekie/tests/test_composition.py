@@ -56,6 +56,7 @@ def test_intelligence_engine_appends_llm_analyzer_when_enabled() -> None:
 
 
 def test_intelligence_engine_excludes_llm_analyzer_by_default() -> None:
-    settings = EkieSettings()
+    # Isolate from any operator .env so the assertion reflects code defaults.
+    settings = EkieSettings(_env_file=None)
     engine = build_intelligence_engine(settings, _db(), InMemoryAssetStorage())
     assert all(analyzer.name != "llm" for analyzer in engine._analyzers)

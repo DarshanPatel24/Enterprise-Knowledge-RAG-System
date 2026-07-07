@@ -11,7 +11,16 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -71,6 +80,24 @@ class ProcessingStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class JobKind(StrEnum):
+    """The kind of work a durable ingestion job performs."""
+
+    INGEST = "ingest"
+    DELETE = "delete"
+
+
+class JobStatus(StrEnum):
+    """Lifecycle status of a durable ingestion job."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    DEAD_LETTER = "dead_letter"
+    CANCELLED = "cancelled"
 
 
 class TimestampMixin:
@@ -224,10 +251,77 @@ class ProcessingState(Base, TimestampMixin):
         String(32), default=ProcessingStatus.PENDING, nullable=False
     )
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    processed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     document: Mapped[Document] = relationship(back_populates="processing_states")
 
     __table_args__ = (
         UniqueConstraint("document_id", "stage", name="uq_processing_doc_stage"),
+    )
+
+
+class IngestionJob(Base, TimestampMixin):
+    """A durable unit of ingestion work processed asynchronously by a worker pool.
+
+    Jobs are intentionally decoupled from the ``documents`` table (no foreign
+    key) so a ``delete`` job can outlive the document row it removes and still
+    record its terminal outcome. Idempotency and deduplication key on
+    ``(tenant_id, document_id, kind, content_hash)`` for jobs that are not yet
+    terminal.
+    """
+
+    __tablename__ = "ingestion_jobs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    document_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    kind: Mapped[JobKind] = mapped_column(String(16), nullable=False)
+    status: Mapped[JobStatus] = mapped_column(
+        String(16), default=JobStatus.QUEUED, nullable=False, index=True
+    )
+    content_hash: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    source_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utc_now, nullable=False, index=True
+    )
+    locked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    intelligence_provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    intelligence_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    embedding_provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    force: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class IngestionSource(Base, TimestampMixin):
+    """Raw source bytes for an asynchronous ingestion job.
+
+    Async ingestion executes in a worker process separate from the API, so the
+    source payload must be handed off through shared, durable storage rather than
+    per-process memory. The Control Plane database is the shared source of truth,
+    so the bytes are staged here (keyed by tenant and document) until the worker
+    consumes them.
+    """
+
+    __tablename__ = "ingestion_sources"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    document_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "document_id", name="uq_source_tenant_doc"),
     )

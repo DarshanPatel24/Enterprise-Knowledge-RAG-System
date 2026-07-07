@@ -30,22 +30,117 @@ except ImportError:
 # Initialize logger
 logger = logging.getLogger("ekdc.converter")
 
+
+def _bool_env(name, default=False):
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    return val.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_device():
+    """Return the compute device for local models: 'cuda' or 'cpu'.
+
+    Controlled by EKDC_DEVICE (default 'auto'):
+      - 'auto'      : use the GPU when a CUDA build of torch detects one, else CPU.
+      - 'cuda'/'gpu': prefer the GPU, falling back to CPU if none is available.
+      - 'cpu'       : force CPU (useful when sharing a small GPU with EKIE).
+    """
+    pref = os.environ.get("EKDC_DEVICE", "auto").strip().lower()
+    if pref == "cpu":
+        return "cpu"
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:
+        pass
+    return "cpu"
+
+
+def _build_ocr_options():
+    """Return ``(do_ocr, ocr_options|None)`` for the Docling PDF pipeline.
+
+    Defaults to the locally installed Tesseract CLI engine rather than Docling's
+    auto-selection, which otherwise downloads large non-English RapidOCR models
+    from a remote CDN. Controlled by EKDC_OCR_* environment variables:
+      EKDC_OCR_ENABLED (default true), EKDC_OCR_ENGINE (default 'tesseract'),
+      EKDC_OCR_LANGUAGES (default 'eng'), EKDC_OCR_FORCE_FULL_PAGE (default false),
+      EKDC_TESSERACT_CMD (optional path to the tesseract binary).
+    Returns ``(True, None)`` to fall back to Docling's default engine when the
+    requested engine's options class is unavailable.
+    """
+    if not _bool_env("EKDC_OCR_ENABLED", True):
+        return False, None
+
+    engine = os.environ.get("EKDC_OCR_ENGINE", "tesseract").strip().lower()
+    langs = [
+        part.strip()
+        for part in os.environ.get("EKDC_OCR_LANGUAGES", "eng").split(",")
+        if part.strip()
+    ] or ["eng"]
+    force_full = _bool_env("EKDC_OCR_FORCE_FULL_PAGE", False)
+    tesseract_cmd = os.environ.get("EKDC_TESSERACT_CMD", "").strip()
+
+    try:
+        from docling.datamodel import pipeline_options as po
+
+        if engine in ("tesseract", "tesseract_cli", "tesseractcli"):
+            options = po.TesseractCliOcrOptions(lang=langs, force_full_page_ocr=force_full)
+            if tesseract_cmd:
+                options.tesseract_cmd = tesseract_cmd
+        elif engine == "tesserocr":
+            options = po.TesseractOcrOptions(lang=langs, force_full_page_ocr=force_full)
+        elif engine in ("rapidocr", "rapid"):
+            options = po.RapidOcrOptions(force_full_page_ocr=force_full)
+        elif engine in ("easyocr", "easy"):
+            options = po.EasyOcrOptions(force_full_page_ocr=force_full)
+        else:  # 'auto' or unknown -> let Docling pick its default engine
+            return True, None
+        return True, options
+    except Exception as exc:  # docling API differences across versions
+        logger.warning(f"OCR engine '{engine}' unavailable ({exc}); using Docling default OCR")
+        return True, None
+
 # Load whisper model globally so it's not reloaded for every file
 whisper_model = None
 
 def get_whisper_model():
     global whisper_model
     if whisper_model is None and whisper is not None:
-        logger.info("Loading Whisper base model...")
+        model_name = os.environ.get("EKDC_WHISPER_MODEL", "base").strip() or "base"
         try:
             from enrichment import whisper_cache_dir
             download_root = whisper_cache_dir()
         except Exception:
             download_root = None
-        if download_root:
-            whisper_model = whisper.load_model("base", download_root=download_root)
-        else:
-            whisper_model = whisper.load_model("base")
+        # Honor the offline lockdown: Whisper downloads from a remote CDN and does
+        # NOT respect HF_HUB_OFFLINE, so guard it explicitly. If offline and the
+        # model is not already cached, skip transcription instead of downloading.
+        if _bool_env("EKDC_OFFLINE", False):
+            cached = bool(download_root) and os.path.exists(
+                os.path.join(download_root, f"{model_name}.pt")
+            )
+            if not cached:
+                logger.warning(
+                    f"EKDC_OFFLINE is set and Whisper model '{model_name}' is not cached; "
+                    "skipping transcription (no download)."
+                )
+                return None
+        logger.info(f"Loading Whisper '{model_name}' model...")
+        device = _resolve_device()
+        logger.info(f"Whisper compute device: {device}")
+        try:
+            if download_root:
+                whisper_model = whisper.load_model(
+                    model_name, device=device, download_root=download_root
+                )
+            else:
+                whisper_model = whisper.load_model(model_name, device=device)
+        except Exception as exc:
+            logger.error(f"Could not load Whisper model '{model_name}': {exc}")
+            return None
     return whisper_model
 
 def _relativize_image_links(output_path):
@@ -83,6 +178,30 @@ def _build_docling_converter():
         pipeline_options = PdfPipelineOptions()
         pipeline_options.generate_picture_images = True
         pipeline_options.images_scale = 2.0
+        # Run Docling's layout/table ML models on the GPU when available. Wrapped
+        # so version differences in the accelerator API never break conversion.
+        try:
+            from docling.datamodel.accelerator_options import (
+                AcceleratorDevice,
+                AcceleratorOptions,
+            )
+
+            device = _resolve_device()
+            accel_device = (
+                AcceleratorDevice.CUDA if device == "cuda" else AcceleratorDevice.CPU
+            )
+            pipeline_options.accelerator_options = AcceleratorOptions(device=accel_device)
+            logger.info(f"Docling compute device: {device}")
+        except Exception as exc:  # older docling without accelerator_options
+            logger.warning(
+                f"Docling accelerator options unavailable ({exc}); using its default device"
+            )
+        # Pin OCR to the locally installed engine (Tesseract by default) so scanned
+        # PDFs are read without Docling silently downloading remote OCR models.
+        do_ocr, ocr_options = _build_ocr_options()
+        pipeline_options.do_ocr = do_ocr
+        if ocr_options is not None:
+            pipeline_options.ocr_options = ocr_options
         return DocumentConverter(
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
         )
@@ -155,7 +274,14 @@ def convert_document_docling(input_path, output_path):
             f.write(markdown_text)
         return True
     except Exception as e:
-        logger.error(f"Docling conversion failed for {input_path}: {e}")
+        message = str(e)
+        if "PDFium" in message or "could not load" in message or "not valid" in message:
+            logger.error(
+                f"Docling could not load {input_path}: the file appears corrupt, "
+                f"encrypted, or not a valid PDF ({message})"
+            )
+        else:
+            logger.error(f"Docling conversion failed for {input_path}: {e}")
         return False
 
 def _write_image_reference(input_path, output_path):

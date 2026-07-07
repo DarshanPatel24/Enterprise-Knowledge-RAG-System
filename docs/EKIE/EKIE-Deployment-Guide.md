@@ -168,6 +168,15 @@ pip install -U "sentence-transformers[image]" torchvision
 # Required for HuggingFace intelligence LLM (Qwen/Qwen2.5-7B-Instruct)
 pip install langchain-huggingface torch transformers accelerate
 
+# GPU acceleration (NVIDIA): the default `torch` above is CPU-only. Install a CUDA
+# build matching your driver INSTEAD, e.g. for a CUDA 13 driver:
+pip install --force-reinstall "torch==2.12.1" --index-url https://download.pytorch.org/whl/cu130
+#   (use .../whl/cu128 or cu126 for older drivers). Verify with:
+#   python -c "import torch; print(torch.cuda.is_available())"
+# Then in services/ekie/.env set EKIE_EMBEDDING__DEVICE=auto and
+# EKIE_EMBEDDING__TORCH_DTYPE=float16 (float16 halves VRAM so a 2B model uses
+# ~4.3GB and fits a 6GB GPU; fp32 would need ~8GB and OOM).
+
 # Required for Langfuse tracing
 pip install "langfuse>=2.0,<3.0"
 
@@ -437,6 +446,37 @@ python services/ekie/scripts/setup.py
 
 ## 6. Starting Services
 
+EKIE runs as a small set of cooperating processes. A typical local session uses
+these terminals:
+
+| Terminal | Process | Required | Purpose |
+|---|---|---|---|
+| A | `start_api.py` (`ekie-api`) | Yes | REST API / ingestion endpoints |
+| B | `start_worker.py` (`ekie-worker`) | Yes | Watches the target folder and submits documents for ingestion |
+| B2 | `start_ingest_worker.py` (`ekie-ingest-worker`) | Only when `EKIE_INGESTION__ASYNC_ENABLED=true` | Executes queued ingestion/deletion jobs out of the request path |
+| C | `monitor.py` (`ekie-monitor`) | Optional | Live per-document progress dashboard |
+
+Ingestion mode is selected by `EKIE_INGESTION__ASYNC_ENABLED` (see 6.2.1):
+- **false (default):** the API runs the pipeline inline; Terminal B2 is not needed.
+- **true:** the API returns `202` and enqueues jobs; Terminal B2 must be running.
+
+### 6.0 One-Command Control Panel (Recommended)
+
+Instead of launching each process by hand, use the menu-driven control panel at
+the repository root. It starts services in their own windows, toggles async mode,
+checks health, lists/purges documents, and runs the test suite.
+
+```powershell
+cd "D:\Octave\AI training\Enterprise-Knowledge-RAG-System"
+.\ekie.ps1
+# If PowerShell blocks it: powershell -ExecutionPolicy Bypass -File .\ekie.ps1
+```
+
+The menu is mode-aware: option **5 (Start FULL STACK)** launches the API, sync
+worker, monitor, and — only when async is enabled — the ingest worker. Option
+**6** toggles `EKIE_INGESTION__ASYNC_ENABLED` and reminds you to restart the API.
+The sections below document the equivalent manual commands.
+
 ### 6.1 Start EKIE API (Terminal A)
 
 ```powershell
@@ -477,6 +517,57 @@ Worker configuration from `.env`:
 | `EKIE_SYNC__POLL_INTERVAL_SECONDS` | `300` | How often to scan |
 | `EKIE_SYNC__API_BASE_URL` | `http://localhost:8001` | EKIE API endpoint |
 
+### 6.2.1 Asynchronous Ingestion (Durable Job Queue)
+
+By default the API runs the full pipeline (transform → intelligence → chunking →
+embedding → publishing) inline within the ingest request. For large documents
+this can exceed HTTP read timeouts. Enabling asynchronous ingestion makes the API
+persist the source, enqueue a durable job, and return `202 Accepted` immediately;
+a dedicated worker pool then executes the pipeline out of the request path with
+per-job retries, exponential backoff, and dead-lettering.
+
+Enable it in `.env` and run the ingest worker alongside the API:
+
+```powershell
+# 1. In services/ekie/.env:
+#    EKIE_INGESTION__ASYNC_ENABLED=true
+
+# 2. Start the ingest worker pool (Terminal B2):
+python services/ekie/scripts/start_ingest_worker.py
+
+# Or after pip install -e services/ekie[...]:
+ekie-ingest-worker
+```
+
+The worker processes both `ingest` and `delete` jobs. Enabling async **requires**
+a running ingest worker; otherwise jobs remain queued and never execute.
+
+Source bytes are staged in the Control Plane database (`ingestion_sources` table)
+so the worker — a separate process — can read them; they are removed once the job
+succeeds. This makes async ingestion work regardless of the asset-storage backend.
+
+| Key | Default | Purpose |
+|---|---|---|
+| `EKIE_INGESTION__ASYNC_ENABLED` | `false` | Enqueue jobs and return `202` instead of running inline |
+| `EKIE_INGESTION__WORKER_CONCURRENCY` | `1` | Worker processes spawned by `start_ingest_worker` |
+| `EKIE_INGESTION__CLAIM_BATCH_SIZE` | `1` | Jobs claimed per poll |
+| `EKIE_INGESTION__POLL_INTERVAL_SECONDS` | `2.0` | Idle poll interval |
+| `EKIE_INGESTION__MAX_ATTEMPTS` | `3` | Whole-job retry budget before dead-letter |
+| `EKIE_INGESTION__RETRY_BACKOFF_BASE_SECONDS` | `30.0` | Base delay between job retries |
+| `EKIE_INGESTION__RETRY_BACKOFF_MULTIPLIER` | `2.0` | Exponential backoff multiplier |
+| `EKIE_INGESTION__RETRY_BACKOFF_MAX_SECONDS` | `900.0` | Backoff cap |
+| `EKIE_INGESTION__VISIBILITY_TIMEOUT_SECONDS` | `600.0` | Stale-lock reclaim window for hard worker kills |
+
+**Restart recovery:** stopping the ingest worker with **Ctrl+C** returns its
+in-flight job to the queue immediately (without spending a retry), so a restarted
+worker resumes it at once. A hard kill (closing the window) instead relies on the
+visibility timeout: the job is reclaimed once its lock is older than
+`VISIBILITY_TIMEOUT_SECONDS`. For multi-worker pools processing very long jobs,
+raise that value above the longest expected single-job runtime.
+
+Poll a document's job state at `GET /v1/documents/{document_id}/job`. Queued,
+running, and dead-letter states are also surfaced in the live monitor.
+
 ### 6.3 Monitor Ingestion Progress (Terminal C)
 
 Run the live progress monitor alongside the API and worker to see per-document stage progress, status, and elapsed time:
@@ -492,13 +583,70 @@ python services/ekie/scripts/monitor.py --tenant-id tenant-default --refresh 3
 python services/ekie/scripts/monitor.py --all   # show all documents
 ```
 
-The monitor reads the Control Plane directly (no API call required) and refreshes every 3 seconds. It shows:
-1. Overall progress bar with percentage, counts per status (complete / running / queued / failed)
-2. Per-document 5-stage pipeline bar (`█`=done `░`=pending across Transformation, Intelligence, Chunking, Embedding, Publishing)
-3. Last-updated elapsed time per document
-4. Estimated remaining documents
+The monitor reads the Control Plane directly (no API call required) and refreshes every 3 seconds. It shows one row per document with the following columns:
+
+| Column | Meaning |
+|--------|---------|
+| **Document** | Source file name. |
+| **T I C E P** | Per-stage pipeline bar: `x` = stage complete, `.` = stage pending. |
+| **Status** | `complete`; `>> <stage> <done>/<total> <pct>%` (running, with live intra-stage progress — e.g. `>> E 128/260 49%` while embedding chunks); `queued`; or `dead-letter` (retries exhausted). |
+| **Stage Metrics** | Per-stage counters for completed stages, one stage per line (decoded below). |
+| **Last** | Elapsed time since the most recent stage asset was written for that document. |
+
+The header panel adds an overall progress bar with percentage and counts per
+status (complete / running / queued / dead-letter) plus estimated remaining
+documents. Live within-stage progress (currently the embedding chunk count) is
+published to the Control Plane as each batch completes, so the Status column
+advances `E 1/260 → 260/260` in real time. A categorized Legend panel at the
+bottom explains every symbol.
+
+**Pipeline stages (`T I C E P`):**
+
+| Stage | Letter | Meaning |
+|-------|--------|---------|
+| Transform | `T` | Document → Markdown conversion |
+| Intelligence | `I` | Structure / section analysis |
+| Chunking | `C` | Splitting into chunks |
+| Embedding | `E` | Vector embedding generation |
+| Publish | `P` | Writing vectors to Qdrant |
+
+**Stage Metrics** — e.g. `T:168467ch I:291§ 25201t 0tbl 10cb en C:260ch 24451t` decodes as:
+
+- **T** (Transform): `ch` = characters in the generated Markdown.
+- **I** (Intelligence): `§` = sections, `t` = tokens, `tbl` = tables, `cb` = code blocks, then the detected language (e.g. `en`).
+- **C** (Chunking): `ch` = chunks produced, `t` = total tokens across chunks.
+- **E** (Embedding): `em` = embeddings created, `t` = total tokens embedded, `b` = batches, `d` = embedding dimension.
+- **P** (Publish): `v` = vectors upserted, `✓` = vectors verified present, `b` = batches.
+
+A condensed version of this legend is always shown in the monitor window itself.
 
 Press **Ctrl+C** to stop the monitor.
+
+### 6.4 Deleting Documents and Cleaning Up
+
+Deletion is a hard delete: it purges the document's vectors from the vector
+store and removes its Control Plane rows (assets, workflows, and processing
+state cascade). The sync worker does this automatically when a source file is
+removed. To delete one document directly:
+
+```powershell
+Invoke-RestMethod -Method Delete `
+  -Uri "http://localhost:8001/v1/documents/<document-id>?force=false" `
+  -Headers @{ "X-Tenant-ID" = "tenant-default" }
+```
+
+For bulk cleanup — including **orphaned** documents left behind after
+`EKIE_SYNC__TARGET_DIRECTORY` is repointed at a new folder — use the maintenance
+tool (`ekie-purge`):
+
+```powershell
+python services/ekie/scripts/purge_documents.py --list
+python services/ekie/scripts/purge_documents.py --orphaned --force --yes
+python services/ekie/scripts/purge_documents.py --drop-empty-repositories --yes
+```
+
+The tool purges the matching documents and their Qdrant vectors, prompting for
+confirmation unless `--yes` is given.
 
 ---
 

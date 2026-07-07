@@ -17,6 +17,18 @@ mssql = [
 storage = [
   "minio>=7.2.0",
 ]
+# Local HuggingFace models for Embeddings & Intelligence.
+# For NVIDIA GPU acceleration, install a CUDA build of torch that matches your
+# driver INSTEAD of the default CPU wheel, e.g. (CUDA 13):
+#   pip install torch==2.12.1 --index-url https://download.pytorch.org/whl/cu130
+# Then set EKIE_EMBEDDING__DEVICE=auto and EKIE_EMBEDDING__TORCH_DTYPE=float16.
+huggingface = [
+  "langchain-huggingface>=0.0.3",
+  "sentence-transformers>=3.0.0",
+  "transformers>=4.0.0",
+  "accelerate>=0.21.0",
+  "torch>=2.0.0",
+]
 dev = [
   "pytest>=8.2.0",
   "pytest-asyncio>=0.23.0",
@@ -27,10 +39,12 @@ dev = [
 [project.scripts]
 ekie-api = "scripts.start_api:main"
 ekie-worker = "scripts.start_worker:main"
+ekie-ingest-worker = "scripts.start_ingest_worker:main"
 ekie-setup = "scripts.setup:main"
 ekie-cleanup = "scripts.cleanup_dev_artifacts:main"
 ekie-deploy = "scripts.deploy:main"
 ekie-monitor = "scripts.monitor:main"
+ekie-purge = "scripts.purge_documents:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "../../packages/contracts/src", "tests"]

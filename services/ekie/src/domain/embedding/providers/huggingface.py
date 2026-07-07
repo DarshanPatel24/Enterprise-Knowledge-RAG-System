@@ -23,18 +23,33 @@ class HuggingFaceEmbeddingProvider(EmbeddingProvider):
     name = "huggingface"
 
     def __init__(self, model_name: str, **kwargs: Any) -> None:  # noqa: ANN401 - passthrough model kwargs
-        try:
-            self._embeddings = build_embeddings("huggingface", model_name, **kwargs)
-        except LangChainResourceError as exc:
-            raise EmbeddingProviderError(str(exc)) from exc
+        # Defer model loading until the first embed call. The composition root
+        # builds this provider in EVERY process (API and workers), but only the
+        # process that actually embeds should pay the (multi-GB, often GPU) cost.
+        # Eager loading here would pin a second copy of the model into the API —
+        # wasted memory and, on small GPUs, out-of-memory contention with the
+        # ingest worker that does the real embedding.
         self._model_name = model_name
+        self._kwargs = kwargs
+        self._embeddings: Any | None = None
+
+    def _get_embeddings(self) -> Any:  # noqa: ANN401 - langchain Embeddings model
+        """Build and cache the underlying model on first use."""
+        if self._embeddings is None:
+            try:
+                self._embeddings = build_embeddings(
+                    "huggingface", self._model_name, **self._kwargs
+                )
+            except LangChainResourceError as exc:
+                raise EmbeddingProviderError(str(exc)) from exc
+        return self._embeddings
 
     def embed(
         self, texts: list[str], *, dimension: int, normalize: bool
     ) -> list[list[float]]:
         """Generate embeddings for a batch of texts."""
         try:
-            vectors = self._embeddings.embed_documents(texts)
+            vectors = self._get_embeddings().embed_documents(texts)
 
             # Truncate dimensions if the engine's model spec requests fewer than
             # the model produces; engine-side validation checks normalization.
@@ -42,6 +57,8 @@ class HuggingFaceEmbeddingProvider(EmbeddingProvider):
                 vectors = [v[:dimension] for v in vectors]
 
             return vectors
+        except EmbeddingProviderError:
+            raise
         except Exception as exc:
             raise EmbeddingProviderError(
                 f"HuggingFace embedding generation failed: {exc}"

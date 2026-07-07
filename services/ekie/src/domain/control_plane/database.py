@@ -13,7 +13,7 @@ from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from config.settings import ControlPlaneSettings
-from domain.control_plane.models import Base
+from domain.control_plane.models import Base, IngestionJob, IngestionSource
 
 
 class ControlPlaneDatabase:
@@ -46,6 +46,13 @@ class ControlPlaneDatabase:
         inspector = inspect(self._engine)
         dialect = self._engine.dialect.name
 
+        # M-002: ingestion_jobs — durable async ingestion queue. Additive new
+        # table; checkfirst makes this idempotent across SQL Server and SQLite.
+        IngestionJob.__table__.create(bind=self._engine, checkfirst=True)
+
+        # M-003: ingestion_sources — shared source-byte handoff for async jobs.
+        IngestionSource.__table__.create(bind=self._engine, checkfirst=True)
+
         # M-001: assets.stage_metrics — per-stage processing metrics (JSON text).
         try:
             existing_columns = {c["name"] for c in inspector.get_columns("assets")}
@@ -59,6 +66,22 @@ class ControlPlaneDatabase:
             with self._engine.connect() as conn:
                 conn.execute(text(ddl))
                 conn.commit()
+
+        # M-004: processing_state.processed/total — intra-stage progress counters.
+        try:
+            ps_columns = {c["name"] for c in inspector.get_columns("processing_state")}
+        except Exception:  # noqa: BLE001 - table absent on first deploy; create_all handles it
+            return
+        int_type = "INT" if dialect == "mssql" else "INTEGER"
+        for column in ("processed", "total"):
+            if column not in ps_columns:
+                if dialect == "mssql":
+                    ddl = f"ALTER TABLE processing_state ADD {column} {int_type} NULL"
+                else:
+                    ddl = f"ALTER TABLE processing_state ADD COLUMN {column} {int_type}"
+                with self._engine.connect() as conn:
+                    conn.execute(text(ddl))
+                    conn.commit()
 
     def drop_all(self) -> None:
         """Drop all Control Plane tables (test teardown convenience)."""

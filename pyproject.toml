@@ -9,6 +9,9 @@ src = [
   "services/ekre/src",
   "services/ekcp/src",
 ]
+# Reference/teaching notebooks are not part of the shipped source and may target
+# a newer Python syntax; exclude them from linting.
+extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S", "ANN"]

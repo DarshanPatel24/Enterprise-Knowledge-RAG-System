@@ -16,6 +16,7 @@ from fastapi import Depends, HTTPException, status
 from composition import build_workflow_orchestrator
 from config.settings import EkieSettings, get_settings
 from domain.control_plane import ControlPlaneDatabase
+from domain.jobs import JobQueueStore
 from domain.observability import get_tenant_id
 from domain.orchestration import WorkflowOrchestrator
 from domain.storage import AssetStorage
@@ -29,6 +30,7 @@ class AppResources:
     db: ControlPlaneDatabase
     storage: AssetStorage
     orchestrator: WorkflowOrchestrator
+    job_queue: JobQueueStore
 
 
 _resources: AppResources | None = None
@@ -51,7 +53,11 @@ def build_resources(settings: EkieSettings) -> AppResources:
     storage: AssetStorage = build_asset_storage(settings)
     orchestrator = build_workflow_orchestrator(settings, db, storage)
     return AppResources(
-        settings=settings, db=db, storage=storage, orchestrator=orchestrator
+        settings=settings,
+        db=db,
+        storage=storage,
+        orchestrator=orchestrator,
+        job_queue=JobQueueStore(db),
     )
 
 

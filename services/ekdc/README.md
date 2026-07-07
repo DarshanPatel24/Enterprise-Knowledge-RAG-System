@@ -71,6 +71,21 @@ pip install -r requirements.txt
 ```
 *(Note: If you run into issues with python-magic on Windows, the requirements file handles it by installing `python-magic-bin`.)*
 
+### Step 2.1: (Optional) GPU Acceleration
+By default `torch`/`torchvision` install as **CPU-only** wheels, so Whisper
+transcription and Docling's layout/table models run on the CPU. For an NVIDIA
+GPU, install matching **CUDA** builds into **this service's venv** (EKDC uses its
+own venv, separate from EKIE), e.g. for a CUDA 13 driver:
+```powershell
+pip install --force-reinstall --no-deps "torch==2.12.1" "torchvision==0.27.1" `
+    --index-url https://download.pytorch.org/whl/cu130
+# (use .../whl/cu128 or cu126 for older drivers). Verify:
+python -c "import torch; print(torch.cuda.is_available())"
+```
+Whisper and Docling then use the GPU automatically. Control placement with
+`EKDC_DEVICE` in `.env`: `auto` (GPU when available — default), `cuda` (force
+GPU), or `cpu` (force CPU, e.g. to leave VRAM for EKIE when running both).
+
 ### Step 3: Configure the `.env` file
 EKDC uses a `.env` file to manage paths. Create a `.env` file in the root of the `ekdc` folder and add the following:
 
@@ -84,6 +99,22 @@ OUTPUT_DIRECTORY="output_md"
 
 # Point this to your LibreOffice executable to avoid DOCX conversion warnings
 DOCLING_LIBREOFFICE_CMD="C:\Program Files\LibreOffice\program\soffice.exe"
+
+# --- Supply-chain / local-first control ---
+# true = block ALL remote model/data downloads (HuggingFace, transformers,
+# Docling layout/table/OCR, Whisper). Cached models are used; a missing model
+# fails loudly instead of downloading. Populate the cache once with this unset,
+# then set true to lock the agent down to local-only.
+EKDC_OFFLINE=false
+
+# --- OCR for scanned PDFs/images (Docling PDF pipeline) ---
+# Uses the locally installed engine instead of Docling's auto-selection (which
+# would silently download large non-English RapidOCR models from a remote CDN).
+EKDC_OCR_ENABLED=true
+EKDC_OCR_ENGINE=tesseract       # tesseract (installed CLI) | tesserocr | rapidocr | easyocr | auto
+EKDC_OCR_LANGUAGES=eng          # comma-separated Tesseract codes, e.g. eng or eng,deu
+EKDC_OCR_FORCE_FULL_PAGE=false  # true for fully scanned/image-only PDFs
+# EKDC_TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe  # if not on PATH
 
 # --- Image handling (light) ---
 # referenced (default) | embedded | placeholder

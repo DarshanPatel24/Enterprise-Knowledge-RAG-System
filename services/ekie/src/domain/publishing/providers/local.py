@@ -63,6 +63,23 @@ class InMemoryVectorProvider(VectorProvider):
         for vector_id in vector_ids:
             store.pop(vector_id, None)
 
+    def delete_by_document(
+        self, collection: str, tenant_id: str, document_id: str
+    ) -> int:
+        """Delete all points matching a document, returning the count removed."""
+        store = self._points.get(collection)
+        if store is None:
+            return 0
+        to_remove = [
+            vector_id
+            for vector_id, point in store.items()
+            if point.metadata.document_id == document_id
+            and point.metadata.tenant_id == tenant_id
+        ]
+        for vector_id in to_remove:
+            store.pop(vector_id, None)
+        return len(to_remove)
+
     def count(self, collection: str) -> int:
         """Return the number of vectors stored in the collection."""
         return len(self._require_collection(collection))

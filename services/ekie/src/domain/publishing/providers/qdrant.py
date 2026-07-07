@@ -144,6 +144,48 @@ class QdrantVectorProvider(VectorProvider):
                 f"qdrant delete failed for collection {collection!r}: {exc}"
             ) from exc
 
+    def delete_by_document(
+        self, collection: str, tenant_id: str, document_id: str
+    ) -> int:
+        """Delete all points for a document via a metadata filter (no manifest)."""
+        client = self._client()
+        from qdrant_client import models as qmodels
+
+        query_filter = qmodels.Filter(
+            must=[
+                qmodels.FieldCondition(
+                    key="metadata.document_id",
+                    match=qmodels.MatchValue(value=document_id),
+                ),
+                qmodels.FieldCondition(
+                    key="metadata.tenant_id",
+                    match=qmodels.MatchValue(value=tenant_id),
+                ),
+            ]
+        )
+        try:
+            if not self._collection_exists(client, collection):
+                return 0
+            removed = int(
+                client.count(
+                    collection_name=collection,
+                    count_filter=query_filter,
+                    exact=True,
+                ).count
+            )
+            if removed:
+                client.delete(
+                    collection_name=collection,
+                    points_selector=qmodels.FilterSelector(filter=query_filter),
+                )
+        except VectorProviderError:
+            raise
+        except Exception as exc:  # qdrant client boundary: normalize to domain error
+            raise VectorProviderError(
+                f"qdrant delete_by_document failed for collection {collection!r}: {exc}"
+            ) from exc
+        return removed
+
     def count(self, collection: str) -> int:
         """Return the number of vectors currently stored in the collection."""
         client = self._client()
