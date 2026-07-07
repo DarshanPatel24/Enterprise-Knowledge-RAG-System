@@ -53,17 +53,11 @@ warn_unused_configs = true
 mypy_path = "src:../../packages/contracts/src"
 
 # Optional real-provider clients are lazily imported behind engine seams and are
-# not installed on the default offline path; ignore their missing stubs.
+# not installed on the default offline path; ignore their missing stubs. This
+# list is kept to exactly the modules imported so far and grows per sprint
+# (langchain_*, langgraph.*, redis) as those seams come online.
 [[tool.mypy.overrides]]
 module = [
-  "langchain_ollama",
-  "langchain_huggingface",
-  "langchain_core.output_parsers",
-  "langchain_core.prompts",
-  "langchain_core.runnables",
-  "langgraph.graph",
-  "langgraph.checkpoint.memory",
   "langfuse.callback",
-  "redis",
 ]
 ignore_missing_imports = true

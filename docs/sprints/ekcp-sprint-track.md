@@ -45,6 +45,8 @@ Observability and governance: every LLM and agent invocation carries tenant_id, 
 ## EKCP-S0: Platform Foundations And API Gateway
 Handbook mapping: Chapter 3 (Conversation Architecture), Chapter 18 (Deployment planes), Chapter 19 (Microservices decomposition), Chapter 20 (API Contracts), Chapter 12 (Governance baseline).
 
+> Status: Approved (15 pytest green, ruff + mypy --strict clean on 18 source files). Implemented in `services/ekcp/` mirroring EKIE and EKRE conventions: `config/settings.py` (`EKCP_*` env-driven), `domain/observability` (correlation context with tenant/correlation/session ids, structured JSON logging, latency breakdown, Langfuse tracing seam), `domain/security` (security context ingress validator over the shared `SecurityContext` contract), `api/` (single-entry FastAPI app with correlation middleware, CORS, health probes, and the SSE `POST /chat/stream` contract), and `composition.py`.
+
 ### Sprint Objective
 Establish the control, runtime, and data plane substrate with a single API gateway, auth, routing, and observability baseline.
 
@@ -64,6 +66,13 @@ Establish the control, runtime, and data plane substrate with a single API gatew
 3. EKCP-S0-3 Observability baseline (tracing, latency, token usage).
 4. EKCP-S0-4 Governance and configuration baseline.
 5. EKCP-S0-5 SSE streaming chat API contract for web UI consumption: define endpoint (`POST /chat/stream`), SSE event schema (`token`, `citation`, `done`, `error`), tenant and correlation header convention, and error event format. This contract is the start condition for the Web UI sprint track (UI-S0).
+
+### Delivery Evidence
+1. EKCP-S0-1 Approved: `api/app.py` exposes a single FastAPI entry point with `CorrelationMiddleware` binding `X-Tenant-ID`, `X-Correlation-ID`, and `X-Session-ID`; configuration-driven CORS; and `api/dependencies.py` enforcing the tenant header (400 when absent).
+2. EKCP-S0-2 Approved: router-per-feature decomposition (`api/health.py`, `api/chat.py`) with typed Pydantic request and response models; the app factory wires routers from `create_app(settings)`.
+3. EKCP-S0-3 Approved: `domain/observability/` binds tenant/correlation/session ids to structured JSON logs and records a per-stage `LatencyBreakdown` with budget-breach detection; the Langfuse tracing seam stays off on the offline path.
+4. EKCP-S0-4 Approved: `config/settings.py` (`EKCP_*` env-driven, local-first defaults) plus `domain/security` validate the security context on every governed request; no operational values are hardcoded.
+5. EKCP-S0-5 Approved: `api/chat.py` defines `POST /chat/stream` and the `token`/`citation`/`done`/`error` SSE event schema, enforces the security context gate (403), and streams an echo stub so the Web UI can integrate against a stable contract ahead of model-backed generation.
 
 ### Deliverables
 1. API gateway and routing design.
@@ -85,6 +94,8 @@ Establish the control, runtime, and data plane substrate with a single API gatew
 ## EKCP-S1: Conversation Core Loop
 Handbook mapping: Chapter 4 (Conversation Engine), Chapter 5 (Session and State Management).
 
+> Status: Approved (42 pytest green, ruff + mypy --strict clean on 38 source files). Implemented in `services/ekcp/src/domain/{conversation,session,intent}` with the Conversation Digital Twin lifecycle state machine, optimistic-concurrency stores, session management, and the deterministic intent-before-execution gate, surfaced through `POST /conversation/start` and `POST /conversation/message`.
+
 ### Sprint Objective
 Deliver the conversation core with a persistent Conversation Digital Twin, session state, and intent gating before execution.
 
@@ -100,6 +111,11 @@ Deliver the conversation core with a persistent Conversation Digital Twin, sessi
 1. EKCP-S1-1 Conversation lifecycle and CDT model.
 2. EKCP-S1-2 Session and state management.
 3. EKCP-S1-3 Intent gating and confidence policy.
+
+### Delivery Evidence
+1. EKCP-S1-1 Approved: `domain/conversation/` defines the immutable `ConversationDigitalTwin`, the seven-state lifecycle machine (`lifecycle.py` legal-transition table + validated `transition()` with history and version bump), an optimistic-concurrency `ConversationStore` (in-memory default), the `ConversationManager` administration interface, the `ConversationEngine` core interaction loop, and the event dispatcher.
+2. EKCP-S1-2 Approved: `domain/session/` provides the immutable `Session` model, an optimistic-concurrency `SessionStore` (in-memory default), and a `SessionManager` enforcing the expiration policy; sessions are independent of conversations and expiration never terminates a conversation.
+3. EKCP-S1-3 Approved: `domain/intent/` provides a deterministic `IntentClassifier` and `IntentGate` that classify intent, scope (personal versus organizational), and confidence, request clarification below the configured threshold, and route personal messages to memory and organizational messages to enterprise knowledge (EKRE) — execution never proceeds from ungated raw input.
 
 ### Deliverables
 1. Conversation lifecycle and CDT artifact.
@@ -118,6 +134,8 @@ Deliver the conversation core with a persistent Conversation Digital Twin, sessi
 ## EKCP-S2: Context And Prompt Orchestration
 Handbook mapping: Chapter 6 (Context Orchestration), Chapter 7 (Prompt Orchestration), plus prompting standards in [../../.github/instructions/langchain.instructions.md](../../.github/instructions/langchain.instructions.md).
 
+> Status: Approved (60 pytest green, ruff + mypy --strict clean on 54 source files). Implemented in `services/ekcp/src/domain/{context,prompt}`: the `ContextAssembler` builds a governed, ranked, token-bounded Execution Context Package; the `PromptOrchestrator` constructs prompts from declarative layered templates with explicit named variables (no hardcoded prompt strings); and citation-readiness validation strips retrieval candidates with incomplete citations before prompt generation. Surfaced through `POST /context/build` and `POST /prompt/generate`.
+
 ### Sprint Objective
 Assemble intentional context before generation and construct governed prompts with ChatPromptTemplate, consuming EKRE retrieval context.
 
@@ -133,6 +151,11 @@ Assemble intentional context before generation and construct governed prompts wi
 1. EKCP-S2-1 Context assembly and source prioritization.
 2. EKCP-S2-2 Prompt orchestration and construction.
 3. EKCP-S2-3 Retrieval context citation-readiness validation.
+
+### Delivery Evidence
+1. EKCP-S2-1 Approved: `domain/context/` assembles the immutable `ExecutionContextPackage` from conversation history, enterprise knowledge (EKRE `RetrievalContextPackage`), memory, tool, and policy sources; ranks by relevance and recency, deduplicates, filters below-threshold items, and enforces a token budget with graceful degradation (policy items always retained). Every included item carries lineage (source, reason, rank, policy status) so assembled context is auditable before generation.
+2. EKCP-S2-2 Approved: `domain/prompt/` constructs prompts from a declarative layered template registry (system, policy, conversation, task, formatting) with explicit named variables resolved from the context package; no prompt strings are hardcoded in engine logic, the assistant identity and behavior are configuration-driven, and construction is validated (required variables present, token budget honored) into an immutable `PromptPackage`.
+3. EKCP-S2-3 Approved: `domain/prompt/citations.py` validates incoming retrieval context and strips any candidate missing `source_path`, `document_id`, `chunk_id`, or content before prompt generation, preventing hallucinated citations; the assembler applies the same rule and reports dropped items.
 
 ### Deliverables
 1. Context orchestration decision policy.

@@ -96,6 +96,71 @@ class ControlPlaneSettings(BaseSettings):
     url: str = ""
 
 
+class ConversationSettings(BaseSettings):
+    """Conversation lifecycle and Conversation Digital Twin settings."""
+
+    model_config = SettingsConfigDict(env_prefix="EKCP_CONVERSATION__", extra="ignore")
+
+    default_workspace_id: str = "default"
+    default_language: str = "en"
+    default_priority: str = "normal"
+    archive_on_complete: bool = False
+    enable_events: bool = True
+    event_sink: Literal["memory", "logging"] = "memory"
+
+
+class SessionSettings(BaseSettings):
+    """Session and state management settings."""
+
+    model_config = SettingsConfigDict(env_prefix="EKCP_SESSION__", extra="ignore")
+
+    session_ttl_seconds: float = Field(default=3600.0, gt=0.0)
+    max_concurrent_sessions: int = Field(default=8, ge=0)
+
+
+class IntentSettings(BaseSettings):
+    """Intent gating and confidence policy settings.
+
+    The pipeline is deterministic by default. The confidence threshold governs
+    when the gate requests clarification instead of executing on ambiguous input.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EKCP_INTENT__", extra="ignore")
+
+    confidence_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    default_language: str = "en"
+    enable_llm_intent: bool = False
+
+
+class ContextSettings(BaseSettings):
+    """Context orchestration (assembly and budgeting) settings."""
+
+    model_config = SettingsConfigDict(env_prefix="EKCP_CONTEXT__", extra="ignore")
+
+    max_context_tokens: int = Field(default=8000, gt=0)
+    chars_per_token: int = Field(default=4, gt=0)
+    min_relevance: float = Field(default=0.0, ge=0.0, le=1.0)
+    dedupe_content: bool = True
+    reserve_ratio: float = Field(default=0.1, ge=0.0, lt=1.0)
+
+
+class PromptSettings(BaseSettings):
+    """Prompt orchestration (construction and budgeting) settings.
+
+    Prompts are constructed from declarative templates with explicit variables;
+    the assistant identity and behavior are configuration-driven, not hardcoded.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EKCP_PROMPT__", extra="ignore")
+
+    default_template_id: str = "enterprise_chat_v1"
+    max_prompt_tokens: int = Field(default=12000, gt=0)
+    chars_per_token: int = Field(default=4, gt=0)
+    assistant_identity: str = "the enterprise knowledge assistant"
+    assistant_behavior: str = "Be accurate, concise, and policy-compliant."
+    default_output_format: str = "markdown"
+
+
 class EkcpSettings(BaseSettings):
     """Top-level EKCP settings composed of engine subsystem settings."""
 
@@ -115,6 +180,11 @@ class EkcpSettings(BaseSettings):
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     control_plane: ControlPlaneSettings = Field(default_factory=ControlPlaneSettings)
+    conversation: ConversationSettings = Field(default_factory=ConversationSettings)
+    session: SessionSettings = Field(default_factory=SessionSettings)
+    intent: IntentSettings = Field(default_factory=IntentSettings)
+    context: ContextSettings = Field(default_factory=ContextSettings)
+    prompt: PromptSettings = Field(default_factory=PromptSettings)
 
 
 @lru_cache(maxsize=1)

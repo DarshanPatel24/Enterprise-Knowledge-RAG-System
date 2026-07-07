@@ -9,6 +9,7 @@ from domain.observability.context import (
     set_session_id,
     set_tenant_id,
 )
+from domain.observability.latency import LatencyBreakdown, LatencyRecorder
 from domain.observability.logging import (
     JsonLogFormatter,
     configure_logging,
@@ -18,6 +19,8 @@ from domain.observability.tracing import build_langfuse_callbacks
 
 __all__ = [
     "JsonLogFormatter",
+    "LatencyBreakdown",
+    "LatencyRecorder",
     "build_langfuse_callbacks",
     "configure_logging",
     "correlation_scope",
