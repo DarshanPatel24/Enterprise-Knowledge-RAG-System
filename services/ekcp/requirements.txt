@@ -1,1 +1,8 @@
-
+﻿# EKCP runtime dependencies (offline, local-first default path).
+# Optional real-provider clients (langchain-*, langgraph, redis, sqlalchemy,
+# httpx) are declared as pyproject optional-dependencies and lazily imported
+# behind engine seams; install them per the deployment guide when enabling the
+# live chat model, agent runtime, cache, or control-plane backends.
+fastapi>=0.111.0
+pydantic>=2.7.0
+pydantic-settings>=2.3.0

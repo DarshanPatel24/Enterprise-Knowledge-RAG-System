@@ -261,17 +261,34 @@ These keys have no safe default and **must** be set before starting EKIE:
 | `EKIE_SYNC__TARGET_DIRECTORY` | Folder of EKDC-generated Markdown to ingest | `D:\Enterprise\Markdown` |
 | `EKIE_SYNC__TENANT_ID` | Default tenant identifier | `tenant-prod` |
 
-### 4.3 Storage Configuration (MinIO)
+### 4.3 Storage Configuration (Assets)
 
-| Key | Default | Production value |
+EKIE persists every stage payload (canonical Markdown, chunk sets, embeddings,
+published-vector manifests) in an immutable, versioned asset store. Two backends
+are available:
+
+| Backend | When used | Persistence |
 |---|---|---|
-| `EKIE_STORAGE__ENDPOINT` | `localhost:9000` | `localhost:9005` (or real MinIO host) |
-| `EKIE_STORAGE__ACCESS_KEY` | `` | `minioadmin` (or real key) |
-| `EKIE_STORAGE__SECRET_KEY` | `` | `minioadmin` (or real secret) |
-| `EKIE_STORAGE__BUCKET` | `ekie-assets` | `ekie-assets` |
-| `EKIE_ENVIRONMENT` | `local` | `production` (activates MinIO backend) |
+| **Local filesystem** (`LocalFileAssetStorage`) | Default local-first path (`EKIE_ENVIRONMENT=local`) | On disk under `EKIE_STORAGE__LOCAL_PATH`; survives API/worker restarts |
+| **MinIO** (`MinIOAssetStorage`) | `EKIE_ENVIRONMENT` is not `local` **and** `EKIE_STORAGE__ENDPOINT` is set | Object store; survives restarts |
 
-**Critical:** MinIO is only used when `EKIE_ENVIRONMENT=production`. In `local` mode the in-memory backend is used and all assets are lost on restart.
+| Key | Default | Notes |
+|---|---|---|
+| `EKIE_STORAGE__LOCAL_PATH` | `storage/assets` | Persistent asset directory (relative to the service working dir) used in local mode |
+| `EKIE_STORAGE__ENDPOINT` | `localhost:9000` | MinIO endpoint; used only outside local mode |
+| `EKIE_STORAGE__ACCESS_KEY` | `` | MinIO access key |
+| `EKIE_STORAGE__SECRET_KEY` | `` | MinIO secret key |
+| `EKIE_STORAGE__BUCKET` | `ekie-assets` | MinIO bucket |
+| `EKIE_ENVIRONMENT` | `local` | `local` selects the filesystem backend; any other value with an endpoint selects MinIO |
+
+**Critical:** In local mode, assets are written to disk (`storage/assets`) and
+**survive restarts** — a resumed ingestion job re-reads completed-stage payloads
+instead of failing. (Earlier builds used an in-memory backend in local mode,
+which lost all payloads on restart and caused resumed jobs to dead-letter with
+`markdown payload unavailable`; see
+[Help Guide 19.1](EKIE-Help_Guide.md#191-common-issues).) The `storage/`
+directory is git-ignored. Back it up alongside the Control Plane database if you
+need to preserve in-flight ingestion state across machine moves.
 
 ### 4.4 Embedding Configuration
 
@@ -556,17 +573,20 @@ succeeds. This makes async ingestion work regardless of the asset-storage backen
 | `EKIE_INGESTION__RETRY_BACKOFF_BASE_SECONDS` | `30.0` | Base delay between job retries |
 | `EKIE_INGESTION__RETRY_BACKOFF_MULTIPLIER` | `2.0` | Exponential backoff multiplier |
 | `EKIE_INGESTION__RETRY_BACKOFF_MAX_SECONDS` | `900.0` | Backoff cap |
-| `EKIE_INGESTION__VISIBILITY_TIMEOUT_SECONDS` | `600.0` | Stale-lock reclaim window for hard worker kills |
+| `EKIE_INGESTION__HEARTBEAT_INTERVAL_SECONDS` | `15.0` | A running worker refreshes its job lock on this interval so a live worker is never mistaken for a crashed one during long stages |
+| `EKIE_INGESTION__VISIBILITY_TIMEOUT_SECONDS` | `90.0` | Stale-lock reclaim window. Because live workers heartbeat, this bounds hard-kill recovery: a restarted worker resumes an orphaned job within roughly this many seconds |
 
 **Restart recovery:** stopping the ingest worker with **Ctrl+C** returns its
 in-flight job to the queue immediately (without spending a retry), so a restarted
 worker resumes it at once. A hard kill (closing the window) instead relies on the
-visibility timeout: the job is reclaimed once its lock is older than
-`VISIBILITY_TIMEOUT_SECONDS`. For multi-worker pools processing very long jobs,
-raise that value above the longest expected single-job runtime.
+heartbeat + visibility timeout: a live worker keeps its lock fresh every
+`HEARTBEAT_INTERVAL_SECONDS`, so a crashed worker's job is reclaimed and resumed
+once its lock is older than `VISIBILITY_TIMEOUT_SECONDS` (~90s by default). For
+multi-worker pools, keep the timeout a comfortable multiple of the heartbeat
+interval.
 
 Poll a document's job state at `GET /v1/documents/{document_id}/job`. Queued,
-running, and dead-letter states are also surfaced in the live monitor.
+running, waiting, and dead-letter states are also surfaced in the live monitor.
 
 ### 6.3 Monitor Ingestion Progress (Terminal C)
 
@@ -589,16 +609,31 @@ The monitor reads the Control Plane directly (no API call required) and refreshe
 |--------|---------|
 | **Document** | Source file name. |
 | **T I C E P** | Per-stage pipeline bar: `x` = stage complete, `.` = stage pending. |
-| **Status** | `complete`; `>> <stage> <done>/<total> <pct>%` (running, with live intra-stage progress — e.g. `>> E 128/260 49%` while embedding chunks); `queued`; or `dead-letter` (retries exhausted). |
+| **Status** | See the status states below. |
 | **Stage Metrics** | Per-stage counters for completed stages, one stage per line (decoded below). |
 | **Last** | Elapsed time since the most recent stage asset was written for that document. |
 
+**Status states:**
+
+| Status | Meaning |
+|--------|---------|
+| `complete` | All five stages done. |
+| `>> <stage> <done>/<total> <pct>%` | **Running now** with live intra-stage progress — e.g. `>> E 128/260 49%` while embedding chunks, `>> P 0/258` while publishing vectors. |
+| `waiting · resume <stage> [next / #N in line]` | Partially processed on an earlier attempt and **queued to resume** at the first incomplete stage. `[next]` means it is first in the worker's claim order; `[#N in line]` shows how many jobs are ahead; `[…, in 40s]` appears when a retry backoff is still counting down. |
+| `queued [#N in line]` | Not yet started; the bracket shows its position in the claim order. |
+| `dead-letter xN` | Retries exhausted after N attempts. |
+
+**Navigation:** the monitor renders only the rows that fit the terminal and is
+scrollable — use **↑/↓** (row), **PgUp/PgDn** (page), **Home/End** (jump), **f**
+to toggle FOLLOW (auto-pin to the top/active rows) versus SCROLL, and **q** (or
+**Ctrl+C**) to quit. A footer shows the visible range and current mode.
+
 The header panel adds an overall progress bar with percentage and counts per
-status (complete / running / queued / dead-letter) plus estimated remaining
-documents. Live within-stage progress (currently the embedding chunk count) is
-published to the Control Plane as each batch completes, so the Status column
-advances `E 1/260 → 260/260` in real time. A categorized Legend panel at the
-bottom explains every symbol.
+status (complete / running / waiting / queued / dead-letter) plus estimated
+remaining documents. Live within-stage progress (embedding and publishing batch
+counts) is published to the Control Plane as each batch completes, so the Status
+column advances `E 1/260 → 260/260` in real time. A categorized Legend panel at
+the bottom explains every symbol.
 
 **Pipeline stages (`T I C E P`):**
 
@@ -619,8 +654,6 @@ bottom explains every symbol.
 - **P** (Publish): `v` = vectors upserted, `✓` = vectors verified present, `b` = batches.
 
 A condensed version of this legend is always shown in the monitor window itself.
-
-Press **Ctrl+C** to stop the monitor.
 
 ### 6.4 Deleting Documents and Cleaning Up
 
@@ -647,6 +680,42 @@ python services/ekie/scripts/purge_documents.py --drop-empty-repositories --yes
 
 The tool purges the matching documents and their Qdrant vectors, prompting for
 confirmation unless `--yes` is given.
+
+### 6.5 Recovering Failed (Dead-Letter) Jobs
+
+When an async job exhausts its retries it moves to `dead_letter` and stops. After
+fixing the underlying cause, requeue it so a worker resumes it (the orchestrator
+is resumable — it re-runs only the incomplete stages):
+
+```powershell
+# Inspect failed / dead-lettered jobs
+python services/ekie/scripts/requeue_jobs.py --list
+
+# Requeue one job (by job id or document id), or every dead-lettered job
+python services/ekie/scripts/requeue_jobs.py --job-id <id>
+python services/ekie/scripts/requeue_jobs.py --document-id <id>
+python services/ekie/scripts/requeue_jobs.py --all-dead
+```
+
+Only requeue jobs whose cause is fixed. Do **not** requeue a job whose document
+was deleted (`transform:not_found`) — the worker now auto-cancels such orphans,
+and purging the document is the correct action.
+
+**Recovering documents whose payloads were lost:** if a document dead-lettered
+with `markdown payload unavailable` on an older in-memory build, its stage
+payloads cannot be recovered. After upgrading to persistent storage (Section
+4.3) and restarting the API and worker, reset and re-ingest it from the
+Control-Plane-stored source:
+
+```powershell
+python services/ekie/scripts/recover_lost_payload_docs.py
+```
+
+This clears each affected document's stale stage assets, processing state, and
+workflow rows (keeping the document and its stored source) and requeues it so the
+worker re-runs it cleanly onto persistent storage. If a document no longer has a
+stored source, delete it and re-add the source file so the sync worker
+re-discovers it.
 
 ---
 
@@ -755,13 +824,17 @@ HF_HUB_OFFLINE=1
 TRANSFORMERS_OFFLINE=1
 ```
 
-### 8.3 MinIO Storage in Production
+### 8.3 Asset Storage in Production
 
-EKIE uses MinIO for durable asset storage only when:
-- `EKIE_ENVIRONMENT=production` (any value other than `local`)
-- `EKIE_STORAGE__ENDPOINT` is non-empty
+EKIE selects the asset backend automatically:
+- **Local filesystem** (`LocalFileAssetStorage`) in `local` mode — assets persist
+  on disk under `EKIE_STORAGE__LOCAL_PATH` (default `storage/assets`) and survive
+  restarts.
+- **MinIO** (`MinIOAssetStorage`) when `EKIE_ENVIRONMENT` is not `local` **and**
+  `EKIE_STORAGE__ENDPOINT` is non-empty — for multi-node / durable object storage.
 
-In `local` mode, InMemoryAssetStorage is always used (data is lost on restart).
+Use MinIO (or another shared store) when running more than one node, so all
+workers share one asset store. See [Section 4.3](#43-storage-configuration-assets).
 
 ---
 

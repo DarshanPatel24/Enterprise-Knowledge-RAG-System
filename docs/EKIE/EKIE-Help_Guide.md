@@ -760,6 +760,67 @@ EKIE_EMBEDDING__PROVIDER=local
 EKIE_PUBLISHING__PROVIDER=local
 ```
 
+### 8.4 Async Ingestion, Live Monitor & Job Management
+
+When `EKIE_INGESTION__ASYNC_ENABLED=true`, the API returns `202 Accepted` and a
+durable worker pool runs the pipeline out of the request path. Start the worker
+alongside the API:
+
+```powershell
+python services/ekie/scripts/start_ingest_worker.py   # or: ekie-ingest-worker
+```
+
+**Restart safety.** Stage payloads persist to disk (`EKIE_STORAGE__LOCAL_PATH`,
+default `storage/assets`), and a live worker heartbeats its job lock every
+`EKIE_INGESTION__HEARTBEAT_INTERVAL_SECONDS` (15s). If a worker is hard-killed,
+its job is reclaimed and **resumed** once the lock is stale
+(`EKIE_INGESTION__VISIBILITY_TIMEOUT_SECONDS`, ~90s); stopping with **Ctrl+C**
+releases the job immediately. Resume is stage-granular: a job interrupted mid-way
+re-runs from the first incomplete stage.
+
+**Live monitor.** Watch per-document progress with:
+
+```powershell
+python services/ekie/scripts/monitor.py   # or: ekie-monitor
+```
+
+The Status column shows:
+
+| Status | Meaning |
+|--------|---------|
+| `>> E 128/260 49%` / `>> P 0/258` | **Running now**, with live per-batch progress for embedding/publishing. |
+| `waiting · resume E [next / #N in line]` | Partially done and **queued to resume**; the bracket is its position in the worker's claim order (`[…, in 40s]` = retry backoff still counting down). |
+| `queued [#N in line]` | Not started; bracket shows queue position. |
+| `complete` / `dead-letter xN` | Finished / retries exhausted. |
+
+Navigate with **↑/↓**, **PgUp/PgDn**, **Home/End**, **f** (toggle FOLLOW/SCROLL),
+and **q** or **Ctrl+C** to quit. With a single worker (`WORKER_CONCURRENCY=1`),
+documents process one at a time; the queue position tells you when each resumes.
+
+**Requeue a dead-letter job** after fixing its cause (the orchestrator resumes
+from the first incomplete stage):
+
+```powershell
+python services/ekie/scripts/requeue_jobs.py --list
+python services/ekie/scripts/requeue_jobs.py --job-id <id>       # or --document-id <id> / --all-dead
+```
+
+**Remove a document** (hard delete — purges vectors, assets, lineage, jobs, and
+staged source):
+
+```powershell
+python services/ekie/scripts/purge_documents.py --list
+python services/ekie/scripts/purge_documents.py --document-id <id> --yes
+python services/ekie/scripts/purge_documents.py --source-path "Report.pdf.md" --yes
+```
+
+**Recover payload-lost documents** (only needed after upgrading from an older
+in-memory build; resets stale stage rows and re-ingests from the stored source):
+
+```powershell
+python services/ekie/scripts/recover_lost_payload_docs.py
+```
+
 ---
 
 ## 9. API Reference
@@ -1241,8 +1302,9 @@ with db.session() as session:
 Abstraction for immutable, versioned asset persistence.
 
 - `AssetStorage` (protocol): Store and retrieve binary assets by key and version.
-- `InMemoryAssetStorage`: Default in-process store for local development and testing. Data is lost on restart.
-- `MinIOAssetStorage`: Durable object storage backend using a self-hosted MinIO instance. Active when `EKIE_ENVIRONMENT=production` and `EKIE_STORAGE__ENDPOINT` is non-empty.
+- `LocalFileAssetStorage`: **Default local-first backend.** Persists assets on disk under `EKIE_STORAGE__LOCAL_PATH` (default `storage/assets`), so stage payloads survive API/worker restarts.
+- `InMemoryAssetStorage`: In-process store for tests and offline snippets. Data is lost on restart — not used by the running service in local mode.
+- `MinIOAssetStorage`: Durable object storage backend using a self-hosted MinIO instance. Active when `EKIE_ENVIRONMENT` is not `local` and `EKIE_STORAGE__ENDPOINT` is non-empty.
 - `compute_content_hash`: SHA-256 hash for content integrity.
 
 Storage backend selection is automatic: the composition root calls `build_asset_storage(settings)` and returns the correct backend based on `EKIE_ENVIRONMENT`.
@@ -1947,9 +2009,40 @@ python services/ekie/scripts/start_ingest_worker.py   # or: ekie-ingest-worker
 
 **Symptom:** After killing and restarting the worker, the in-flight document stops progressing and the job stays `running` with no activity.
 
-**Cause:** A hard kill leaves the job locked; another worker only reclaims it after `EKIE_INGESTION__VISIBILITY_TIMEOUT_SECONDS` (default 600s). Stopping with **Ctrl+C** avoids this by releasing the job immediately.
+**Cause:** A hard kill (closing the window) leaves the job locked. A live worker keeps its lock fresh by heartbeating every `EKIE_INGESTION__HEARTBEAT_INTERVAL_SECONDS` (default 15s); a crashed worker stops heartbeating, so its job is reclaimed and resumed once the lock is older than `EKIE_INGESTION__VISIBILITY_TIMEOUT_SECONDS` (default 90s). Stopping with **Ctrl+C** avoids the wait entirely by releasing the job immediately.
 
-**Solution:** Wait for the visibility timeout, or reset the stuck job to `queued` (clear its lock) so the worker claims it now. Prefer Ctrl+C over closing the window when stopping the worker.
+**Solution:** Wait up to the visibility timeout (~90s) for automatic reclaim, or requeue the job now (`requeue_jobs.py`). Prefer Ctrl+C over closing the window when stopping the worker. Resume is stage-granular: a job interrupted mid-embedding re-runs that stage from the start (completed earlier stages are reused).
+
+#### Job dead-lettered with "markdown payload unavailable" (or `missing_chunks`)
+
+**Symptom:** After a worker restart, a document dead-letters with `intelligence:missing_markdown: markdown payload unavailable` even though the monitor showed earlier stages complete.
+
+**Cause:** Asset **metadata** is stored in the Control Plane, but asset **payloads** are stored in the asset backend. Older builds used an in-memory backend in local mode, so a restart wiped every payload; on resume, an already-recorded stage was skipped while its bytes were gone, failing the next stage.
+
+**Solution:** Ensure persistent storage is configured (`EKIE_ENVIRONMENT=local` now uses on-disk `LocalFileAssetStorage` at `EKIE_STORAGE__LOCAL_PATH`; see [Deployment Guide 4.3](EKIE-Deployment-Guide.md#43-storage-configuration-assets)). Restart the API and worker, then recover the affected documents:
+```powershell
+python services/ekie/scripts/recover_lost_payload_docs.py
+```
+
+#### Documents stay `waiting` for a long time
+
+**Symptom:** The monitor shows several documents as `waiting · resume …` while only one shows `>>` (running).
+
+**Cause:** This is expected with a single worker (`EKIE_INGESTION__WORKER_CONCURRENCY=1`): documents are processed one at a time and the others queue behind the current job. The `[next]` / `[#N in line]` marker shows each document's position in the claim order.
+
+**Solution:** Let the worker drain the queue (positions count down), or raise a specific job's `priority` to move it ahead. Do **not** run parallel workers for GPU embedding on a single GPU — concurrent embedding jobs contend for VRAM and can OOM.
+
+#### Removing a stuck or unwanted document
+
+**Symptom:** A document is dead-lettered or otherwise unwanted and you want it gone.
+
+**Solution:** Hard-delete it (purges vectors, assets, lineage, jobs, and staged source):
+```powershell
+python services/ekie/scripts/purge_documents.py --document-id <id> --yes
+# or by name / list first:
+python services/ekie/scripts/purge_documents.py --source-path "Report.pdf.md" --yes
+python services/ekie/scripts/purge_documents.py --list
+```
 
 #### `llm_analysis_skipped` in the logs
 
@@ -2347,8 +2440,9 @@ Behavior when enabled:
 - `POST /v1/documents/{id}/ingest` stages the source bytes in the Control Plane (`ingestion_sources`), enqueues a job, and returns `202 Accepted` with a `job_id`. Because the worker is a separate process, the source is handed off through the shared database, not process-local memory.
 - The ingest worker claims jobs, runs the pipeline (or a deletion), and marks the job `succeeded` (deleting the staged source), or requeues with exponential backoff up to `EKIE_INGESTION__MAX_ATTEMPTS` before `dead_letter`.
 - **Graceful restart:** stopping the worker with **Ctrl+C** returns its in-flight job to the queue immediately (no retry spent), so a restarted worker resumes it at once.
-- **Hard-kill recovery:** if the worker is killed abruptly, its job is reclaimed once the lock is older than `EKIE_INGESTION__VISIBILITY_TIMEOUT_SECONDS` (default 600s).
-- Poll `GET /v1/documents/{id}/job` for status. The monitor also shows `queued`, live `running` progress, and red `dead-letter` rows.
+- **Hard-kill recovery:** a live worker heartbeats its lock every `EKIE_INGESTION__HEARTBEAT_INTERVAL_SECONDS` (15s); if the worker is killed abruptly, its job is reclaimed and resumed once the lock is older than `EKIE_INGESTION__VISIBILITY_TIMEOUT_SECONDS` (default 90s).
+- **Persistent payloads:** stage outputs are written to disk (`EKIE_STORAGE__LOCAL_PATH`), so a resumed job re-reads completed-stage payloads instead of failing.
+- Poll `GET /v1/documents/{id}/job` for status. The monitor also shows `queued`, `waiting` (queued to resume, with queue position), live `running` progress, and red `dead-letter` rows.
 
 Tuning keys live under `EKIE_INGESTION__*` (see `.env.example`). With async
 disabled (default), ingestion runs inline and no ingest worker is needed.

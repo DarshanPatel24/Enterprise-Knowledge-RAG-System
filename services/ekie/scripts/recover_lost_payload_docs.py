@@ -22,6 +22,8 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 os.chdir(_SERVICE_ROOT)
 
+from sqlalchemy import or_  # noqa: E402
+
 from config.settings import get_settings  # noqa: E402
 from domain.control_plane import ControlPlaneDatabase  # noqa: E402
 from domain.control_plane.models import (  # noqa: E402
@@ -29,6 +31,7 @@ from domain.control_plane.models import (  # noqa: E402
     IngestionJob,
     JobKind,
     JobStatus,
+    Lineage,
     ProcessingState,
     Workflow,
 )
@@ -71,12 +74,29 @@ def main() -> int:
             print(f"  SKIP {document_id}: no stored source; re-add it from the source folder.")
             continue
         with db.session() as sess:
-            for asset in sess.query(Asset).filter(Asset.document_id == document_id).all():
-                sess.delete(asset)  # cascades lineage rows
+            asset_ids = [
+                row[0]
+                for row in sess.query(Asset.id).filter(Asset.document_id == document_id)
+            ]
+            if asset_ids:
+                # Delete lineage edges first: asset_lineage.parent_asset_id has
+                # no ON DELETE CASCADE, so deleting assets while an edge still
+                # references one as a parent violates the foreign key.
+                sess.query(Lineage).filter(
+                    or_(
+                        Lineage.asset_id.in_(asset_ids),
+                        Lineage.parent_asset_id.in_(asset_ids),
+                    )
+                ).delete(synchronize_session=False)
+                sess.query(Asset).filter(
+                    Asset.document_id == document_id
+                ).delete(synchronize_session=False)
             sess.query(ProcessingState).filter(
                 ProcessingState.document_id == document_id
-            ).delete()
-            sess.query(Workflow).filter(Workflow.document_id == document_id).delete()
+            ).delete(synchronize_session=False)
+            sess.query(Workflow).filter(
+                Workflow.document_id == document_id
+            ).delete(synchronize_session=False)
         queue.requeue(job_id)
         recovered += 1
         print(f"  RESET {document_id}: cleared stage assets/state and requeued.")

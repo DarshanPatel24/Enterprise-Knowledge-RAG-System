@@ -263,6 +263,25 @@ class DocumentDeletionService:
             document = session.get(Document, document_id)
             if document is None or document.tenant_id != tenant_id:
                 return False
+            # Delete lineage edges before the assets they reference. The
+            # asset_lineage.parent_asset_id foreign key has no ON DELETE CASCADE
+            # (and no ORM relationship on that side), so relying on the
+            # Document->assets cascade alone can fail when one asset is the
+            # parent of another. Clearing lineage for all of the document's
+            # assets first removes that ordering conflict.
+            asset_ids = [
+                row[0]
+                for row in session.query(Asset.id).filter(
+                    Asset.document_id == document_id
+                )
+            ]
+            if asset_ids:
+                session.query(Lineage).filter(
+                    or_(
+                        Lineage.asset_id.in_(asset_ids),
+                        Lineage.parent_asset_id.in_(asset_ids),
+                    )
+                ).delete(synchronize_session=False)
             session.delete(document)
             return True
 
