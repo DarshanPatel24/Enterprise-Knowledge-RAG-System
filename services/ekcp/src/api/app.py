@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -32,6 +35,29 @@ def _cors_origins(raw: str) -> list[str]:
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
+def _warm_gateway(settings: EkcpSettings) -> None:
+    """Build resources and load the chat model once at startup.
+
+    Only runs for the real ``langchain`` runtime; the offline deterministic path
+    needs no warmup. Any failure is logged and swallowed so a missing or slow
+    model never prevents the API from starting.
+    """
+    if settings.model.runtime != "langchain":
+        return
+    logger = get_logger("ekcp.api")
+    try:
+        from api.dependencies import get_resources
+        from domain.gateway import GenerationRequest
+
+        resources = get_resources(settings)
+        resources.model_gateway.invoke(
+            GenerationRequest(prompt_text="warmup", tenant_id="warmup")
+        )
+        logger.info("ekcp_model_warmed")
+    except Exception as exc:  # noqa: BLE001 - warmup must never crash startup
+        logger.warning("ekcp_model_warmup_failed", extra={"error": str(exc)})
+
+
 def create_app(settings: EkcpSettings | None = None) -> FastAPI:
     """Build and configure the EKCP FastAPI application (single entry point)."""
     settings = settings or get_settings()
@@ -39,10 +65,16 @@ def create_app(settings: EkcpSettings | None = None) -> FastAPI:
     configure_security(settings)
     logger = get_logger("ekcp.api")
 
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        _warm_gateway(settings)
+        yield
+
     app = FastAPI(
         title="Enterprise Knowledge Chat Platform (EKCP)",
         version="0.1.0",
         description="Governed conversational orchestration platform.",
+        lifespan=lifespan,
     )
 
     # Bind ingress-guard configuration to the app so guards honor the exact

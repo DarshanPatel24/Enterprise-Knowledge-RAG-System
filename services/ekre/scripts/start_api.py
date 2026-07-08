@@ -53,8 +53,8 @@ def main() -> None:
     settings = get_settings()
     uvicorn.run(
         "api.app:app",
-        host="127.0.0.1",
-        port=8002,
+        host=settings.gateway.host,
+        port=settings.gateway.port,
         log_level=settings.observability.log_level.lower(),
     )
 

@@ -62,15 +62,31 @@ def format_sse_event(event: str, data: dict[str, object]) -> str:
 
 
 def _build_grounded_prompt(message: str, candidates: list[RetrievalCandidate]) -> str:
-    """Compose a grounded prompt from retrieved candidates and the user message."""
-    context_block = "\n".join(
-        f"- {candidate.content} [source: {candidate.citation.source_path}]"
-        for candidate in candidates
+    """Compose a strictly context-bounded prompt for the support assistant."""
+    context_block = "\n\n".join(
+        f"[{index}] {candidate.content}\n[source: {candidate.citation.source_path}]"
+        for index, candidate in enumerate(candidates, start=1)
     )
     return (
-        "Use the following enterprise context to answer the question. "
-        "Cite sources where relevant.\n\n"
-        f"Context:\n{context_block}\n\nQuestion: {message}"
+        "Answer the QUESTION using ONLY the CONTEXT between the markers below. "
+        "If the CONTEXT does not contain the answer, say the information is not "
+        "available in the knowledge base and suggest contacting support - do not "
+        "use outside knowledge. Cite the sources you use with their [source: ...] "
+        "markers.\n\n"
+        "=== CONTEXT START ===\n"
+        f"{context_block}\n"
+        "=== CONTEXT END ===\n\n"
+        f"QUESTION: {message}"
+    )
+
+
+def _build_no_context_prompt(message: str) -> str:
+    """Prompt used when no context was retrieved: force a grounded refusal."""
+    return (
+        "No enterprise CONTEXT was retrieved for this question. Per your rules, "
+        "tell the user the information is not available in the knowledge base and "
+        "suggest contacting support. Do not answer from outside knowledge.\n\n"
+        f"QUESTION: {message}"
     )
 
 
@@ -89,7 +105,7 @@ async def _gateway_stream(
     terminal ``done`` frame follow. Knowledge failures degrade silently to an
     ungrounded response (the session never fails because EKRE is unavailable).
     """
-    prompt_text = message
+    prompt_text = _build_no_context_prompt(message)
     if security_context is not None:
         result = resources.knowledge_retriever.retrieve(
             message,

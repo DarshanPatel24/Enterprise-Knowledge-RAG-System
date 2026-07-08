@@ -22,7 +22,7 @@ class LangfuseSettingsLike(Protocol):
     """Structural type for environment-backed Langfuse settings."""
 
     langfuse_enabled: bool
-    langfuse_host: str
+    langfuse_url: str
     langfuse_public_key: str
     langfuse_secret_key: str
 
@@ -57,7 +57,7 @@ def build_langfuse_client(
     return Langfuse(
         public_key=settings.langfuse_public_key,
         secret_key=settings.langfuse_secret_key,
-        host=settings.langfuse_host,
+        host=settings.langfuse_url,
     )
 
 

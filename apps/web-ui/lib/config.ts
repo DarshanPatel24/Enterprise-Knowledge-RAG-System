@@ -8,7 +8,7 @@
 
 /** Base URL of the EKCP API gateway (single entry point for all engine traffic). */
 export function getApiBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_EKCP_API_URL ?? "http://localhost:8003";
+  return process.env.NEXT_PUBLIC_EKCP_URL ?? "http://localhost:8003";
 }
 
 /**
@@ -19,6 +19,18 @@ export function getApiBaseUrl(): string {
  */
 export function getTenantId(): string {
   return process.env.NEXT_PUBLIC_EKCP_TENANT_ID ?? "";
+}
+
+/**
+ * API key / gateway token sent as `Authorization: Bearer` on governed requests.
+ *
+ * Local-dev convenience only: seed it via `NEXT_PUBLIC_EKCP_API_KEY` so the app
+ * works end-to-end without the Settings screen. For shared or production
+ * deployments leave it empty and enter the key in-app so the secret never enters
+ * the client bundle. localStorage always overrides this default.
+ */
+export function getApiKey(): string {
+  return process.env.NEXT_PUBLIC_EKCP_API_KEY ?? "";
 }
 
 /**

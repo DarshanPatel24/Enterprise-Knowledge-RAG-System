@@ -5,6 +5,7 @@ No credentials, endpoints, or limits are hardcoded; values load from the
 process environment or a local ``.env`` file with the ``EKIE_`` prefix.
 """
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -21,6 +22,41 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 #   parents[1] = src/
 #   parents[2] = services/ekie/   <-- .env lives here
 _ENV_FILE = str(Path(__file__).resolve().parents[2] / ".env")
+
+
+def _apply_offline_env(env_file: str) -> None:
+    """Export HF_/TRANSFORMERS_ vars from ``env_file`` and force offline mode.
+
+    transformers/huggingface_hub read these from os.environ (not pydantic), so
+    they must be set before any lazy model import. Scoped to HF_/TRANSFORMERS_
+    keys so pydantic-prefixed settings and tests are unaffected. Relative path
+    values (for example a shared HF_HOME) are resolved against the .env directory
+    so they are correct regardless of the launch directory. Existing values win;
+    set HF_HUB_OFFLINE=0 to allow a one-time model download.
+    """
+    try:
+        lines = Path(env_file).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    base = Path(env_file).resolve().parent
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key.startswith(("HF_", "TRANSFORMERS_")):
+            continue
+        value = value.strip().strip('"').strip("'")
+        if value.startswith(("./", "../")):
+            value = str((base / value).resolve())
+        os.environ.setdefault(key, value)
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
+
+# Enforce fully-offline HuggingFace access before any model loads (local-first).
+_apply_offline_env(_ENV_FILE)
 
 
 class ControlPlaneSettings(BaseSettings):
@@ -117,7 +153,7 @@ class ObservabilitySettings(BaseSettings):
     log_level: str = "INFO"
     service_name: str = "ekie"
     langfuse_enabled: bool = False
-    langfuse_host: str = "http://localhost:3000"
+    langfuse_url: str = "http://localhost:3000"
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     otel_exporter_endpoint: str | None = None
@@ -346,6 +382,19 @@ class DeploymentSettings(BaseSettings):
     replicas: int = 1
 
 
+class GatewaySettings(BaseSettings):
+    """API server bind settings for the EKIE service.
+
+    Host and port are configuration-driven (never hardcoded) and mirror the
+    ``*_GATEWAY__`` convention used by EKRE and EKCP so all engines match.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EKIE_GATEWAY__", extra="ignore")
+
+    host: str = "0.0.0.0"  # noqa: S104 - service binds all interfaces in container/dev
+    port: int = Field(default=8001, gt=0)
+
+
 class EkieSettings(BaseSettings):
     """Top-level EKIE settings composed of engine subsystem settings."""
 
@@ -360,6 +409,7 @@ class EkieSettings(BaseSettings):
     app_name: str = "ekie"
     environment: str = "local"
 
+    gateway: GatewaySettings = Field(default_factory=GatewaySettings)
     control_plane: ControlPlaneSettings = Field(default_factory=ControlPlaneSettings)
     qdrant: QdrantSettings = Field(default_factory=QdrantSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)

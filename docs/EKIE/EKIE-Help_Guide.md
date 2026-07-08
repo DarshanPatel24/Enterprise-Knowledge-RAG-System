@@ -732,7 +732,7 @@ Push-Location services/ekie
 ..\..\.venv\Scripts\python.exe -m uvicorn api.app:app --host 0.0.0.0 --port 8001 --app-dir src
 ```
 
-The API port is controlled by `EKIE_API_PORT` environment variable (default: `8001`).
+The API host and port are controlled by the `EKIE_GATEWAY__HOST` and `EKIE_GATEWAY__PORT` environment variables (defaults: `0.0.0.0` and `8001`).
 
 ### 8.2 Verify the Service
 
@@ -1542,7 +1542,7 @@ Required `.env` settings:
 
 ```dotenv
 EKIE_OBSERVABILITY__LANGFUSE_ENABLED=true
-EKIE_OBSERVABILITY__LANGFUSE_HOST=http://localhost:3000
+EKIE_OBSERVABILITY__LANGFUSE_URL=http://localhost:3000
 EKIE_OBSERVABILITY__LANGFUSE_PUBLIC_KEY=pk-lf-<from-langfuse-ui>
 EKIE_OBSERVABILITY__LANGFUSE_SECRET_KEY=sk-lf-<from-langfuse-ui>
 EKIE_ORCHESTRATION__RUNNER=langgraph

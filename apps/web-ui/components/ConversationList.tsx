@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquare, Plus } from "lucide-react";
+import { MessageSquare, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -27,11 +27,13 @@ export function ConversationList({
   activeId,
   onSelect,
   onNew,
+  onDelete,
 }: {
   conversations: StoredConversation[];
   activeId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
+  onDelete: (id: string) => void;
 }): React.JSX.Element {
   return (
     <div className="flex h-full flex-col gap-2 p-2">
@@ -46,27 +48,43 @@ export function ConversationList({
           </p>
         ) : (
           conversations.map((conversation) => (
-            <button
+            <div
               key={conversation.id}
-              type="button"
-              onClick={() => onSelect(conversation.id)}
               className={cn(
-                "flex w-full flex-col gap-0.5 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-accent",
+                "group relative rounded-md transition-colors hover:bg-accent",
                 conversation.id === activeId && "bg-accent",
               )}
-              aria-current={conversation.id === activeId}
             >
-              <span className="flex items-center gap-2 truncate font-medium">
-                <MessageSquare
-                  className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                  aria-hidden
-                />
-                <span className="truncate">{conversation.title}</span>
-              </span>
-              <span className="pl-5 text-xs text-muted-foreground">
-                {formatTimestamp(conversation.updatedAt)}
-              </span>
-            </button>
+              <button
+                type="button"
+                onClick={() => onSelect(conversation.id)}
+                className="flex w-full flex-col gap-0.5 rounded-md px-2 py-2 pr-8 text-left text-sm"
+                aria-current={conversation.id === activeId}
+              >
+                <span className="flex items-center gap-2 truncate font-medium">
+                  <MessageSquare
+                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                    aria-hidden
+                  />
+                  <span className="truncate">{conversation.title}</span>
+                </span>
+                <span className="pl-5 text-xs text-muted-foreground">
+                  {formatTimestamp(conversation.updatedAt)}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDelete(conversation.id);
+                }}
+                className="absolute right-1 top-1.5 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+                aria-label={`Delete conversation: ${conversation.title}`}
+                title="Delete conversation"
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            </div>
           ))
         )}
       </nav>

@@ -11,9 +11,13 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from api.dependencies import AppSettings, SignedSecurityContext, TenantId
+from api.dependencies import (
+    AppSettings,
+    RetrievalPipelineDep,
+    SignedSecurityContext,
+    TenantId,
+)
 from composition import (
-    build_retrieval_pipeline,
     build_security_validator,
     record_access_denied,
 )
@@ -49,6 +53,7 @@ async def retrieve(
     settings: AppSettings,
     tenant_id: TenantId,
     signed_context: SignedSecurityContext,
+    pipeline: RetrievalPipelineDep,
 ) -> TracedRetrieval:
     """Run the full traced, audited, masked retrieval pipeline."""
     validator: SecurityContextValidator = build_security_validator(settings)
@@ -75,7 +80,6 @@ async def retrieve(
             status_code=status.HTTP_403_FORBIDDEN, detail="a security context is required"
         )
 
-    pipeline = build_retrieval_pipeline(settings)
     try:
         return pipeline.retrieve(
             request.query,

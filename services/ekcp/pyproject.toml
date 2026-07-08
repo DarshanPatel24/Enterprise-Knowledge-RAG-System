@@ -15,6 +15,7 @@ dependencies = [
 # GPU acceleration, install a CUDA build of torch that matches your driver.
 huggingface = [
   "langchain-huggingface>=0.0.3",
+  "numpy>=1.26",
   "transformers>=4.0.0",
   "accelerate>=0.21.0",
   "torch>=2.0.0",

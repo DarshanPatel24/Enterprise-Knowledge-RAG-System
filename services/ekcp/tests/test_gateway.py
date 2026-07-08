@@ -6,6 +6,7 @@ import pytest
 
 from config.settings import ModelGatewaySettings
 from domain.gateway import (
+    ChatModelProvider,
     CostProfile,
     GatewayError,
     GatewayErrorType,
@@ -17,6 +18,7 @@ from domain.gateway import (
     ModelRegistry,
     ModelRequirements,
     ModelSelector,
+    ProviderInvocationError,
     RoutingStrategy,
     StreamEventType,
     default_model_registry,
@@ -144,3 +146,66 @@ def test_policy_from_settings() -> None:
     policy = GatewayPolicy.from_settings(settings)
     assert policy.routing_strategy is RoutingStrategy.COST
     assert policy.default_model_id == "ekcp-echo"
+
+
+class _FailingProvider(ChatModelProvider):
+    """A provider whose model cannot be loaded (e.g. offline cache miss)."""
+
+    @property
+    def runtime(self) -> str:
+        return "failing"
+
+    def generate(self, descriptor, prompt_text, constraints):  # type: ignore[no-untyped-def]
+        raise ProviderInvocationError("model weights unavailable offline")
+
+    def stream(self, descriptor, prompt_text, constraints):  # type: ignore[no-untyped-def]
+        raise ProviderInvocationError("model weights unavailable offline")
+        yield  # pragma: no cover - unreachable, marks this a generator
+
+
+def _registry_with_failing_primary() -> ModelRegistry:
+    registry = ModelRegistry()
+    registry.register(
+        deterministic_model().model_copy(
+            update={
+                "model_id": "primary",
+                "runtime": "failing",
+                "quality_score": 0.9,
+            }
+        )
+    )
+    registry.register(deterministic_model())
+    return registry
+
+
+def _providers_with_failing() -> dict:
+    providers = default_provider_registry()
+    providers["failing"] = _FailingProvider()
+    return providers
+
+
+def test_stream_falls_back_when_provider_fails_before_first_token() -> None:
+    gateway = _gateway(
+        _registry_with_failing_primary(), providers=_providers_with_failing()
+    )
+    events = list(gateway.stream(_request()))
+    assert not any(e.event_type is StreamEventType.ERROR for e in events)
+    tokens = [e for e in events if e.event_type is StreamEventType.TOKEN]
+    done = [e for e in events if e.event_type is StreamEventType.DONE]
+    assert tokens
+    assert len(done) == 1
+    assert done[0].model_id == "ekcp-echo"
+
+
+def test_stream_emits_error_when_all_providers_fail() -> None:
+    registry = ModelRegistry()
+    registry.register(
+        deterministic_model().model_copy(
+            update={"model_id": "primary", "runtime": "failing"}
+        )
+    )
+    gateway = _gateway(registry, providers=_providers_with_failing())
+    events = list(gateway.stream(_request()))
+    assert events[-1].event_type is StreamEventType.ERROR
+    assert "offline" in events[-1].error_message
+

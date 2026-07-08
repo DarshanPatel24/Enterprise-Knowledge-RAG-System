@@ -100,6 +100,9 @@ class CrossEncoderReranker(Reranker):
                 torch_dtype=self._config.reranker_torch_dtype,
                 trust_remote_code=self._config.reranker_trust_remote_code,
             )
+            _logger.info(
+                "reranker_model_loaded", extra={"model": self._config.reranker_model}
+            )
         return self._model
 
 

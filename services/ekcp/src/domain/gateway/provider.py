@@ -11,17 +11,24 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
-from typing import cast
+from typing import Any, cast
 
 from domain.gateway.errors import ProviderInvocationError
 from domain.gateway.models import ModelDescriptor, ResponseConstraints
 from domain.integrations import (
     ChatModelLike,
-    LangChainResourceError,
     build_chat_model,
 )
+from domain.observability import get_logger
 
 _USER_REQUEST_MARKER = "User request:"
+
+# Process-wide cache of built LCEL chains keyed by the model's identifying
+# parameters. The HuggingFace pipeline loads multi-GB weights from disk, so
+# building the chain once and reusing it is essential: without this the model
+# would be reloaded on every request.
+_CHAIN_CACHE: dict[tuple[str, str, str, float, int, str, str], ChatModelLike] = {}
+_logger = get_logger("ekcp.gateway.provider")
 
 
 class ChatModelProvider(ABC):
@@ -92,7 +99,7 @@ class LangChainChatProvider(ChatModelProvider):
     ) -> str:
         chain = self._chain(descriptor)
         try:
-            output = chain.invoke(prompt_text)
+            output = chain.invoke(self._model_input(descriptor, prompt_text))
         except Exception as exc:  # noqa: BLE001 - isolate any provider failure
             raise ProviderInvocationError(str(exc)) from exc
         return str(output)
@@ -102,13 +109,46 @@ class LangChainChatProvider(ChatModelProvider):
     ) -> Iterator[str]:
         chain = self._chain(descriptor)
         try:
-            for chunk in chain.stream(prompt_text):
+            for chunk in chain.stream(self._model_input(descriptor, prompt_text)):
                 yield str(chunk)
         except Exception as exc:  # noqa: BLE001 - isolate any provider failure
             raise ProviderInvocationError(str(exc)) from exc
 
     @staticmethod
+    def _model_input(descriptor: ModelDescriptor, prompt_text: str) -> Any:  # noqa: ANN401 - chat model accepts str or message list
+        """Build the model input, prepending the system prompt as a system role.
+
+        The system prompt fixes the assistant's role and enforces context-only
+        answers. Passing messages (not a formatted string) avoids brace/format
+        issues with arbitrary retrieved content.
+        """
+        if not descriptor.system_prompt:
+            return prompt_text
+        try:
+            from langchain_core.messages import HumanMessage, SystemMessage
+        except ImportError as exc:
+            raise ProviderInvocationError(
+                "langchain-core is required for the LangChain chat provider"
+            ) from exc
+        return [
+            SystemMessage(content=descriptor.system_prompt),
+            HumanMessage(content=prompt_text),
+        ]
+
+    @staticmethod
     def _chain(descriptor: ModelDescriptor) -> ChatModelLike:
+        key = (
+            descriptor.provider,
+            descriptor.model_name,
+            descriptor.base_url,
+            descriptor.temperature,
+            descriptor.max_output_tokens,
+            descriptor.device,
+            descriptor.torch_dtype,
+        )
+        cached = _CHAIN_CACHE.get(key)
+        if cached is not None:
+            return cached
         try:
             from langchain_core.output_parsers import StrOutputParser
         except ImportError as exc:
@@ -121,10 +161,23 @@ class LangChainChatProvider(ChatModelProvider):
                 descriptor.model_name,
                 base_url=descriptor.base_url or "http://localhost:11434",
                 temperature=descriptor.temperature,
+                max_new_tokens=descriptor.max_output_tokens,
+                device=descriptor.device,
+                torch_dtype=descriptor.torch_dtype,
             )
-        except LangChainResourceError as exc:
+        except Exception as exc:  # noqa: BLE001 - isolate any model-load failure (offline cache miss, missing weights, OOM) so the gateway can fall back instead of crashing
             raise ProviderInvocationError(str(exc)) from exc
-        return cast("ChatModelLike", model | StrOutputParser())  # type: ignore[operator]
+        chain = cast("ChatModelLike", model | StrOutputParser())  # type: ignore[operator]
+        _CHAIN_CACHE[key] = chain
+        _logger.info(
+            "chat_model_loaded",
+            extra={
+                "model_id": descriptor.model_id,
+                "device": descriptor.device or "cpu",
+                "cache_size": len(_CHAIN_CACHE),
+            },
+        )
+        return chain
 
 
 def default_provider_registry() -> dict[str, ChatModelProvider]:

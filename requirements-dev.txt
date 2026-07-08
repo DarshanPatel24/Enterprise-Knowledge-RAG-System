@@ -13,6 +13,8 @@ detect-secrets>=1.5.0
 #   EKIE_EMBEDDING__DEVICE=auto
 #   EKIE_EMBEDDING__TORCH_DTYPE=float16   # halves VRAM so large models fit small GPUs
 langchain-huggingface>=0.0.3
+# NumPy is required by torch/transformers/sentence-transformers at runtime.
+numpy>=1.26
 torch>=2.0.0
 transformers>=4.0.0
 accelerate>=0.21.0

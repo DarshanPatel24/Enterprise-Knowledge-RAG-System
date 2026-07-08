@@ -11,6 +11,7 @@ import { useSettings } from "@/lib/hooks/useSettings";
 import { isConfigured, missingRequiredFields } from "@/lib/settings";
 import {
   createConversation,
+  deleteConversation,
   listConversations,
   loadMessages,
   saveMessages,
@@ -58,6 +59,25 @@ export function ChatWorkspace(): React.JSX.Element {
     setActiveId(id);
   }, []);
 
+  const handleDelete = useCallback((id: string): void => {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("Delete this conversation? This cannot be undone.")
+    ) {
+      return;
+    }
+    const remaining = deleteConversation(id);
+    const next = remaining[0];
+    if (!next) {
+      const created = createConversation();
+      setConversations([created]);
+      setActiveId(created.id);
+      return;
+    }
+    setConversations(remaining);
+    setActiveId((current) => (current === id ? next.id : current));
+  }, []);
+
   const handlePersist = useCallback(
     (id: string, messages: ChatMessage[]): void => {
       if (messages.length === 0) {
@@ -81,6 +101,7 @@ export function ChatWorkspace(): React.JSX.Element {
           activeId={activeId}
           onSelect={handleSelect}
           onNew={handleNew}
+          onDelete={handleDelete}
         />
         <div className="border-t p-2">
           <Button asChild variant="ghost" size="sm" className="w-full justify-start">

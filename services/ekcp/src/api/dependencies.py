@@ -132,15 +132,24 @@ def build_resources(settings: EkcpSettings) -> AppResources:
     )
 
 
-_resources: AppResources | None = None
+_resources_cache: dict[int, AppResources] = {}
 
 
-def get_resources() -> AppResources:
-    """Return the process-wide application resources, building them on first use."""
-    global _resources
-    if _resources is None:
-        _resources = build_resources(get_settings())
-    return _resources
+def get_resources(
+    settings: Annotated[EkcpSettings, Depends(get_app_settings)],
+) -> AppResources:
+    """Return application resources for ``settings``, building once per settings.
+
+    Depending on the overridable ``get_app_settings`` lets tests inject hermetic
+    settings (so the API exercises the deterministic offline path), while
+    production reuses the single cached settings object and builds resources once.
+    """
+    key = id(settings)
+    cached = _resources_cache.get(key)
+    if cached is None:
+        cached = build_resources(settings)
+        _resources_cache[key] = cached
+    return cached
 
 
 Resources = Annotated[AppResources, Depends(get_resources)]

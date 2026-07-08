@@ -12,8 +12,9 @@ from __future__ import annotations
 MAX_DOCUMENT_CHARS = 6000
 
 TOPIC_SYSTEM_PROMPT = (
-    "You are a precise document analyst for an enterprise knowledge base. "
-    "Identify the single dominant subject of the provided document. "
+    "You are a precise document analyst for an OFFLINE enterprise knowledge base. "
+    "Using ONLY the document text provided, identify its single dominant subject. "
+    "Do not use outside knowledge or infer beyond the text. "
     "Respond with a concise topic of at most eight words. "
     "Return only the topic text, with no punctuation, labels, or explanation."
 )

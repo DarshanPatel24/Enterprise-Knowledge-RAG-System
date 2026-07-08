@@ -1,0 +1,86 @@
+# =============================================================================
+# EK-RAG MASTER REQUIREMENTS (all services + tests)
+# -----------------------------------------------------------------------------
+# Single aggregated dependency set to run and TEST every Python service:
+#   EKIE (ingestion), EKRE (retrieval), EKCP (chat platform), EKDC (doc convert),
+#   and the shared contracts package.
+#
+# Install into one virtual environment:
+#     python -m venv .venv
+#     .\.venv\Scripts\Activate.ps1        # Windows PowerShell
+#     pip install -r requirements-all.txt
+#
+# GPU NOTE (NVIDIA): `torch` from PyPI installs the CPU-only build. For GPU
+# acceleration install a CUDA build that matches your driver INSTEAD, e.g.:
+#     pip install torch==2.12.1 --index-url https://download.pytorch.org/whl/cu130
+#   (use cu128/cu126 for older drivers), then set, per service .env:
+#     *_EMBEDDING__DEVICE=auto  and  *_EMBEDDING__TORCH_DTYPE=float16
+#
+# NOTE: EKDC (media -> Markdown) is a heavy, optional stack and normally runs in
+# its OWN venv (services/ekdc/.venv). It is included here so a single env can
+# test everything; comment out the "EKDC" block if you do not need it.
+# The web UI (apps/web-ui) is Node.js/Next.js and is NOT covered by this file.
+# =============================================================================
+
+# --- Core web framework + settings (all services) ---
+fastapi>=0.111.0
+uvicorn>=0.30.0
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+python-dotenv>=1.0.0
+sqlalchemy>=2.0.30
+
+# --- Orchestration and agents (LangChain / LangGraph, behind engine seams) ---
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-ollama>=0.2.0
+langchain-huggingface>=0.0.3
+langchain-qdrant>=0.1.0
+langgraph>=0.2.0
+
+# --- Local model runtime (self-hosted embeddings and chat) ---
+ollama>=0.3.0
+
+# --- HuggingFace / ML stack (embeddings, reranker, generation) ---
+# See GPU NOTE above to swap the CPU torch wheel for a CUDA build.
+# NumPy is required by torch/transformers/sentence-transformers at runtime.
+numpy>=1.26
+torch>=2.0.0
+transformers>=4.0.0
+accelerate>=0.21.0
+sentence-transformers>=3.0.0
+huggingface-hub>=0.23
+
+# --- Infrastructure clients (vector DB, cache, object store, control plane) ---
+qdrant-client>=1.9.0
+redis>=5.0.0
+minio>=7.2.0
+pyodbc>=5.1.0
+
+# --- Observability (self-hosted, privacy-preserving) ---
+langfuse>=2.0.0
+opentelemetry-api>=1.25.0
+opentelemetry-sdk>=1.25.0
+
+# --- HTTP client (test clients + EKIE live sync) ---
+httpx>=0.27.0
+
+# --- EKDC document conversion (media/rich formats -> Markdown) ---
+# Heavy/optional. torch/torchvision are pulled in by docling & whisper; install
+# a CUDA build (see GPU NOTE) if you want GPU-accelerated conversion.
+docling
+openai-whisper
+moviepy
+watchdog
+pytesseract
+Pillow
+python-magic-bin; sys_platform == 'win32'
+python-magic; sys_platform != 'win32'
+
+# --- Developer tooling and quality gates (lint, types, tests, secrets) ---
+ruff>=0.5.0
+mypy>=1.10.0
+pytest>=8.2.0
+pytest-asyncio>=0.23.0
+pre-commit>=3.7.0
+detect-secrets>=1.5.0

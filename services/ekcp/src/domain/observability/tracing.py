@@ -17,7 +17,7 @@ class TracingSettingsLike(Protocol):
     """Structural view of the observability settings needed for tracing."""
 
     langfuse_enabled: bool
-    langfuse_host: str
+    langfuse_url: str
     langfuse_public_key: str
     langfuse_secret_key: str
 
@@ -35,7 +35,7 @@ def build_langfuse_callbacks(settings: TracingSettingsLike) -> list[Any]:
     except ImportError:
         return []
     handler = CallbackHandler(
-        host=settings.langfuse_host,
+        host=settings.langfuse_url,
         public_key=settings.langfuse_public_key or None,
         secret_key=settings.langfuse_secret_key or None,
     )

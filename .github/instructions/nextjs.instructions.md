@@ -26,7 +26,7 @@ These rules apply to all TypeScript and TSX files under `apps/`. They define the
 
 ```typescript
 // Correct — environment-backed, never hardcoded.
-const apiBase = process.env.NEXT_PUBLIC_EKCP_API_URL ?? "http://localhost:8001";
+const apiBase = process.env.NEXT_PUBLIC_EKCP_URL ?? "http://localhost:8003";
 ```
 
 ## EKCP API Client

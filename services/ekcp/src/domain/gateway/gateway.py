@@ -130,50 +130,71 @@ class LLMGateway:
         raise GatewayError(GatewayErrorType.FALLBACK_EXHAUSTED, message)
 
     def stream(self, request: GenerationRequest) -> Iterator[GatewayStreamEvent]:
-        """Stream a model response as token events followed by a done event."""
+        """Stream a model response as token events followed by a done event.
+
+        Falls back to the next candidate model when a provider fails before any
+        token is emitted (e.g. the configured chat model cannot be loaded), so a
+        model-load failure degrades gracefully instead of crashing the stream.
+        Once tokens have been emitted a mid-stream failure surfaces as an error
+        event because partial output cannot be safely restarted.
+        """
         prompt_tokens = self._tokens(request.prompt_text)
-        descriptor = self._candidates(request, prompt_tokens)[0]
-        provider = self._providers.get(descriptor.runtime)
-        if provider is None:
-            yield GatewayStreamEvent(
-                event_type=StreamEventType.ERROR,
-                error_message=f"no provider for runtime {descriptor.runtime!r}",
-            )
-            return
+        candidates = self._candidates(request, prompt_tokens)
 
-        fragments: list[str] = []
-        try:
-            for fragment in provider.stream(
-                descriptor, request.prompt_text, request.constraints
-            ):
-                fragments.append(fragment)
-                yield GatewayStreamEvent(
-                    event_type=StreamEventType.TOKEN,
-                    text=fragment,
-                    model_id=descriptor.model_id,
+        last_error: ProviderInvocationError | None = None
+        for descriptor in candidates:
+            provider = self._providers.get(descriptor.runtime)
+            if provider is None:
+                continue
+
+            fragments: list[str] = []
+            try:
+                for fragment in provider.stream(
+                    descriptor, request.prompt_text, request.constraints
+                ):
+                    fragments.append(fragment)
+                    yield GatewayStreamEvent(
+                        event_type=StreamEventType.TOKEN,
+                        text=fragment,
+                        model_id=descriptor.model_id,
+                    )
+            except ProviderInvocationError as exc:
+                last_error = exc
+                logger.warning(
+                    "gateway_stream_provider_failed",
+                    extra={"model_id": descriptor.model_id, "error": exc.message},
                 )
-        except ProviderInvocationError as exc:
+                if fragments or not self._policy.enable_fallback:
+                    yield GatewayStreamEvent(
+                        event_type=StreamEventType.ERROR,
+                        model_id=descriptor.model_id,
+                        error_message=exc.message,
+                    )
+                    return
+                continue
+
+            output_text = "".join(fragments)
+            usage = TokenUsage(
+                prompt_tokens=prompt_tokens, completion_tokens=self._tokens(output_text)
+            )
+            cost = descriptor.cost_profile.estimate(
+                usage.prompt_tokens, usage.completion_tokens
+            )
+            self._ledger.record(request.tenant_id, tokens=usage.total_tokens, cost=cost)
             yield GatewayStreamEvent(
-                event_type=StreamEventType.ERROR,
+                event_type=StreamEventType.DONE,
                 model_id=descriptor.model_id,
-                error_message=exc.message,
+                finish_reason="stop",
+                token_usage=usage,
+                cost_estimate=cost,
             )
             return
 
-        output_text = "".join(fragments)
-        usage = TokenUsage(
-            prompt_tokens=prompt_tokens, completion_tokens=self._tokens(output_text)
+        message = (
+            last_error.message if last_error else "no provider produced a response"
         )
-        cost = descriptor.cost_profile.estimate(
-            usage.prompt_tokens, usage.completion_tokens
-        )
-        self._ledger.record(request.tenant_id, tokens=usage.total_tokens, cost=cost)
         yield GatewayStreamEvent(
-            event_type=StreamEventType.DONE,
-            model_id=descriptor.model_id,
-            finish_reason="stop",
-            token_usage=usage,
-            cost_estimate=cost,
+            event_type=StreamEventType.ERROR, error_message=message
         )
 
     def _candidates(

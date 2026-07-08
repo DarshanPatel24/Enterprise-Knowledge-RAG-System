@@ -14,7 +14,10 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from domain.integrations import LangChainResourceError, build_embeddings
+from domain.observability import get_logger
 from domain.retrieval.errors import RetrievalWorkerError, RetrievalWorkerErrorType
+
+_logger = get_logger("ekre.retrieval.embedding")
 
 
 class EmbeddingAdapter(ABC):
@@ -112,4 +115,5 @@ class LangChainEmbeddingAdapter(EmbeddingAdapter):
             if self._base_url:
                 kwargs["base_url"] = self._base_url
             self._embeddings = build_embeddings(self._provider, self._model, **kwargs)
+            _logger.info("query_embedding_model_loaded", extra={"model": self._model})
         return self._embeddings

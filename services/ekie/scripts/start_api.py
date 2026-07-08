@@ -35,14 +35,20 @@ def _venv_python() -> str:
 
 def main() -> int:
     os.chdir(_SERVICE_ROOT)
-    port = os.environ.get("EKIE_API_PORT", "8001")
+    # Bootstrap sys.path so the launcher can read the same settings the app uses.
+    for path in (_SERVICE_ROOT / "src", _REPO_ROOT / "packages" / "contracts" / "src"):
+        if str(path) not in sys.path:
+            sys.path.insert(0, str(path))
+    from config.settings import get_settings  # noqa: E402 - after sys.path bootstrap
+
+    settings = get_settings()
     cmd = [
         _venv_python(),
         "-m",
         "uvicorn",
         "api.app:app",
-        "--host", "0.0.0.0",  # noqa: S104 - API server intentionally binds all interfaces
-        "--port", port,
+        "--host", settings.gateway.host,
+        "--port", str(settings.gateway.port),
         "--app-dir", "src",
     ]
     result = subprocess.run(cmd, cwd=str(_SERVICE_ROOT))

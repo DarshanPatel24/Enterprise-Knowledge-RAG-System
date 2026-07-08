@@ -7,6 +7,9 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException, status
 
 from config.settings import EkreSettings, get_settings
+from domain.governance import RetrievalPipeline
+from domain.ranking import Reranker
+from domain.retrieval import EmbeddingAdapter
 
 
 def get_app_settings() -> EkreSettings:
@@ -15,6 +18,59 @@ def get_app_settings() -> EkreSettings:
 
 
 AppSettings = Annotated[EkreSettings, Depends(get_app_settings)]
+
+
+# Process-wide singletons: the query embedding model (and the reranker inside the
+# pipeline) load multi-GB weights, so they must be built once and reused across
+# requests rather than rebuilt per call. Tests build via ``composition`` directly
+# and never touch these, so they stay unaffected.
+_query_embedding_adapter: EmbeddingAdapter | None = None
+_reranker: Reranker | None = None
+_retrieval_pipeline: RetrievalPipeline | None = None
+
+
+def get_query_embedding_adapter() -> EmbeddingAdapter:
+    """Return the process-wide query embedding adapter, building it on first use."""
+    global _query_embedding_adapter
+    if _query_embedding_adapter is None:
+        from composition import build_query_embedding_adapter
+
+        _query_embedding_adapter = build_query_embedding_adapter(get_settings())
+    return _query_embedding_adapter
+
+
+def get_reranker() -> Reranker:
+    """Return the process-wide reranker, building it on first use.
+
+    Shared with the pipeline so the cross-encoder model loads exactly once.
+    """
+    global _reranker
+    if _reranker is None:
+        from composition import build_reranker
+
+        _reranker = build_reranker(get_settings())
+    return _reranker
+
+
+def get_retrieval_pipeline() -> RetrievalPipeline:
+    """Return the process-wide retrieval pipeline, building it on first use.
+
+    The pipeline shares the singleton embedding adapter and reranker so those
+    models load exactly once for the whole process.
+    """
+    global _retrieval_pipeline
+    if _retrieval_pipeline is None:
+        from composition import build_retrieval_pipeline
+
+        _retrieval_pipeline = build_retrieval_pipeline(
+            get_settings(),
+            adapter=get_query_embedding_adapter(),
+            reranker=get_reranker(),
+        )
+    return _retrieval_pipeline
+
+
+RetrievalPipelineDep = Annotated[RetrievalPipeline, Depends(get_retrieval_pipeline)]
 
 
 def require_tenant(

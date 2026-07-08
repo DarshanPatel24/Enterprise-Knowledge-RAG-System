@@ -25,7 +25,7 @@ export default defineConfig({
     reuseExistingServer: true,
     timeout: 120_000,
     env: {
-      NEXT_PUBLIC_EKCP_API_URL: "http://localhost:8003",
+      NEXT_PUBLIC_EKCP_URL: "http://localhost:8003",
     },
   },
 });

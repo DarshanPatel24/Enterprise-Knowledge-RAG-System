@@ -3,15 +3,32 @@
 # configuration-driven and installed on demand behind engine-owned seams.
 
 fastapi>=0.111.0
+uvicorn>=0.30.0
 pydantic>=2.7.0
 pydantic-settings>=2.3.0
 
-# Live retrieval path (Ollama runtime + Qdrant vector store). Install with the
-# service when connecting to real infrastructure; the offline test path does not
-# require these because all third-party imports are lazy.
-# langchain-core>=0.2.0
-# langchain-ollama>=0.2.0
-# langchain-huggingface>=0.0.3
-# langchain-qdrant>=0.1.0
-# qdrant-client>=1.9.0
+# --- Live retrieval path (Qdrant vector store + Ollama/LangChain seams) ---
+langchain-core>=0.2.0
+langchain-ollama>=0.2.0
+langchain-qdrant>=0.1.0
+qdrant-client>=1.9.0
+
+# --- Query embedding + cross-encoder reranker (HuggingFace, GPU-capable) ---
+# NumPy is required by torch/transformers/sentence-transformers at runtime.
+# For NVIDIA GPU acceleration install a CUDA build of torch matching your driver
+# INSTEAD of the default CPU wheel, e.g. (CUDA 13):
+#   pip install torch==2.12.1 --index-url https://download.pytorch.org/whl/cu130
+# Then set EKRE_EMBEDDING__DEVICE=auto and EKRE_EMBEDDING__TORCH_DTYPE=float16.
+numpy>=1.26
+torch>=2.0.0
+transformers>=4.0.0
+accelerate>=0.21.0
+sentence-transformers>=3.0.0
+huggingface-hub>=0.23
+langchain-huggingface>=0.0.3
+# The Qwen3-VL embedding model's image processor imports torchvision + pillow
+# even for text-only embedding. pillow installs from PyPI; install torchvision
+# from the CUDA index matching your torch build, e.g. (CUDA 13):
+#   pip install torchvision --index-url https://download.pytorch.org/whl/cu130
+pillow>=10.0
 

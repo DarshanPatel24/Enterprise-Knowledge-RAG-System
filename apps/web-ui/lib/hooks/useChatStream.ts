@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { chatStream, readSseStream } from "@/lib/api/ekcp";
 import type { ChatMessage, Citation } from "@/lib/api/types";
+import { generateUuid } from "@/lib/utils";
 
 /** Public surface of the chat streaming hook. */
 export type UseChatStream = {
@@ -21,7 +22,7 @@ export type UseChatStreamOptions = {
 };
 
 function createId(): string {
-  return crypto.randomUUID();
+  return generateUuid();
 }
 
 /**

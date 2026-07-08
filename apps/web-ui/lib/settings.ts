@@ -9,6 +9,7 @@
 
 import {
   getApiBaseUrl as envApiBaseUrl,
+  getApiKey as envApiKey,
   getClearance as envClearance,
   getTenantId as envTenantId,
   getUserId as envUserId,
@@ -29,7 +30,7 @@ function envDefaults(): AppSettings {
   const clearance = envClearance();
   return {
     apiBaseUrl: envApiBaseUrl(),
-    apiKey: "",
+    apiKey: envApiKey(),
     tenantId: envTenantId(),
     userId: envUserId(),
     clearance: (clearance as ClassificationClearance) ?? "public",

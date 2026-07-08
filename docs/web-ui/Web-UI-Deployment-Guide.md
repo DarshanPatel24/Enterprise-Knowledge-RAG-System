@@ -75,7 +75,7 @@ Copy-Item apps/web-ui/.env.local.example apps/web-ui/.env.local
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NEXT_PUBLIC_EKCP_API_URL` | `http://localhost:8003` | Base URL of the EKCP gateway (the single entry point). Must point at a reachable EKCP instance. |
+| `NEXT_PUBLIC_EKCP_URL` | `http://localhost:8003` | Base URL of the EKCP gateway (the single entry point). Must point at a reachable EKCP instance. |
 | `NEXT_PUBLIC_EKCP_TENANT_ID` | *(empty)* | Tenant id injected as `X-Tenant-ID`. Provide a real tenant id. |
 | `NEXT_PUBLIC_EKCP_USER_ID` | *(empty)* | User id carried in the security context on governed requests. |
 | `NEXT_PUBLIC_EKCP_CLEARANCE` | `public` | Classification clearance: `public` \| `internal` \| `confidential` \| `restricted`. |
@@ -88,7 +88,7 @@ The in-app **Settings** screen (`/settings`) overrides the build-time defaults a
 
 | Setting | Required for chat | Notes |
 |---|---|---|
-| API base URL | — | Defaults to `NEXT_PUBLIC_EKCP_API_URL`. |
+| API base URL | — | Defaults to `NEXT_PUBLIC_EKCP_URL`. |
 | Tenant ID | Yes | Sent as `X-Tenant-ID`; must match the security-context tenant. |
 | User ID | Yes | Carried in the security context. |
 | API key | Yes | Sent as `Authorization: Bearer <key>`; the scheme the EKCP gateway guard expects. |
@@ -103,11 +103,11 @@ Chat input is disabled until Tenant ID, User ID, and API key are set.
 ```powershell
 Push-Location apps/web-ui
 npm install
-npm run dev            # starts the dev server on http://localhost:3000
+npm run dev            # starts the dev server on http://localhost:3001
 Pop-Location
 ```
 
-Open `http://localhost:3000`. The home page probes EKCP `/health/live` and renders a connectivity status card. EKCP must be running on the configured URL.
+Open `http://localhost:3001`. The home page probes EKCP `/health/live` and renders a connectivity status card. EKCP must be running on the configured URL.
 
 ### Scripts
 
@@ -127,11 +127,11 @@ Open `http://localhost:3000`. The home page probes EKCP `/health/live` and rende
 Push-Location apps/web-ui
 npm ci                 # clean, lockfile-exact install
 npm run build          # fails on any type or lint error
-npm run start          # serves on port 3000 by default
+npm run start          # serves on port 3001 by default
 Pop-Location
 ```
 
-- **Port:** default `3000`. Override with `npm run start -- -p 8080` or the `PORT` environment variable.
+- **Port:** default `3001` (set in `package.json`; port `3000` is used by the local Langfuse container). Override with `npm run start -- -p 8080` or the `PORT` environment variable.
 - **Environment:** `.env.local` (or real environment variables) must be present at build time — `NEXT_PUBLIC_*` values are inlined during `npm run build`. To change the EKCP URL for a built artifact, rebuild or have users override it via the Settings screen at runtime.
 - **Process management:** run `npm run start` under a supervisor (for example `pm2`, a Windows service, or a systemd unit) so it restarts on failure.
 
@@ -145,7 +145,7 @@ The UI is the last layer to start. Bring the platform up bottom-up so each layer
 2. **EKIE** (ingestion) — ingest and publish vectors to the shared Qdrant collection. See [../EKIE/EKIE-Deployment-Guide.md](../EKIE/EKIE-Deployment-Guide.md). API on port **8001**.
 3. **EKRE** (retrieval) — reads the vectors EKIE published; produces the retrieval context package. API on port **8002**.
 4. **EKCP** (control plane / gateway) — the UI's only dependency; orchestrates EKRE + generation and exposes `/health/*` and `/chat/stream`. API on port **8003**.
-5. **Web UI** — build and start (`apps/web-ui`); point `NEXT_PUBLIC_EKCP_API_URL` at the EKCP gateway. Default port **3000**.
+5. **Web UI** — build and start (`apps/web-ui`); point `NEXT_PUBLIC_EKCP_URL` at the EKCP gateway. Default port **3001** (port 3000 is the local Langfuse UI).
 
 > Minimum viable chat requires only EKCP (which internally depends on EKRE + a generation model). EKIE must have published data for retrieval to return citations.
 
@@ -155,7 +155,7 @@ The UI is the last layer to start. Bring the platform up bottom-up so each layer
 
 After starting the UI:
 
-- [ ] `http://localhost:3000` loads and the home page renders the connectivity card.
+- [ ] `http://localhost:3001` loads and the home page renders the connectivity card.
 - [ ] The card shows **connected** (green) with the EKCP service name and status — confirms `GET /health/live` succeeds.
 - [ ] In **Settings**, Tenant ID, User ID, and API key are set; the chat input becomes enabled.
 - [ ] Sending a message streams tokens incrementally (no full-page refresh).
@@ -180,11 +180,11 @@ After starting the UI:
 
 Front the Node server with a reverse proxy (nginx, Caddy, IIS ARR) that:
 
-- Terminates TLS and forwards to `http://127.0.0.1:3000`.
+- Terminates TLS and forwards to `http://127.0.0.1:3001`.
 - Forwards `Upgrade`/streaming correctly and **does not buffer** the `/chat/stream` response, so Server-Sent Events flush token-by-token. For nginx set `proxy_buffering off;` on the chat route; for Caddy streaming works by default.
 - Sets security headers (HSTS, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, a strict CSP).
 
-If EKCP is also proxied, keep the UI's `NEXT_PUBLIC_EKCP_API_URL` (or the runtime Settings API base URL) pointing at the **externally reachable** EKCP URL the browser can resolve.
+If EKCP is also proxied, keep the UI's `NEXT_PUBLIC_EKCP_URL` (or the runtime Settings API base URL) pointing at the **externally reachable** EKCP URL the browser can resolve.
 
 ---
 
@@ -200,7 +200,7 @@ If EKCP is also proxied, keep the UI's `NEXT_PUBLIC_EKCP_API_URL` (or the runtim
 
 | Symptom | Likely cause | Resolution |
 |---|---|---|
-| Connectivity card shows an error | EKCP not running or wrong URL | Start EKCP; verify `NEXT_PUBLIC_EKCP_API_URL` / Settings API base URL; confirm `GET /health/live` from a terminal. |
+| Connectivity card shows an error | EKCP not running or wrong URL | Start EKCP; verify `NEXT_PUBLIC_EKCP_URL` / Settings API base URL; confirm `GET /health/live` from a terminal. |
 | Chat input stays disabled | Missing required settings | Open **Settings** and set Tenant ID, User ID, and API key. |
 | `401`/`403` on chat | Missing/invalid API key or tenant mismatch | Re-enter the API key; ensure the tenant in Settings matches the security-context tenant EKCP expects. |
 | Tokens arrive all at once, not streamed | Proxy is buffering the SSE response | Disable response buffering for `/chat/stream` at the proxy (see §9). |

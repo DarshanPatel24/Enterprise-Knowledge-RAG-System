@@ -69,13 +69,14 @@ class QdrantRetrievalConnector(RepositoryConnector):
         client = self._connect()
         query_filter = self._build_filter(allowed_clearances, metadata_filters, tenant_id)
         try:
-            points = client.search(
+            response = client.query_points(
                 collection_name=collection,
-                query_vector=list(vector),
+                query=list(vector),
                 query_filter=query_filter,
                 limit=limit,
                 with_payload=True,
             )
+            points = response.points
         except Exception as exc:  # noqa: BLE001 - external client boundary
             raise ConnectorError(
                 ConnectorErrorType.SEARCH_FAILED, f"qdrant vector search failed: {exc}"

@@ -57,7 +57,7 @@ EKCP-S0 exit gate passed; SSE streaming chat API contract documented (EKCP-S0-5)
 ### Scope
 1. Next.js 14+ App Router scaffold in `apps/web-ui/` with TypeScript strict (`strict: true` in `tsconfig.json`).
 2. ESLint and Prettier configuration aligned with project standards.
-3. Environment-backed EKCP API client (`NEXT_PUBLIC_EKCP_API_URL`, tenant key from environment; no hardcoding).
+3. Environment-backed EKCP API client (`NEXT_PUBLIC_EKCP_URL`, tenant key from environment; no hardcoding).
 4. `X-Tenant-ID` and `X-Correlation-ID` header injection on every outbound request.
 5. Health check page (`/`) confirming EKCP liveness endpoint responds.
 6. shadcn/ui and Tailwind CSS base installation.
@@ -94,7 +94,7 @@ EKCP-S0 exit gate passed; SSE streaming chat API contract documented (EKCP-S0-5)
 2. UI-S0-2 Approved: `lib/api/ekcp.ts` is the sole EKCP HTTP entry point; `buildHeaders()` injects `X-Tenant-ID` (from `lib/config.ts`) and a per-request `X-Correlation-ID` via `crypto.randomUUID()` on every call. Response shapes are typed in `lib/api/types.ts` mirroring the contracts. No component calls `fetch` directly.
 3. UI-S0-3 Approved: Tailwind CSS (`tailwind.config.ts` + `app/globals.css` design tokens) with shadcn/ui primitives (`components/ui/{button,card,badge}.tsx`) and the `cn()` utility. Classification-clearance colour tokens (public/internal/confidential/restricted) are defined for UI-S2.
 4. UI-S0-4 Approved: `app/page.tsx` + `components/HealthStatus.tsx` probe EKCP `/health/live` through the client and render an online/offline/loading connectivity card with a re-check action; the gateway URL is shown from configuration, never hardcoded.
-5. UI-S0-5 Approved: `.env.local.example` documents `NEXT_PUBLIC_EKCP_API_URL` (default `http://localhost:8003`) and `NEXT_PUBLIC_EKCP_TENANT_ID`, all localhost-targeted with empty credential defaults.
+5. UI-S0-5 Approved: `.env.local.example` documents `NEXT_PUBLIC_EKCP_URL` (default `http://localhost:8003`) and `NEXT_PUBLIC_EKCP_TENANT_ID`, all localhost-targeted with empty credential defaults.
 
 ### Security Note
 The web UI runs on **Next.js 16 + React 19** (upgraded from the initial 14.x). `npm audit` reports **0 vulnerabilities** (the postcss transitive advisory is pinned via a package override); TypeScript strict, ESLint (flat config), and `next build` (Turbopack) all pass. This closes the earlier residual-advisory item (release risk R5).

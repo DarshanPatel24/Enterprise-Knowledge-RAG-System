@@ -4,7 +4,7 @@
  * This is the ONLY module permitted to issue HTTP calls against the EKCP
  * gateway. Components and hooks call these functions; they never call `fetch`
  * directly. Every outbound request injects `X-Tenant-ID` (from configuration)
- * and a per-request `X-Correlation-ID` derived from `crypto.randomUUID()`.
+ * and a per-request `X-Correlation-ID` derived from `generateUuid()`.
  *
  * Local-first: all requests target the configured base URL (localhost by
  * default). No external hosts, analytics, or telemetry.
@@ -12,6 +12,7 @@
 
 import { CHAT_STREAM_PATH, HEALTH_LIVE_PATH } from "@/lib/config";
 import { getSettingsSnapshot } from "@/lib/settings";
+import { generateUuid } from "@/lib/utils";
 import type {
   ChatStreamRequest,
   Citation,
@@ -35,7 +36,7 @@ export function buildHeaders(extra?: Record<string, string>): Headers {
   const headers = new Headers({
     "Content-Type": "application/json",
     "X-Tenant-ID": settings.tenantId,
-    "X-Correlation-ID": crypto.randomUUID(),
+    "X-Correlation-ID": generateUuid(),
   });
   if (settings.apiKey) {
     headers.set("Authorization", `Bearer ${settings.apiKey}`);

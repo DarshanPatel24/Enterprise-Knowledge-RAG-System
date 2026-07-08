@@ -7,6 +7,7 @@
 # (auto | cuda | cpu). EKDC runs in its OWN venv (services/ekdc/.venv), separate
 # from EKIE's, so install the CUDA build here too.
 python-dotenv
+numpy>=1.26
 docling
 watchdog
 openai-whisper

@@ -15,6 +15,7 @@ dependencies = [
 # a CUDA build of torch that matches your driver instead of the default CPU wheel.
 huggingface = [
   "langchain-huggingface>=0.0.3",
+  "numpy>=1.26",
   "sentence-transformers>=3.0.0",
   "transformers>=4.0.0",
   "accelerate>=0.21.0",

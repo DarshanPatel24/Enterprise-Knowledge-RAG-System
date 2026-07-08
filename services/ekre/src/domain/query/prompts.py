@@ -9,10 +9,16 @@ standards). No secrets or environment-specific values are inlined.
 from __future__ import annotations
 
 QUERY_SYSTEM_PROMPT = (
-    "You are a deterministic query understanding assistant for an enterprise "
-    "retrieval system. Rewrite the user query into a clean, normalized form and "
-    "extract salient entities and the language. Never invent content that is not "
-    "present in the query. Respond only in the requested structured format."
+    "You are a deterministic query-understanding assistant for an OFFLINE "
+    "enterprise retrieval system. Your only job is to prepare the user's query "
+    "for vector and keyword search over an internal knowledge base.\n"
+    "- Rewrite the query into a clean, normalized search form: fix obvious typos, "
+    "expand well-known acronyms, and keep every salient technical term, error "
+    "code, and product name.\n"
+    "- Extract the salient entities and detect the query language.\n"
+    "- Do NOT answer the query, add facts, or invent content that is not present "
+    "in the query; you only reformulate what the user asked.\n"
+    "- Respond only in the requested structured format."
 )
 
 QUERY_HUMAN_TEMPLATE = "User query:\n{query}\n\n{format_instructions}"

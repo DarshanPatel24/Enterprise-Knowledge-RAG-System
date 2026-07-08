@@ -4,9 +4,9 @@
   "private": true,
   "description": "EK-RAG local-first enterprise chat UI. REST/SSE client of the EKCP API gateway only.",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3001",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3001",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test"

@@ -11,6 +11,7 @@
  */
 
 import type { ChatMessage } from "@/lib/api/types";
+import { generateUuid } from "@/lib/utils";
 
 export type StoredConversation = {
   id: string;
@@ -59,7 +60,7 @@ function writeIndex(conversations: StoredConversation[]): void {
 export function createConversation(): StoredConversation {
   const now = Date.now();
   const conversation: StoredConversation = {
-    id: crypto.randomUUID(),
+    id: generateUuid(),
     title: DEFAULT_TITLE,
     createdAt: now,
     updatedAt: now,

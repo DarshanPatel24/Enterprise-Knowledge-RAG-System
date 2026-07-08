@@ -96,6 +96,9 @@ class ModelDescriptor(BaseModel):
     lifecycle_state: ModelLifecycleState = ModelLifecycleState.REGISTERED
     base_url: str = ""
     temperature: float = 0.0
+    device: str = ""
+    torch_dtype: str = ""
+    system_prompt: str = ""
 
     @property
     def is_servable(self) -> bool:

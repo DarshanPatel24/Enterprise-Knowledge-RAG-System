@@ -172,7 +172,7 @@ directory. The full template is [services/ekcp/.env.example](../../services/ekcp
 | `LOG_LEVEL` | `INFO` | Log level. |
 | `SERVICE_NAME` | `ekcp` | Logical service name in logs/traces. |
 | `LANGFUSE_ENABLED` | `false` | Enable self-hosted Langfuse tracing. |
-| `LANGFUSE_HOST` | `http://localhost:3000` | Langfuse endpoint. |
+| `LANGFUSE_URL` | `http://localhost:3000` | Langfuse endpoint. |
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | *(blank)* | Langfuse credentials. |
 | `OTEL_EXPORTER_ENDPOINT` | *(unset)* | Optional OpenTelemetry endpoint. |
 

@@ -265,14 +265,17 @@ def _huggingface_model_kwargs(device: str, torch_dtype: str) -> dict[str, Any]:
 
 
 def build_retrieval_worker_registry(
-    settings: EkreSettings, *, connector: RepositoryConnector | None = None
+    settings: EkreSettings,
+    *,
+    connector: RepositoryConnector | None = None,
+    adapter: EmbeddingAdapter | None = None,
 ) -> WorkerRegistry:
     """Assemble the vector/keyword/metadata workers for the configured connector."""
     resolved_connector = connector or build_repository_connector(settings)
-    adapter = build_query_embedding_adapter(settings)
+    resolved_adapter = adapter or build_query_embedding_adapter(settings)
     return build_worker_registry(
         resolved_connector,
-        adapter,
+        resolved_adapter,
         collection=settings.retrieval.default_collection,
         require_security_context=settings.security.require_security_context,
         require_tenant_scope=settings.security.require_tenant_scope,
@@ -283,18 +286,21 @@ def build_retrieval_orchestrator(
     settings: EkreSettings,
     *,
     registry: WorkerRegistry | None = None,
+    adapter: EmbeddingAdapter | None = None,
 ) -> RetrievalOrchestrator:
     """Build the retrieval execution orchestrator from settings.
 
     When no registry is supplied, the real vector/keyword/metadata workers are
     assembled for the configured connector (in-memory + deterministic embedder by
     default), so the orchestrator retrieves and filters candidates end to end.
+    A pre-built ``adapter`` may be injected so the query embedding model is loaded
+    once and shared across requests.
     """
     policy = ExecutionPolicy.from_settings(settings.execution)  # type: ignore[arg-type]
     scheduler = ExecutionScheduler(policy)
     runner = runner_from_policy(policy.runner, max_workers=policy.max_parallel_workers)
     return RetrievalOrchestrator(
-        registry or build_retrieval_worker_registry(settings),
+        registry or build_retrieval_worker_registry(settings, adapter=adapter),
         scheduler,
         runner,
         policy=policy,
@@ -331,10 +337,16 @@ def build_reranker(settings: EkreSettings) -> Reranker:
     return IdentityReranker()
 
 
-def build_ranking_engine(settings: EkreSettings) -> RankingEngine:
-    """Build the deterministic, auditable ranking engine from settings."""
+def build_ranking_engine(
+    settings: EkreSettings, *, reranker: Reranker | None = None
+) -> RankingEngine:
+    """Build the deterministic, auditable ranking engine from settings.
+
+    A pre-built ``reranker`` may be injected so the cross-encoder model loads once
+    (at startup) and is reused across requests instead of on first rerank.
+    """
     policy = RankingPolicy.from_settings(settings.ranking)
-    return RankingEngine(policy, reranker=build_reranker(settings))
+    return RankingEngine(policy, reranker=reranker or build_reranker(settings))
 
 
 def build_context_assembly_engine(settings: EkreSettings) -> ContextAssemblyEngine:
@@ -392,15 +404,24 @@ def build_masker(settings: EkreSettings) -> Masker:
 
 
 def build_retrieval_pipeline(
-    settings: EkreSettings, *, audit_sink: AuditSink | None = None
+    settings: EkreSettings,
+    *,
+    audit_sink: AuditSink | None = None,
+    adapter: EmbeddingAdapter | None = None,
+    reranker: Reranker | None = None,
 ) -> RetrievalPipeline:
-    """Assemble the full traced, audited, masked retrieval pipeline."""
+    """Assemble the full traced, audited, masked retrieval pipeline.
+
+    A pre-built ``adapter`` and ``reranker`` may be injected so the embedding and
+    cross-encoder models load once (at startup) and are reused across requests
+    instead of per call.
+    """
     return RetrievalPipeline(
         build_query_intelligence_engine(settings),
-        build_retrieval_orchestrator(settings),
+        build_retrieval_orchestrator(settings, adapter=adapter),
         build_candidate_collector(),
         build_candidate_fusion(settings),
-        build_ranking_engine(settings),
+        build_ranking_engine(settings, reranker=reranker),
         build_context_assembly_engine(settings),
         build_masker(settings),
         audit_sink or build_audit_sink(settings),
