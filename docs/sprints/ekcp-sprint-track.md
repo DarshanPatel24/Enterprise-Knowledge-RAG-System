@@ -334,6 +334,8 @@ Enforce policy across execution and produce complete audit trails.
 ## EKCP-S7: Workflow, Events And Knowledge Integration
 Handbook mapping: Chapter 15 (Workflow and Event Orchestration), Chapter 16 (Enterprise Knowledge Platform integration).
 
+> Status: Approved (154 pytest green, ruff + mypy --strict clean on 127 source files). Implemented in `services/ekcp/src/domain/{workflow,knowledge}`: a workflow orchestrator that decomposes an objective into a plan and advances it through its lifecycle while publishing platform events, and a resilient EKRE knowledge retriever behind a circuit breaker that handles 429 backpressure and timeouts and degrades gracefully to local memory without failing the session. Surfaced through `POST /workflow/{trigger,pause,resume,approve}`, `GET /workflow/{id}`, and the `include_knowledge` option on `POST /context/build`.
+
 ### Sprint Objective
 Integrate workflow and event orchestration and validate EKRE knowledge consumption with graceful degradation.
 
@@ -349,6 +351,11 @@ Integrate workflow and event orchestration and validate EKRE knowledge consumpti
 1. EKCP-S7-1 Workflow and event orchestration baseline.
 2. EKCP-S7-2 EKRE consumption with circuit breaking and backpressure handling.
 3. EKCP-S7-3 Graceful degradation strategy.
+
+### Delivery Evidence
+1. EKCP-S7-1 Approved: `domain/workflow/` provides the immutable `Workflow` with a lifecycle state machine, an in-memory store, a standard `PlatformEvent` schema with an append-only `EventBus`, and a `WorkflowOrchestrator` that triggers a workflow by decomposing the objective into an execution plan (reusing the S5 planning engine) and publishes workflow and knowledge platform events; `POST /workflow/{trigger,pause,resume,approve}` and `GET /workflow/{id}` expose the lifecycle.
+2. EKCP-S7-2 Approved: `domain/knowledge/` provides a `CircuitBreaker` (five-failure threshold, timed half-open probe) and a `KnowledgeRetriever` that calls the EKRE `/v1/query/retrieve` endpoint via a lazy HTTP client with the propagated security context, surfacing 429 as backpressure and timeouts as controlled failures that trip the breaker — preventing cascading failure; the EKRE base URL is configuration-driven and disabled by default for the offline path.
+3. EKCP-S7-3 Approved: when EKRE is disabled, unavailable, rate-limited, or the circuit is open, the retriever returns a degraded `KnowledgeResult` and `POST /context/build` (`include_knowledge`) falls back to local memory and conversation history, emits a `CONTEXT_DEGRADED` platform event, and completes the request — the session never fails because enterprise knowledge is unavailable.
 
 ### Deliverables
 1. Workflow and event orchestration artifact.
@@ -391,6 +398,16 @@ Prove deployment, multi-tenant isolation, and readiness for master integration.
 1. Conversation completion, latency, and recovery KPIs are demonstrated.
 2. Multi-tenant isolation is validated.
 3. Policy and audit coverage remain at 100% on governed paths.
+
+> Status: Approved (172 pytest green, ruff + mypy --strict clean on 133 source files). Implemented in `services/ekcp/src/domain/readiness`: a code-level readiness domain (`ReadinessReport` with a computed `ready` flag over severity-graded findings) that assesses deployment across the control, runtime, and data planes (high availability, resilience, admission control, and latency/availability NFR targets), multi-tenant isolation with a per-tenant concurrency limiter and tenant-aware observability, and the master integration handoff KPIs (conversation completion, first-response latency, tool and agent success, recovery, and policy/audit coverage) assembled into an immutable `MasterHandoffPackage` enumerating the exposed endpoints and consumed/produced contracts. Container and cluster orchestration are out of scope (local-first); the gates validate the configuration a real deployment must satisfy. Surfaced through `GET /v1/readiness`, `GET /v1/readiness/tenancy`, and `GET /v1/readiness/handoff`. This completes the EKCP track.
+
+Delivery Evidence:
+- EKCP-S8-1 Deployment readiness across planes: `domain/readiness/deployment.py` (`assess_deployment_readiness` checks replicas/HA, circuit-breaker resilience, tenant admission ceiling, first-response latency budget, and availability targets); `DeploymentSettings` (`EKCP_DEPLOYMENT__*`); `GET /v1/readiness`.
+- EKCP-S8-2 Multi-tenant isolation and tenant-aware observability: `domain/readiness/tenancy.py` (`TenantConcurrencyLimiter` per-tenant admission control with a slot context manager; `assess_multi_tenant_isolation` validates tenant boundary, admission ceiling, and tenant-aware observability); `GET /v1/readiness/tenancy`.
+- EKCP-S8-3 Response, audit, and degradation readiness: KPI gates in `domain/readiness/handoff.py` prove conversation completion, first-response latency (warning-only), tool and agent success, conversation recovery, and 100% policy/audit coverage against configured targets; graceful EKRE degradation retained from S7.
+- EKCP-S8-4 Master integration handoff package: `build_master_handoff_package` assembles the immutable `MasterHandoffPackage` (service/version, 16 endpoints, 4 cross-service contracts, proven KPIs, policy/audit coverage, and the readiness report); `GET /v1/readiness/handoff`; offline `scripts/demo_readiness.py`.
+
+EKCP TRACK COMPLETE (Phase 0 through EKCP-S8 approved).
 
 ### Exit Evidence
 1. Signed deployment and readiness validation packages.

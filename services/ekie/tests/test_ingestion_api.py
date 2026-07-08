@@ -23,8 +23,8 @@ from domain.control_plane import (
     Repository,
     RepositoryStatus,
 )
-from domain.orchestration import OrchestrationPolicy, WorkflowOrchestrator
 from domain.jobs import JobQueueStore, SourceStore
+from domain.orchestration import OrchestrationPolicy, WorkflowOrchestrator
 from domain.storage import InMemoryAssetStorage
 
 _TENANT = "tenant-a"
@@ -294,6 +294,58 @@ async def test_delete_document_removes_row_and_returns_summary(
     assert body["message"] == "document deleted"
     with resources.db.session() as session:
         assert session.get(Document, document_id) is None
+
+
+async def test_purge_documents_hard_deletes_tenant_documents(
+    app: FastAPI,
+    resources: AppResources,
+) -> None:
+    with resources.db.session() as session:
+        repo = Repository(
+            tenant_id=_TENANT,
+            name="purge-repo",
+            source_type="local_fs",
+            uri="local://purge-repo",
+            status=RepositoryStatus.ACTIVE,
+        )
+        session.add(repo)
+        session.flush()
+        document_ids: list[str] = []
+        for index in range(2):
+            document = Document(
+                repository_id=repo.id,
+                tenant_id=_TENANT,
+                source_path=f"docs/purge-{index}.md",
+                content_hash=f"seed-{index}",
+                classification_clearance="internal",
+                version=1,
+                status=DocumentStatus.ACTIVE,
+            )
+            session.add(document)
+            session.flush()
+            document_ids.append(document.id)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/v1/documents/purge",
+            json={
+                "document_ids": [*document_ids, "missing-doc"],
+                "reason": "gdpr_dsar",
+            },
+            headers={TENANT_HEADER: _TENANT},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["requested"] == 3
+    assert body["deleted_count"] == 2
+    assert body["missing"] == ["missing-doc"]
+    assert body["reason"] == "gdpr_dsar"
+    with resources.db.session() as session:
+        for document_id in document_ids:
+            assert session.get(Document, document_id) is None
 
 
 async def test_delete_document_unknown_returns_404(

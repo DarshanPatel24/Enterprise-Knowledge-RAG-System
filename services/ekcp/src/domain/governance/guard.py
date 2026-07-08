@@ -119,6 +119,30 @@ class GovernanceGuard:
             )
         return masked, count
 
+    def sanitize_input(
+        self, text: str, *, actor: str, tenant_id: str, resource: str = "input"
+    ) -> tuple[str, int]:
+        """Mask PII from inbound text before it is persisted or sent downstream.
+
+        Runs only when ``mask_inbound`` is enabled by policy, so callers can rely
+        on stored memory and downstream payloads being scrubbed of PII. Auditing
+        mirrors outbound masking so every redaction is evidenced.
+        """
+        if not self._policy.mask_inbound:
+            return text, 0
+        masked, count = self._masker.mask_text(text)
+        if count > 0:
+            self._audit(
+                actor=actor,
+                action=AuditAction.INPUT_FILTERED,
+                result=AuditResult.ALLOWED,
+                resource=resource,
+                tenant_id=tenant_id,
+                reason=f"redactions={count}",
+                detail={"redactions": str(count)},
+            )
+        return masked, count
+
     def propagate_security_context(
         self,
         principal: Principal,

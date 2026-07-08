@@ -28,6 +28,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from api.dependencies import Resources, TenantId
+from contracts.retrieval import RetrievalCandidate
 from domain.gateway import GatewayError, GenerationRequest, StreamEventType
 from domain.observability import get_correlation_id, get_logger, get_session_id
 from domain.security import SecurityError
@@ -50,7 +51,7 @@ class SecurityContextPayload(BaseModel):
 class ChatStreamRequest(BaseModel):
     """Request body for the streaming chat endpoint."""
 
-    message: str = Field(min_length=1)
+    message: str = Field(min_length=1, max_length=16000)
     security_context: SecurityContextPayload | None = None
     session_id: str | None = None
 
@@ -60,12 +61,61 @@ def format_sse_event(event: str, data: dict[str, object]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
+def _build_grounded_prompt(message: str, candidates: list[RetrievalCandidate]) -> str:
+    """Compose a grounded prompt from retrieved candidates and the user message."""
+    context_block = "\n".join(
+        f"- {candidate.content} [source: {candidate.citation.source_path}]"
+        for candidate in candidates
+    )
+    return (
+        "Use the following enterprise context to answer the question. "
+        "Cite sources where relevant.\n\n"
+        f"Context:\n{context_block}\n\nQuestion: {message}"
+    )
+
+
 async def _gateway_stream(
-    resources: Resources, message: str, tenant_id: str, *, session_id: str
+    resources: Resources,
+    message: str,
+    tenant_id: str,
+    *,
+    session_id: str,
+    security_context: dict[str, str] | None,
 ) -> AsyncIterator[str]:
-    """Stream a gateway response as SSE frames (token frames then a done frame)."""
+    """Stream a gateway response as SSE frames.
+
+    When enterprise knowledge is available it emits ``citation`` frames for each
+    retrieved source and grounds the prompt on that context; token frames and a
+    terminal ``done`` frame follow. Knowledge failures degrade silently to an
+    ungrounded response (the session never fails because EKRE is unavailable).
+    """
+    prompt_text = message
+    if security_context is not None:
+        result = resources.knowledge_retriever.retrieve(
+            message,
+            tenant_id=tenant_id,
+            security_context=security_context,
+            correlation_id=get_correlation_id(),
+        )
+        if result.has_knowledge and result.package is not None:
+            candidates = result.package.candidates
+            for candidate in candidates:
+                citation = candidate.citation
+                yield format_sse_event(
+                    "citation",
+                    {
+                        "document_id": citation.document_id,
+                        "chunk_id": citation.chunk_id,
+                        "source_path": citation.source_path,
+                        "confidence": candidate.relevance_score,
+                        "explanation": candidate.explanation or "",
+                    },
+                )
+            if candidates:
+                prompt_text = _build_grounded_prompt(message, candidates)
+
     request = GenerationRequest(
-        prompt_text=message,
+        prompt_text=prompt_text,
         tenant_id=tenant_id,
         correlation_id=get_correlation_id(),
     )
@@ -116,6 +166,12 @@ async def chat_stream(
     session_id = request.session_id or get_session_id() or str(uuid.uuid4())
     logger.info("chat_stream_started", extra={"session_id": session_id})
     return StreamingResponse(
-        _gateway_stream(resources, request.message, tenant_id, session_id=session_id),
+        _gateway_stream(
+            resources,
+            request.message,
+            tenant_id,
+            session_id=session_id,
+            security_context=raw,
+        ),
         media_type=SSE_MEDIA_TYPE,
     )

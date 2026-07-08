@@ -18,6 +18,7 @@ def indexed(
     text: str,
     *,
     clearance: str = "public",
+    tenant_id: str = "tenant-a",
     language: str | None = None,
     section_id: str | None = None,
     metadata: dict[str, str] | None = None,
@@ -29,6 +30,7 @@ def indexed(
         content=text,
         source_path=f"/docs/{document_id}.md",
         vector=ADAPTER.embed(text),
+        tenant_id=tenant_id,
         classification_clearance=clearance,
         language=language,
         section_id=section_id,
@@ -53,6 +55,7 @@ def task(
     query: str,
     *,
     candidate_limit: int = 5,
+    tenant_id: str = "tenant-a",
     metadata_filters: tuple[MetadataFilter, ...] = (),
 ) -> RetrievalTask:
     """Build a retrieval task for a worker test."""
@@ -63,6 +66,6 @@ def task(
         candidate_limit=candidate_limit,
         timeout_ms=150.0,
         parallel_group=0,
-        tenant_id="tenant-a",
+        tenant_id=tenant_id,
         metadata_filters=metadata_filters,
     )

@@ -46,6 +46,20 @@ def test_vector_worker_requires_security_context() -> None:
         worker.retrieve(task(RetrievalEngineType.VECTOR, "q"), security_context=None)
 
 
+def test_vector_worker_enforces_tenant_isolation() -> None:
+    conn = connector(
+        indexed("d1", "c1", "shared topic", tenant_id="tenant-a"),
+        indexed("d2", "c2", "shared topic", tenant_id="tenant-b"),
+    )
+    worker = VectorRetrievalWorker(conn, ADAPTER, collection="c")
+    candidates = worker.retrieve(
+        task(RetrievalEngineType.VECTOR, "shared topic", tenant_id="tenant-a"),
+        security_context=security_context(ClassificationClearance.INTERNAL),
+    )
+    ids = {c.citation.document_id for c in candidates}
+    assert ids == {"d1"}
+
+
 def test_keyword_worker_matches_terms() -> None:
     conn = connector(indexed("d1", "c1", "vpn setup guide"))
     worker = KeywordRetrievalWorker(conn, collection="c")

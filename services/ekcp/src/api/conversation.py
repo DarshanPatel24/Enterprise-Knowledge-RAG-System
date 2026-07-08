@@ -47,7 +47,7 @@ class MessageRequest(BaseModel):
 
     conversation_id: str
     session_id: str
-    message: str = Field(min_length=1)
+    message: str = Field(min_length=1, max_length=16000)
     security_context: SecurityContextPayload
 
 

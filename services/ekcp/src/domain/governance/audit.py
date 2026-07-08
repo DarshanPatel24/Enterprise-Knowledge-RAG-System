@@ -12,6 +12,7 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from enum import StrEnum
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -36,6 +37,7 @@ class AuditAction(StrEnum):
     AGENT_DENIED = "agent_denied"
     RESPONSE_GENERATED = "response_generated"
     RESPONSE_FILTERED = "response_filtered"
+    INPUT_FILTERED = "input_filtered"
     CLASSIFICATION_CHECKED = "classification_checked"
     CLEARANCE_VIOLATION = "clearance_violation"
     SECURITY_CONTEXT_PROPAGATED = "security_context_propagated"
@@ -76,7 +78,15 @@ class AuditSink(ABC):
         """Append ``entry`` to the audit trail."""
 
 
-class InMemoryAuditSink(AuditSink):
+class QueryableAuditSink(AuditSink):
+    """An audit sink whose trail can be read back for compliance evidence."""
+
+    @abstractmethod
+    def history(self, *, tenant_id: str | None = None) -> tuple[AuditRecord, ...]:
+        """Return an immutable snapshot of the audit trail, optionally by tenant."""
+
+
+class InMemoryAuditSink(QueryableAuditSink):
     """Append-only in-memory audit trail for compliance evidence and tests."""
 
     def __init__(self) -> None:
@@ -90,6 +100,36 @@ class InMemoryAuditSink(AuditSink):
         if tenant_id is None:
             return tuple(self._entries)
         return tuple(e for e in self._entries if e.tenant_id == tenant_id)
+
+
+class FileAuditSink(QueryableAuditSink):
+    """Durable append-only audit trail persisted as JSON lines.
+
+    Each record is appended as one JSON object per line and flushed immediately,
+    so the trail survives restarts and provides ordered, tamper-evident evidence
+    for compliance. The parent directory is created on first use.
+    """
+
+    def __init__(self, path: str) -> None:
+        self._path = Path(path)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+
+    def record(self, entry: AuditRecord) -> None:
+        with self._path.open("a", encoding="utf-8") as stream:
+            stream.write(entry.model_dump_json() + "\n")
+
+    def history(self, *, tenant_id: str | None = None) -> tuple[AuditRecord, ...]:
+        """Read the persisted trail back, optionally filtered by tenant."""
+        if not self._path.exists():
+            return ()
+        records: list[AuditRecord] = []
+        for line in self._path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            record = AuditRecord.model_validate_json(line)
+            if tenant_id is None or record.tenant_id == tenant_id:
+                records.append(record)
+        return tuple(records)
 
 
 class LoggingAuditSink(AuditSink):

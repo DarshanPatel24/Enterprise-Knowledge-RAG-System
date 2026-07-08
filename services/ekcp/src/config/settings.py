@@ -56,13 +56,19 @@ class SecuritySettings(BaseSettings):
     """Security context ingress settings enforced before conversation execution.
 
     When ``require_security_context`` is true every governed request must carry a
-    valid security context; execution never proceeds without one.
+    valid security context; execution never proceeds without one. When
+    ``require_gateway_auth`` is true, every governed request must additionally
+    present the shared ``gateway_auth_token`` (bearer token), enforcing that only
+    the trusted upstream gateway can reach EKCP.
     """
 
     model_config = SettingsConfigDict(env_prefix="EKCP_SECURITY__", extra="ignore")
 
     require_security_context: bool = True
     default_clearance: Literal["public", "internal", "confidential", "restricted"] = "public"
+    require_gateway_auth: bool = False
+    gateway_auth_token: str = ""
+    trust_request_roles: bool = True
 
 
 class RedisSettings(BaseSettings):
@@ -266,17 +272,77 @@ class GovernanceSettings(BaseSettings):
 
     enforce_authorization: bool = True
     enable_audit: bool = True
-    audit_sink: Literal["memory", "logging"] = "memory"
+    audit_sink: Literal["memory", "logging", "file"] = "memory"
+    audit_file_path: str = "./storage/audit/ekcp_audit.jsonl"
     enable_masking: bool = True
     mask_email: bool = True
     mask_phone: bool = True
     mask_ssn: bool = True
     mask_credit_card: bool = True
+    mask_inbound: bool = True
     allow_classification_downgrade: bool = False
     policy_version: str = "v1"
     default_role: Literal["admin", "power_user", "user", "service", "agent"] = (
         "power_user"
     )
+
+
+class KnowledgeSettings(BaseSettings):
+    """Enterprise knowledge integration (EKRE consumption) settings.
+
+    Knowledge is disabled by default so the offline path never requires a live
+    EKRE; enabling it routes retrieval through the EKRE HTTP client behind a
+    circuit breaker, degrading gracefully to local memory when EKRE is
+    unavailable. The EKRE base URL is configuration-driven.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EKCP_KNOWLEDGE__", extra="ignore")
+
+    enabled: bool = False
+    base_url: str = "http://localhost:8002"
+    timeout_seconds: float = Field(default=10.0, gt=0.0)
+    max_retries: int = Field(default=3, ge=0)
+    circuit_breaker_threshold: int = Field(default=5, gt=0)
+    circuit_breaker_reset_seconds: float = Field(default=60.0, gt=0.0)
+    retrieval_mode: Literal["semantic", "keyword", "hybrid"] = "hybrid"
+    max_candidates: int = Field(default=10, gt=0)
+    relevance_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class WorkflowSettings(BaseSettings):
+    """Workflow and event orchestration settings."""
+
+    model_config = SettingsConfigDict(env_prefix="EKCP_WORKFLOW__", extra="ignore")
+
+    enable_events: bool = True
+    event_bus: Literal["memory", "logging"] = "memory"
+    source_service: str = "ekcp"
+
+
+class DeploymentSettings(BaseSettings):
+    """Deployment, multi-tenancy, and master handoff readiness settings.
+
+    Deployment topology is separate from business logic; these values tune high
+    availability (replicas), resilience, multi-tenant admission, and the NFR and
+    KPI targets validated for master integration handoff. Container and cluster
+    orchestration are out of scope (local-first); this configures the readiness
+    gates a real deployment must satisfy.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EKCP_DEPLOYMENT__", extra="ignore")
+
+    replicas: int = Field(default=2, gt=0)
+    circuit_breaker_threshold: int = Field(default=5, gt=0)
+    tenant_max_concurrent: int = Field(default=8, ge=0)
+    tenant_aware_observability: bool = True
+    first_response_latency_budget_ms: float = Field(default=3000.0, gt=0.0)
+    min_availability: float = Field(default=0.999, ge=0.0, le=1.0)
+    min_conversation_completion: float = Field(default=0.99, ge=0.0, le=1.0)
+    min_tool_success: float = Field(default=0.99, ge=0.0, le=1.0)
+    min_agent_orchestration: float = Field(default=0.99, ge=0.0, le=1.0)
+    min_conversation_recovery: float = Field(default=1.0, ge=0.0, le=1.0)
+    min_policy_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
+    min_audit_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class EkcpSettings(BaseSettings):
@@ -309,6 +375,9 @@ class EkcpSettings(BaseSettings):
     agent: AgentSettings = Field(default_factory=AgentSettings)
     planning: PlanningSettings = Field(default_factory=PlanningSettings)
     governance: GovernanceSettings = Field(default_factory=GovernanceSettings)
+    knowledge: KnowledgeSettings = Field(default_factory=KnowledgeSettings)
+    workflow: WorkflowSettings = Field(default_factory=WorkflowSettings)
+    deployment: DeploymentSettings = Field(default_factory=DeploymentSettings)
 
 
 @lru_cache(maxsize=1)

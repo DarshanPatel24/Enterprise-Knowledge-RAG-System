@@ -5,8 +5,10 @@ from domain.governance.audit import (
     AuditRecord,
     AuditResult,
     AuditSink,
+    FileAuditSink,
     InMemoryAuditSink,
     LoggingAuditSink,
+    QueryableAuditSink,
     build_audit_record,
 )
 from domain.governance.authorization import (
@@ -46,6 +48,7 @@ __all__ = [
     "AuditRecord",
     "AuditResult",
     "AuditSink",
+    "FileAuditSink",
     "GovernanceError",
     "GovernanceErrorType",
     "GovernanceGuard",
@@ -59,6 +62,7 @@ __all__ = [
     "PolicyDecision",
     "PolicyEngine",
     "Principal",
+    "QueryableAuditSink",
     "RedactionFilter",
     "Role",
     "SecretRegistry",

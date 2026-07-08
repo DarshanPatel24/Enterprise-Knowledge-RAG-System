@@ -29,6 +29,7 @@ class IndexedDocument:
     content: str
     source_path: str
     vector: tuple[float, ...]
+    tenant_id: str = ""
     classification_clearance: str = "public"
     repository_id: str = "in-memory"
     section_id: str | None = None
@@ -63,12 +64,13 @@ class InMemoryRepositoryConnector(RepositoryConnector):
         *,
         limit: int,
         allowed_clearances: Sequence[str],
+        tenant_id: str = "",
         metadata_filters: Sequence[MetadataFilter] = (),
     ) -> list[RepositoryDocument]:
         """Return the top-``limit`` documents by cosine similarity."""
         allowed = set(allowed_clearances)
         scored: list[tuple[float, IndexedDocument]] = []
-        for doc in self._eligible(allowed, metadata_filters):
+        for doc in self._eligible(allowed, metadata_filters, tenant_id):
             score = _cosine(vector, doc.vector)
             if score > 0.0:
                 scored.append((score, doc))
@@ -82,6 +84,7 @@ class InMemoryRepositoryConnector(RepositoryConnector):
         *,
         limit: int,
         allowed_clearances: Sequence[str],
+        tenant_id: str = "",
         metadata_filters: Sequence[MetadataFilter] = (),
     ) -> list[RepositoryDocument]:
         """Return documents ranked by exact term overlap in their content."""
@@ -90,7 +93,7 @@ class InMemoryRepositoryConnector(RepositoryConnector):
         if not wanted:
             return []
         scored: list[tuple[float, IndexedDocument]] = []
-        for doc in self._eligible(allowed, metadata_filters):
+        for doc in self._eligible(allowed, metadata_filters, tenant_id):
             haystack = doc.content.lower()
             matches = sum(1 for term in wanted if term in haystack)
             if matches:
@@ -105,22 +108,27 @@ class InMemoryRepositoryConnector(RepositoryConnector):
         *,
         limit: int,
         allowed_clearances: Sequence[str],
+        tenant_id: str = "",
     ) -> list[RepositoryDocument]:
         """Return documents matching all metadata filters."""
         allowed = set(allowed_clearances)
         if not metadata_filters:
             return []
-        matched = list(self._eligible(allowed, metadata_filters))
+        matched = list(self._eligible(allowed, metadata_filters, tenant_id))
         matched.sort(key=lambda doc: (doc.document_id, doc.chunk_id))
         return [_to_document(doc, 1.0) for doc in matched[:limit]]
 
     def _eligible(
-        self, allowed: set[str], metadata_filters: Sequence[MetadataFilter]
+        self,
+        allowed: set[str],
+        metadata_filters: Sequence[MetadataFilter],
+        tenant_id: str = "",
     ) -> list[IndexedDocument]:
         return [
             doc
             for doc in self._documents
             if doc.classification_clearance in allowed
+            and (not tenant_id or doc.tenant_id == tenant_id)
             and _matches_filters(doc, metadata_filters)
         ]
 
@@ -171,6 +179,7 @@ def _to_document(doc: IndexedDocument, score: float) -> RepositoryDocument:
         content=doc.content,
         source_path=doc.source_path,
         score=max(0.0, min(1.0, score)),
+        tenant_id=doc.tenant_id,
         classification_clearance=doc.classification_clearance,
         repository_id=doc.repository_id,
         section_id=doc.section_id,

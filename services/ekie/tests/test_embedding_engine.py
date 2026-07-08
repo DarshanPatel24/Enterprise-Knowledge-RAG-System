@@ -183,7 +183,10 @@ def test_embedding_reports_incremental_progress(
     assert calls[-1] == ("embedding", total, total)
     processed_seq = [processed for _, processed, _ in calls]
     assert processed_seq == sorted(processed_seq)
-    assert all(stage == "embedding" and reported_total == total for stage, _, reported_total in calls)
+    assert all(
+        stage == "embedding" and reported_total == total
+        for stage, _, reported_total in calls
+    )
 
 
 def test_embedding_requires_chunk_asset(

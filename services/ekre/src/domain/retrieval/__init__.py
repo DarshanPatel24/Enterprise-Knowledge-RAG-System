@@ -13,6 +13,7 @@ from domain.retrieval.factory import build_worker_registry
 from domain.retrieval.normalize import to_candidates
 from domain.retrieval.security import (
     enforce_clearance,
+    enforce_tenant,
     resolve_allowed_clearances,
 )
 from domain.retrieval.workers import (
@@ -32,6 +33,7 @@ __all__ = [
     "VectorRetrievalWorker",
     "build_worker_registry",
     "enforce_clearance",
+    "enforce_tenant",
     "resolve_allowed_clearances",
     "to_candidates",
 ]

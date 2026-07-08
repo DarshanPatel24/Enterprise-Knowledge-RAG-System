@@ -35,6 +35,7 @@ class RepositoryDocument(BaseModel):
     content: str
     source_path: str
     score: float = Field(ge=0.0)
+    tenant_id: str = ""
     classification_clearance: str = "public"
     repository_id: str = ""
     section_id: str | None = None
@@ -61,6 +62,7 @@ class RepositoryConnector(ABC):
         *,
         limit: int,
         allowed_clearances: Sequence[str],
+        tenant_id: str = "",
         metadata_filters: Sequence[MetadataFilter] = (),
     ) -> list[RepositoryDocument]:
         """Execute a semantic search and return clearance-filtered documents."""
@@ -73,6 +75,7 @@ class RepositoryConnector(ABC):
         *,
         limit: int,
         allowed_clearances: Sequence[str],
+        tenant_id: str = "",
         metadata_filters: Sequence[MetadataFilter] = (),
     ) -> list[RepositoryDocument]:
         """Execute a lexical search and return clearance-filtered documents."""
@@ -85,5 +88,6 @@ class RepositoryConnector(ABC):
         *,
         limit: int,
         allowed_clearances: Sequence[str],
+        tenant_id: str = "",
     ) -> list[RepositoryDocument]:
         """Execute a metadata search and return clearance-filtered documents."""

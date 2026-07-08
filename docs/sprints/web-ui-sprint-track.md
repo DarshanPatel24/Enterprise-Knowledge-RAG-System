@@ -46,6 +46,8 @@ EKCP-S0 (SSE contract) → UI-S0 (scaffold + API client)
 
 ## UI-S0: Scaffold And API Client Baseline
 
+> Status: Approved (TypeScript strict `tsc --noEmit` clean, ESLint clean, `next build` clean — 4 static routes). Implemented in `apps/web-ui/` (Next.js 14.2.35 App Router, Tailwind + shadcn/ui primitives). The EKCP client is centralized in `lib/api/ekcp.ts` with `X-Tenant-ID` and per-request `X-Correlation-ID` injection; all config is `NEXT_PUBLIC_*` env-backed (default gateway `http://localhost:8003`), nothing hardcoded. The home page probes `/health/live` and renders a connectivity status card.
+
 ### Sprint Objective
 Establish the Next.js App Router project, TypeScript strict config, shadcn/ui component library, environment-backed API client, and a health check page that confirms connectivity to EKCP.
 
@@ -87,9 +89,24 @@ EKCP-S0 exit gate passed; SSE streaming chat API contract documented (EKCP-S0-5)
 1. Approved TypeScript strict build log.
 2. Health check page screenshot confirming EKCP connectivity.
 
+### Delivery Evidence
+1. UI-S0-1 Approved: `apps/web-ui/` Next.js 14 App Router scaffold with `tsconfig.json` `strict: true` (plus `noUncheckedIndexedAccess`), `.eslintrc.json` extending `next/core-web-vitals`, and Prettier config. `npm run typecheck`, `npm run lint`, and `npm run build` all pass with zero errors.
+2. UI-S0-2 Approved: `lib/api/ekcp.ts` is the sole EKCP HTTP entry point; `buildHeaders()` injects `X-Tenant-ID` (from `lib/config.ts`) and a per-request `X-Correlation-ID` via `crypto.randomUUID()` on every call. Response shapes are typed in `lib/api/types.ts` mirroring the contracts. No component calls `fetch` directly.
+3. UI-S0-3 Approved: Tailwind CSS (`tailwind.config.ts` + `app/globals.css` design tokens) with shadcn/ui primitives (`components/ui/{button,card,badge}.tsx`) and the `cn()` utility. Classification-clearance colour tokens (public/internal/confidential/restricted) are defined for UI-S2.
+4. UI-S0-4 Approved: `app/page.tsx` + `components/HealthStatus.tsx` probe EKCP `/health/live` through the client and render an online/offline/loading connectivity card with a re-check action; the gateway URL is shown from configuration, never hardcoded.
+5. UI-S0-5 Approved: `.env.local.example` documents `NEXT_PUBLIC_EKCP_API_URL` (default `http://localhost:8003`) and `NEXT_PUBLIC_EKCP_TENANT_ID`, all localhost-targeted with empty credential defaults.
+
+### Security Note
+The web UI runs on **Next.js 16 + React 19** (upgraded from the initial 14.x). `npm audit` reports **0 vulnerabilities** (the postcss transitive advisory is pinned via a package override); TypeScript strict, ESLint (flat config), and `next build` (Turbopack) all pass. This closes the earlier residual-advisory item (release risk R5).
+
+### Browser E2E (Playwright)
+A Playwright browser test (`apps/web-ui/e2e/chat.spec.ts`, run via `npm run test:e2e`) drives the chat UI in Chromium, intercepts the EKCP SSE contract at the network layer, and asserts streamed tokens render, a citation card displays the source path and clearance badge, and the pre-chat configuration gate blocks input until settings are present. This closes the browser-level validation item (release risk R3 / M2-D2).
+
 ---
 
 ## UI-S1: Core Streaming Chat Interface
+
+> Status: Approved (TypeScript strict `tsc --noEmit` clean, ESLint clean, `next build` clean — 5 static routes). Implemented in `apps/web-ui/`: SSE parsing and `chatStream` in `lib/api/ekcp.ts` (fetch + ReadableStream, never `EventSource`), the `useChatStream` hook (`lib/hooks/`) owning transcript/streaming/error state with `AbortController` lifecycle, and the chat UI (`components/{ChatPanel,MessageList,ChatMessage,ChatInput}.tsx`) at the `/chat` route. Verified end-to-end against a live EKCP gateway: `POST /chat/stream` returned HTTP 200 `text/event-stream`, streamed `token` frames and a terminal `done` frame (`finish_reason: stop`, `total_tokens: 41`), and propagated `X-Correlation-ID` back on the response.
 
 ### Sprint Objective
 Deliver the core chat experience: message list, streaming token display via SSE, chat input, and error/loading states.
@@ -131,9 +148,18 @@ UI-S0 exit gate passed. EKCP-S3 exit gate passed (model gateway available to str
 1. Approved screen recording demonstrating streaming end-to-end.
 2. Network trace showing `X-Tenant-ID` and `X-Correlation-ID` present on every request.
 
+### Delivery Evidence
+1. UI-S1-1 Approved: `components/MessageList.tsx` + `components/ChatMessage.tsx` render right-aligned user and left-aligned assistant bubbles, an empty-transcript prompt, a streaming "Thinking…" indicator for an in-flight assistant message with no content yet, and an inline error marker on failed responses.
+2. UI-S1-2 Approved: `lib/api/ekcp.ts` adds `chatStream()` (POST `/chat/stream` with env-backed security context), `parseSseBlock()`, and `readSseStream()` (fetch + `ReadableStream`, `\n\n`-delimited frames). The `useChatStream` hook (`lib/hooks/useChatStream.ts`) appends `token` fragments to the in-flight assistant message, finalizes on `done` (persisting `session_id` for subsequent turns), and surfaces `error` frames; `citation` frames are parsed and ignored until UI-S2.
+3. UI-S1-3 Approved: `components/ChatInput.tsx` submits on Enter (Shift+Enter inserts a newline) and via the send button, disables the composer while streaming, and switches the action to a Stop control that aborts the active stream.
+4. UI-S1-4 Approved: `components/MessageList.tsx` auto-scrolls to the latest entry on every transcript change (including streaming token appends); `components/ChatPanel.tsx` renders a dismissible-styled error banner and the loading indicator. A new stream never starts while one is active, and unmounting aborts the current stream.
+5. Integration verified: a live EKCP smoke test (`POST /chat/stream`, `X-Tenant-ID`/`X-Correlation-ID` headers, security context) returned HTTP 200 `text/event-stream` and a full `token`…`done` sequence matching the client parser, with `X-Correlation-ID` propagated on the response.
+
 ---
 
 ## UI-S2: Citation And Context Display
+
+> Status: Approved (TypeScript strict `tsc --noEmit` clean, ESLint clean, `next build` clean — 5 static routes). Implemented in `apps/web-ui/`: `CitationCard` + `ClearanceBadge` (colour-coded, WCAG AA on white text), the `citation` SSE consumer (`lib/api/ekcp.ts` `toCitation` + `useChatStream` buffers citations during the stream and attaches them to the assistant message on `done`), `MarkdownContent` (`react-markdown` + `remark-gfm` tables/lists + `rehype-highlight` code, locally bundled — no external requests), an `AgentActivity` reasoning indicator shown before the first token, and a client-derived response-type label.
 
 ### Sprint Objective
 Render citations alongside assistant responses — source cards (title, path, confidence score, classification clearance badge) — and upgrade response rendering to full Markdown including tables and lists.
@@ -173,9 +199,21 @@ UI-S1 exit gate passed. EKRE exit gate passed (citation contracts carry source p
 1. Approved screenshot set showing citation cards and markdown responses.
 2. Clearance badge accessibility contrast check evidence.
 
+### Delivery Evidence
+1. UI-S2-1 Approved: `components/CitationCard.tsx` renders source title, source path, confidence (0..1 formatted as a percentage), an optional explanation, and a `components/ClearanceBadge.tsx` clearance badge. Badge colours use the `tailwind.config.ts` clearance tokens — public (green), internal (blue), confidential (amber), restricted (red) — each WCAG 2.1 AA compliant against white text.
+2. UI-S2-2 Approved: `lib/api/ekcp.ts` parses the `citation` SSE frame into a typed `Citation` (mapping the EKRE citation fields `source_path`/`document_id`/`chunk_id` plus confidence and clearance). `useChatStream` buffers `citation` frames during the stream and attaches the full set to the assistant message on `done`, so no citation is dropped between stream and card.
+3. UI-S2-3 Approved: `components/MarkdownContent.tsx` renders GitHub-flavoured Markdown via `react-markdown` with `remark-gfm` (tables, ordered/unordered lists) and `rehype-highlight` (fenced code blocks). Tables scroll horizontally and code blocks wrap in a bordered `pre`; styling is Tailwind-only. All Markdown assets are bundled locally — no external requests.
+4. UI-S2-4 Approved: `components/AgentActivity.tsx` shows a distinct "Agent is reasoning…" indicator while the assistant message is streaming with no content yet (before the first token).
+5. Response-type labeling Approved: `lib/responseType.ts` classifies completed assistant content into conversational / structured / markdown / table / list and renders it as a subtle label under the message.
+
+### Follow-up (EKCP wiring, outside Web UI track)
+EKCP `POST /chat/stream` does not yet emit `citation` frames (the endpoint docstring notes they are emitted once knowledge integration is wired into the streaming path). The UI consumer is complete and conforms to the documented `citation` event; cards render as soon as EKCP emits citation frames from the assembled retrieval context. Recommend tracking the EKCP stream-to-citation wiring under Master Integration M2-S4 (end-to-end web UI validation).
+
 ---
 
 ## UI-S3: Session Management And Configuration
+
+> Status: Approved (TypeScript strict `tsc --noEmit` clean, ESLint clean, `next build` clean — 6 static routes). Implemented in `apps/web-ui/`: a `localStorage`-backed conversation store (`lib/conversations.ts`) and runtime settings store (`lib/settings.ts`, `localStorage` over env via `useSyncExternalStore`), the `ChatWorkspace` sidebar (`ConversationList` new/load, title from first user message), the `/settings` configuration screen (`SettingsForm`), and a pre-chat validation gate disabling input until the required settings are present. The EKCP client now reads effective settings and adds `X-API-Key` when configured. Local-first: all values persist only in the browser; requests target the configured EKCP URL only.
 
 ### Sprint Objective
 Deliver persistent conversation session management (list, create, load) and the API key configuration screen so the UI is self-sufficient for local-first enterprise use.
@@ -214,3 +252,12 @@ UI-S2 exit gate passed. EKCP-S4 exit gate passed (conversation memory persists a
 ### Exit Evidence
 1. Approved screenshot showing session list and configuration screen.
 2. Network trace confirming zero requests to external hosts.
+
+### Delivery Evidence
+1. UI-S3-1 Approved: `components/ConversationList.tsx` renders the stored conversation index (title + updated timestamp, newest first) with the active entry highlighted; selecting an entry loads its persisted transcript. The list is backed by `lib/conversations.ts` (`localStorage`), so it survives reloads. (EKCP exposes no conversation history endpoint yet; the local store is the source of truth and can hydrate from EKCP once such an endpoint exists.)
+2. UI-S3-2 Approved: `components/ChatWorkspace.tsx` provides new-conversation and load-conversation actions; the chat panel is remounted per conversation (`key`) to seed its stored transcript. Conversation titles derive from the first user message (`deriveTitle`), and the list updates after each settled turn without a page reload.
+3. UI-S3-3 Approved: `components/SettingsForm.tsx` at `/settings` persists API base URL, API key, tenant id, user id, and clearance to `localStorage` only (`lib/settings.ts`). The EKCP client (`lib/api/ekcp.ts`) reads these effective values and injects `X-Tenant-ID` and, when set, `X-API-Key`. Values survive browser refresh.
+4. UI-S3-4 Approved: a configuration-required banner and a disabled composer (`isConfigured` / `missingRequiredFields`) block chat until tenant id, API key, and user id are set, listing exactly what is missing.
+5. Local-first verified: all persistence is `localStorage`; every request targets the configured EKCP base URL (localhost by default) with no external hosts, analytics, or telemetry.
+
+> Web UI track complete: UI-S0 through UI-S3 approved. Remaining cross-track item: EKCP `POST /chat/stream` citation-frame emission, to be validated end-to-end under Master Integration M2-S4.

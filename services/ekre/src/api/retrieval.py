@@ -9,7 +9,7 @@ model or distance metric is hardcoded in EKRE.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
 from api.dependencies import AppSettings, TenantId
@@ -43,6 +43,11 @@ async def retrieval_config(
 ) -> RetrievalConfigResponse:
     """Return the retrieval configuration inherited from EKIE for a collection."""
     target = collection or settings.retrieval.default_collection
+    if target not in settings.retrieval.allowed_collection_set():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="the requested collection is not permitted",
+        )
     resolver = build_inheritance_resolver(settings)
 
     try:

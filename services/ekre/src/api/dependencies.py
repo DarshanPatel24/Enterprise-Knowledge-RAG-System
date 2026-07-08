@@ -30,3 +30,13 @@ def require_tenant(
 
 
 TenantId = Annotated[str, Depends(require_tenant)]
+
+
+def signed_security_context(
+    x_security_context: Annotated[str | None, Header(alias="X-Security-Context")] = None,
+) -> str | None:
+    """Return the signed security-context token (JWT), if the caller supplied one."""
+    return x_security_context
+
+
+SignedSecurityContext = Annotated[str | None, Depends(signed_security_context)]

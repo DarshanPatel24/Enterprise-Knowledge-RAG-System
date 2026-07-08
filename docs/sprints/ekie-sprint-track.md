@@ -457,6 +457,10 @@ Prove correctness, resilience, and production readiness across the full ingestio
 5. Risk: security or classification gaps break governance. Mitigation: enforce per-stage policy and clearance propagation in EKIE-S8.
 6. Risk: LLM non-determinism or local model unavailability degrades reproducibility. Mitigation: keep providers configuration-selectable, retain deterministic defaults in tests, and validate LLM output against Pydantic schemas.
 
+## Post-Track Enhancement: DSAR Batch Purge (2026-07-08)
+
+> Status: Approved (ruff + mypy --strict clean, 320 pytest green). Added `POST /v1/documents/purge` in `services/ekie/src/api/ingestion.py` for GDPR/DSAR execution: a tenant-scoped batch that hard-deletes a supplied set of document ids (reusing `DocumentDeletionService` with `force=true`, reporting `missing` ids for idempotency). This closes Master Integration risk R2/M2-D1; the integration `PurgeOrchestrator` fans an `EnterpriseDataPurgeEvent` to this endpoint. Note: EKIE data is tenant + document scoped (no user attribution), so the DSAR subscriber resolves the subject's document set upstream.
+
 ## Reporting Cadence
 1. Weekly sprint review with Product, Architecture, and Quality.
 2. Mid-sprint dependency review focused on downstream EKRE handoff blockers.

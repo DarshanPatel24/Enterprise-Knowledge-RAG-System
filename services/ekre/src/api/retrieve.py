@@ -11,8 +11,12 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from api.dependencies import AppSettings, TenantId
-from composition import build_retrieval_pipeline, build_security_validator
+from api.dependencies import AppSettings, SignedSecurityContext, TenantId
+from composition import (
+    build_retrieval_pipeline,
+    build_security_validator,
+    record_access_denied,
+)
 from domain.execution import ExecutionError
 from domain.governance import TracedRetrieval
 from domain.observability import get_logger
@@ -44,15 +48,24 @@ async def retrieve(
     request: RetrieveRequest,
     settings: AppSettings,
     tenant_id: TenantId,
+    signed_context: SignedSecurityContext,
 ) -> TracedRetrieval:
     """Run the full traced, audited, masked retrieval pipeline."""
     validator: SecurityContextValidator = build_security_validator(settings)
     try:
         context = validator.validate(
-            request.security_context.model_dump(), expected_tenant_id=tenant_id
+            request.security_context.model_dump(),
+            expected_tenant_id=tenant_id,
+            signed_token=signed_context,
         )
     except SecurityError as exc:
         _logger.warning("retrieve_security_rejected", extra={"error_type": exc.error_type.value})
+        record_access_denied(
+            settings,
+            actor=request.security_context.user_id,
+            tenant_id=tenant_id,
+            reason=exc.error_type.value,
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail=exc.message
         ) from exc

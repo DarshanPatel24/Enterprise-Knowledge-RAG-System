@@ -1,8 +1,11 @@
 """Sensitive-data masking (handbook Chapters 29.10).
 
-Redacts PII from candidate content before the EKCP handoff so no unauthorized
-sensitive content reaches downstream components. Masking is deterministic and
-configurable; citation lineage is always preserved (only content is masked).
+Best-effort redaction of common PII patterns from candidate content before the
+EKCP handoff, as a defense-in-depth control (not a completeness guarantee):
+pattern-based detection cannot catch every form of sensitive data (names,
+addresses, international formats, tokens split across chunks). Authorization and
+tenant/clearance filtering remain the primary controls. Masking is deterministic
+and configurable; citation lineage is always preserved (only content is masked).
 """
 
 from __future__ import annotations
@@ -20,6 +23,34 @@ _PHONE = re.compile(r"\b(?:\+?\d{1,3}[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?
 _CREDIT_CARD = re.compile(r"\b(?:\d[ -]?){13,16}\b")
 
 
+def _luhn_valid(digits: str) -> bool:
+    """Return whether ``digits`` satisfies the Luhn checksum (card-number check)."""
+    total = 0
+    for index, char in enumerate(reversed(digits)):
+        value = ord(char) - 48
+        if index % 2 == 1:
+            value *= 2
+            if value > 9:
+                value -= 9
+        total += value
+    return total % 10 == 0
+
+
+def _mask_credit_cards(text: str) -> tuple[str, int]:
+    """Redact only Luhn-valid card numbers, reducing false positives."""
+    count = 0
+
+    def _replace(match: re.Match[str]) -> str:
+        nonlocal count
+        digits = re.sub(r"\D", "", match.group(0))
+        if 13 <= len(digits) <= 16 and _luhn_valid(digits):
+            count += 1
+            return "[REDACTED-CARD]"
+        return match.group(0)
+
+    return _CREDIT_CARD.sub(_replace, text), count
+
+
 @dataclass(frozen=True)
 class MaskingConfig:
     """Which PII categories to mask."""
@@ -32,7 +63,7 @@ class MaskingConfig:
 
 
 class Masker:
-    """Deterministic PII masker for retrieval content."""
+    """Deterministic best-effort PII masker for retrieval content."""
 
     def __init__(self, config: MaskingConfig) -> None:
         self._config = config
@@ -54,7 +85,7 @@ class Masker:
             masked, hits = _PHONE.subn("[REDACTED-PHONE]", masked)
             count += hits
         if self._config.credit_card:
-            masked, hits = _CREDIT_CARD.subn("[REDACTED-CARD]", masked)
+            masked, hits = _mask_credit_cards(masked)
             count += hits
         return masked, count
 

@@ -15,7 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Absolute path to the .env file co-located with services/ekre/ regardless of
@@ -36,8 +36,12 @@ class QdrantSettings(BaseSettings):
     host: str = "localhost"
     port: int = 6333
     url: str = ""
-    api_key: str = ""
+    api_key: SecretStr = SecretStr("")
     request_timeout_seconds: float = 30.0
+    # Payload key under which EKIE nests governance metadata (tenant_id,
+    # classification_clearance, document_id, ...). Filters and payload reads use
+    # this prefix; set to "" if a repository stores those fields at the top level.
+    payload_metadata_key: str = "metadata"
 
 
 class ObservabilitySettings(BaseSettings):
@@ -50,7 +54,7 @@ class ObservabilitySettings(BaseSettings):
     langfuse_enabled: bool = False
     langfuse_host: str = "http://localhost:3000"
     langfuse_public_key: str = ""
-    langfuse_secret_key: str = ""
+    langfuse_secret_key: SecretStr = SecretStr("")
     otel_exporter_endpoint: str | None = None
 
 
@@ -66,11 +70,21 @@ class RetrievalSettings(BaseSettings):
     default_collection: str = "enterprise_documents"
     search_type: Literal["similarity", "mmr"] = "similarity"
     default_top_k: int = Field(default=5, gt=0)
+    # Optional allowlist of collections a client may target (comma-separated).
+    # Prevents collection enumeration/access beyond the intended set. Empty means
+    # any collection is permitted; the default collection is always allowed.
+    allowed_collections: str = ""
     budget_query_understanding_ms: float = 20.0
     budget_vector_ms: float = 150.0
     budget_ranking_ms: float = 100.0
     budget_assembly_ms: float = 50.0
     budget_total_ms: float = 500.0
+
+    def allowed_collection_set(self) -> frozenset[str]:
+        """Return the permitted collections (always including the default)."""
+        names = {name.strip() for name in self.allowed_collections.split(",") if name.strip()}
+        names.add(self.default_collection)
+        return frozenset(names)
 
     def latency_budgets(self) -> dict[str, float]:
         """Return the per-stage latency budgets keyed by stage name."""
@@ -101,6 +115,15 @@ class EmbeddingSettings(BaseSettings):
     normalize_vectors: bool = True
     device: str = "auto"
     torch_dtype: str = "auto"
+    # Optional allowlist of embedding model identifiers (comma-separated). The
+    # embedding model is inherited from the Qdrant vector payload, so an
+    # allowlist prevents a poisoned payload from loading an unexpected model.
+    # Empty means allow any inherited model (default).
+    allowed_models: str = ""
+
+    def allowed_model_set(self) -> frozenset[str]:
+        """Return the configured allowlist of embedding model identifiers."""
+        return frozenset(name.strip() for name in self.allowed_models.split(",") if name.strip())
 
 
 class InheritanceSettings(BaseSettings):
@@ -129,7 +152,24 @@ class SecuritySettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="EKRE_SECURITY__", extra="ignore")
 
     require_security_context: bool = True
+    # Enforce tenant isolation: retrieval is filtered to the requesting tenant at
+    # the repository boundary and re-checked in-process (defense in depth).
+    require_tenant_scope: bool = True
     default_clearance: Literal["public", "internal", "confidential", "restricted"] = "public"
+    # Verifiable trust boundary. When true, the security context must be supplied
+    # as a signed JWT (header X-Security-Context) minted by the trusted caller
+    # (EKCP) rather than self-asserted in the request body. Default off so the
+    # boundary can be enabled once the caller starts signing.
+    require_signed_context: bool = False
+    context_signing_secret: SecretStr = SecretStr("")
+    context_signing_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
+    context_issuer: str = ""
+    context_audience: str = ""
+    context_leeway_seconds: int = Field(default=30, ge=0)
+
+    def context_signing_secret_value(self) -> str:
+        """Return the raw signing secret for the context verifier."""
+        return self.context_signing_secret.get_secret_value()
 
 
 class QueryIntelligenceSettings(BaseSettings):

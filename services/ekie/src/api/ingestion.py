@@ -27,7 +27,7 @@ from domain.control_plane import (
     Repository,
 )
 from domain.jobs import SourceStore
-from domain.observability import get_correlation_id
+from domain.observability import get_correlation_id, get_logger
 from domain.orchestration import (
     WorkflowOrchestrator,
     WorkflowResult,
@@ -35,13 +35,13 @@ from domain.orchestration import (
     WorkflowStatus,
 )
 from domain.orchestration.state import StageRecord
-from domain.storage import compute_content_hash
 from domain.publishing import (
     DocumentDeletionService,
     VectorCleanupError,
     VectorCleanupService,
     cleanup_provider_registry,
 )
+from domain.storage import compute_content_hash
 from domain.sync import (
     RepositoryConnector,
     RepositoryConnectorConfig,
@@ -58,6 +58,8 @@ TenantId = Annotated[str, Depends(require_tenant)]
 Orchestrator = Annotated[WorkflowOrchestrator, Depends(get_orchestrator)]
 ControlPlane = Annotated[ControlPlaneDatabase, Depends(get_control_plane)]
 Resources = Annotated[AppResources, Depends(get_resources)]
+
+logger = get_logger("ekie.api.ingestion")
 
 
 class StageRecordResponse(BaseModel):
@@ -132,6 +134,29 @@ class DocumentDeleteResponse(BaseModel):
     collection: str | None = None
     vector_cleanup_error: str | None = None
     message: str
+
+
+class PurgeDocumentsRequest(BaseModel):
+    """A DSAR/GDPR purge request naming the documents to hard-delete.
+
+    EKIE data is scoped by tenant and document; it carries no user attribution, so
+    the DSAR subscriber resolves the subject's document set upstream and supplies
+    the identifiers here. The tenant is taken from the ``X-Tenant-ID`` header.
+    """
+
+    document_ids: list[str] = Field(min_length=1)
+    reason: str = "dsar_purge"
+
+
+class PurgeDocumentsResponse(BaseModel):
+    """Outcome of a batch DSAR purge for a tenant."""
+
+    tenant_id: str
+    requested: int
+    deleted_count: int
+    vectors_deleted: int
+    missing: list[str]
+    reason: str
 
 
 class JobAcceptedResponse(BaseModel):
@@ -423,6 +448,51 @@ async def document_job_status(
         max_attempts=record.max_attempts,
         source_path=record.source_path,
         last_error=record.last_error,
+    )
+
+
+@router.post("/purge", response_model=PurgeDocumentsResponse)
+async def purge_documents(
+    request: PurgeDocumentsRequest,
+    tenant_id: TenantId,
+    resources: Resources,
+) -> PurgeDocumentsResponse:
+    """Hard-delete a set of documents for a tenant (DSAR/GDPR purge execution).
+
+    Reuses the per-document deletion service with ``force=true`` so a vector-cleanup
+    issue never leaves Control Plane rows behind. Documents not found for the tenant
+    are reported in ``missing`` rather than failing the batch, keeping the purge
+    idempotent. This is the surface a cross-engine purge subscriber invokes when it
+    fans out an ``EnterpriseDataPurgeEvent``.
+    """
+    service = _document_deletion_service(resources)
+    deleted = 0
+    vectors_deleted = 0
+    missing: list[str] = []
+    for document_id in request.document_ids:
+        result = service.delete_document(document_id, tenant_id, force=True)
+        if result.row_deleted:
+            deleted += 1
+            vectors_deleted += result.vectors_deleted
+        else:
+            missing.append(document_id)
+    logger.info(
+        "documents_purged",
+        extra={
+            "tenant_id": tenant_id,
+            "requested": len(request.document_ids),
+            "deleted_count": deleted,
+            "reason": request.reason,
+            "correlation_id": get_correlation_id(),
+        },
+    )
+    return PurgeDocumentsResponse(
+        tenant_id=tenant_id,
+        requested=len(request.document_ids),
+        deleted_count=deleted,
+        vectors_deleted=vectors_deleted,
+        missing=missing,
+        reason=request.reason,
     )
 
 

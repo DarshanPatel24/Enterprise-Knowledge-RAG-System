@@ -12,8 +12,9 @@ from contracts.retrieval import (
     RetrievalContextPackage,
 )
 from domain.context import ContextItem, ContextSource
-from domain.observability import get_logger
+from domain.observability import get_correlation_id, get_logger
 from domain.security import SecurityError
+from domain.workflow import PlatformEventType, build_platform_event
 
 router = APIRouter(prefix="/context", tags=["context"])
 
@@ -49,12 +50,13 @@ class BuildContextRequest(BaseModel):
     """Request body to assemble an Execution Context Package."""
 
     conversation_id: str
-    user_intent: str = Field(min_length=1)
+    user_intent: str = Field(min_length=1, max_length=16000)
     security_context: SecurityContextPayload
     conversation_history: list[str] = Field(default_factory=list)
     knowledge: list[KnowledgeCandidatePayload] = Field(default_factory=list)
     policy_constraints: list[str] = Field(default_factory=list)
     include_memory: bool = False
+    include_knowledge: bool = False
 
 
 class BuildContextResponse(BaseModel):
@@ -66,6 +68,7 @@ class BuildContextResponse(BaseModel):
     total_tokens: int
     source_diversity: int
     compression_applied: bool
+    degraded: bool
     warnings: list[str]
 
 
@@ -92,6 +95,34 @@ async def build_context(
     _validate_security(resources, request.security_context, tenant_id)
 
     retrieval: RetrievalContextPackage | None = None
+    degraded = False
+    warnings: list[str] = []
+    if request.include_knowledge:
+        result = resources.knowledge_retriever.retrieve(
+            request.user_intent,
+            tenant_id=tenant_id,
+            security_context=request.security_context.model_dump(),
+            correlation_id=get_correlation_id(),
+        )
+        if result.has_knowledge:
+            retrieval = result.package
+            resources.event_bus.publish(
+                build_platform_event(
+                    PlatformEventType.KNOWLEDGE_RETRIEVED,
+                    tenant_id=tenant_id,
+                    payload={"candidate_count": str(result.candidate_count)},
+                )
+            )
+        elif result.degraded:
+            degraded = True
+            warnings.append(f"knowledge degraded: {result.reason}; using local context")
+            resources.event_bus.publish(
+                build_platform_event(
+                    PlatformEventType.CONTEXT_DEGRADED,
+                    tenant_id=tenant_id,
+                    payload={"reason": result.reason},
+                )
+            )
     if request.knowledge:
         retrieval = RetrievalContextPackage(
             query=request.user_intent,
@@ -126,7 +157,7 @@ async def build_context(
         resources.memory_framework.recall_as_context(
             tenant_id=tenant_id, query=request.user_intent
         )
-        if request.include_memory
+        if request.include_memory or degraded
         else ()
     )
 
@@ -145,6 +176,7 @@ async def build_context(
         extra={
             "context_id": package.context_id,
             "conversation_id": request.conversation_id,
+            "degraded": degraded,
         },
     )
     return BuildContextResponse(
@@ -154,5 +186,6 @@ async def build_context(
         total_tokens=package.metrics.total_tokens,
         source_diversity=package.metrics.source_diversity,
         compression_applied=package.compression_applied,
-        warnings=list(package.warnings),
+        degraded=degraded,
+        warnings=[*warnings, *package.warnings],
     )

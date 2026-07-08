@@ -54,3 +54,20 @@ def enforce_clearance(
     """
     allowed_set = set(allowed)
     return [doc for doc in documents if doc.classification_clearance in allowed_set]
+
+
+def enforce_tenant(
+    documents: Sequence[RepositoryDocument], tenant_id: str
+) -> list[RepositoryDocument]:
+    """Drop any document that does not belong to ``tenant_id``.
+
+    Defense in depth for multi-tenant isolation: the connector already scopes the
+    query to the requesting tenant at the data boundary; this in-process check
+    guarantees no cross-tenant document can enter the pool even if a connector
+    misbehaves. When ``tenant_id`` is empty (no tenant to scope by) the documents
+    pass through unchanged; tenant presence is enforced by the ingress security
+    context, and documents without a tenant are dropped once a tenant is known.
+    """
+    if not tenant_id:
+        return list(documents)
+    return [doc for doc in documents if doc.tenant_id == tenant_id]

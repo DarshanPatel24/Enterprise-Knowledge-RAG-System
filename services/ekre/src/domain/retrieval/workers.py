@@ -19,7 +19,11 @@ from domain.execution.worker import RetrievalWorker
 from domain.query.models import RetrievalEngineType
 from domain.retrieval.embedding import EmbeddingAdapter
 from domain.retrieval.normalize import to_candidates
-from domain.retrieval.security import enforce_clearance, resolve_allowed_clearances
+from domain.retrieval.security import (
+    enforce_clearance,
+    enforce_tenant,
+    resolve_allowed_clearances,
+)
 
 _TOKEN = re.compile(r"[A-Za-z0-9_\-]+")
 
@@ -34,12 +38,14 @@ class VectorRetrievalWorker(RetrievalWorker):
         *,
         collection: str,
         require_security_context: bool = True,
+        require_tenant_scope: bool = True,
         worker_id: str = "vector-worker",
     ) -> None:
         self._connector = connector
         self._adapter = adapter
         self._collection = collection
         self._require = require_security_context
+        self._require_tenant = require_tenant_scope
         self._descriptor = WorkerDescriptor(
             worker_id=worker_id,
             engine=RetrievalEngineType.VECTOR,
@@ -54,19 +60,22 @@ class VectorRetrievalWorker(RetrievalWorker):
     def retrieve(
         self, task: RetrievalTask, *, security_context: SecurityContext | None
     ) -> Sequence[RetrievalCandidate]:
-        """Embed the query and execute a clearance-filtered vector search."""
+        """Embed the query and execute a clearance- and tenant-filtered vector search."""
         allowed = resolve_allowed_clearances(
             security_context, require_security_context=self._require
         )
+        tenant_id = task.tenant_id if self._require_tenant else ""
         vector = self._adapter.embed(task.query)
         documents = self._connector.vector_search(
             self._collection,
             vector,
             limit=task.candidate_limit,
             allowed_clearances=allowed,
+            tenant_id=tenant_id,
             metadata_filters=task.metadata_filters,
         )
         documents = enforce_clearance(documents, allowed)
+        documents = enforce_tenant(documents, tenant_id)
         return to_candidates(documents, explanation="vector similarity")
 
 
@@ -79,11 +88,13 @@ class KeywordRetrievalWorker(RetrievalWorker):
         *,
         collection: str,
         require_security_context: bool = True,
+        require_tenant_scope: bool = True,
         worker_id: str = "keyword-worker",
     ) -> None:
         self._connector = connector
         self._collection = collection
         self._require = require_security_context
+        self._require_tenant = require_tenant_scope
         self._descriptor = WorkerDescriptor(
             worker_id=worker_id,
             engine=RetrievalEngineType.KEYWORD,
@@ -98,19 +109,22 @@ class KeywordRetrievalWorker(RetrievalWorker):
     def retrieve(
         self, task: RetrievalTask, *, security_context: SecurityContext | None
     ) -> Sequence[RetrievalCandidate]:
-        """Tokenize the query and execute a clearance-filtered keyword search."""
+        """Tokenize the query and execute a clearance- and tenant-filtered keyword search."""
         allowed = resolve_allowed_clearances(
             security_context, require_security_context=self._require
         )
+        tenant_id = task.tenant_id if self._require_tenant else ""
         terms = _TOKEN.findall(task.query)
         documents = self._connector.keyword_search(
             self._collection,
             terms,
             limit=task.candidate_limit,
             allowed_clearances=allowed,
+            tenant_id=tenant_id,
             metadata_filters=task.metadata_filters,
         )
         documents = enforce_clearance(documents, allowed)
+        documents = enforce_tenant(documents, tenant_id)
         return to_candidates(documents, explanation="keyword match")
 
 
@@ -123,11 +137,13 @@ class MetadataRetrievalWorker(RetrievalWorker):
         *,
         collection: str,
         require_security_context: bool = True,
+        require_tenant_scope: bool = True,
         worker_id: str = "metadata-worker",
     ) -> None:
         self._connector = connector
         self._collection = collection
         self._require = require_security_context
+        self._require_tenant = require_tenant_scope
         self._descriptor = WorkerDescriptor(
             worker_id=worker_id,
             engine=RetrievalEngineType.METADATA,
@@ -142,15 +158,18 @@ class MetadataRetrievalWorker(RetrievalWorker):
     def retrieve(
         self, task: RetrievalTask, *, security_context: SecurityContext | None
     ) -> Sequence[RetrievalCandidate]:
-        """Execute a clearance-filtered metadata search over the task filters."""
+        """Execute a clearance- and tenant-filtered metadata search over the task filters."""
         allowed = resolve_allowed_clearances(
             security_context, require_security_context=self._require
         )
+        tenant_id = task.tenant_id if self._require_tenant else ""
         documents = self._connector.metadata_search(
             self._collection,
             task.metadata_filters,
             limit=task.candidate_limit,
             allowed_clearances=allowed,
+            tenant_id=tenant_id,
         )
         documents = enforce_clearance(documents, allowed)
+        documents = enforce_tenant(documents, tenant_id)
         return to_candidates(documents, explanation="metadata match")

@@ -13,6 +13,7 @@ from domain.retrieval import (
     LocalHashEmbeddingAdapter,
     RetrievalWorkerError,
     enforce_clearance,
+    enforce_tenant,
     resolve_allowed_clearances,
 )
 
@@ -67,3 +68,28 @@ def test_enforce_clearance_drops_unauthorized() -> None:
     filtered = enforce_clearance(docs, ["public"])
     assert all(doc.classification_clearance == "public" for doc in filtered)
     assert filtered
+
+
+def test_enforce_tenant_drops_other_tenants() -> None:
+    from _retrieval_support import ADAPTER
+
+    conn = connector(
+        indexed("d1", "c1", "text", tenant_id="tenant-a"),
+        indexed("d2", "c2", "text", tenant_id="tenant-b"),
+    )
+    docs = conn.vector_search(
+        "c",
+        ADAPTER.embed("text"),
+        limit=5,
+        allowed_clearances=["public"],
+    )
+    filtered = enforce_tenant(docs, "tenant-a")
+    assert {doc.document_id for doc in filtered} == {"d1"}
+
+
+def test_enforce_tenant_empty_tenant_is_noop() -> None:
+    from _retrieval_support import ADAPTER
+
+    conn = connector(indexed("d1", "c1", "text", tenant_id="tenant-a"))
+    docs = conn.vector_search("c", ADAPTER.embed("text"), limit=5, allowed_clearances=["public"])
+    assert enforce_tenant(docs, "") == docs

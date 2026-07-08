@@ -8,8 +8,8 @@ are lazy, so the offline path never requires ``qdrant-client``.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from domain.connectors.base import (
     Capability,
@@ -20,10 +20,8 @@ from domain.connectors.errors import ConnectorError, ConnectorErrorType
 from domain.integrations import LangChainResourceError, build_qdrant_client
 from domain.query.models import MetadataFilter
 
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-
 _CLEARANCE_FIELD = "classification_clearance"
+_TENANT_FIELD = "tenant_id"
 
 
 class QdrantRetrievalConnector(RepositoryConnector):
@@ -37,12 +35,14 @@ class QdrantRetrievalConnector(RepositoryConnector):
         url: str = "",
         api_key: str = "",
         timeout_seconds: float = 30.0,
+        metadata_key: str = "metadata",
     ) -> None:
         self._host = host
         self._port = port
         self._url = url
         self._api_key = api_key
         self._timeout_seconds = timeout_seconds
+        self._metadata_key = metadata_key
         self._client: Any = None
 
     def capabilities(self) -> frozenset[Capability]:
@@ -62,11 +62,12 @@ class QdrantRetrievalConnector(RepositoryConnector):
         *,
         limit: int,
         allowed_clearances: Sequence[str],
+        tenant_id: str = "",
         metadata_filters: Sequence[MetadataFilter] = (),
     ) -> list[RepositoryDocument]:
-        """Execute a Qdrant similarity search with a clearance payload filter."""
+        """Execute a Qdrant similarity search with a clearance + tenant filter."""
         client = self._connect()
-        query_filter = self._build_filter(allowed_clearances, metadata_filters)
+        query_filter = self._build_filter(allowed_clearances, metadata_filters, tenant_id)
         try:
             points = client.search(
                 collection_name=collection,
@@ -79,7 +80,10 @@ class QdrantRetrievalConnector(RepositoryConnector):
             raise ConnectorError(
                 ConnectorErrorType.SEARCH_FAILED, f"qdrant vector search failed: {exc}"
             ) from exc
-        return [_point_to_document(point.payload or {}, float(point.score)) for point in points]
+        return [
+            self._to_document(self._metadata(point.payload or {}), float(point.score))
+            for point in points
+        ]
 
     def keyword_search(
         self,
@@ -88,19 +92,22 @@ class QdrantRetrievalConnector(RepositoryConnector):
         *,
         limit: int,
         allowed_clearances: Sequence[str],
+        tenant_id: str = "",
         metadata_filters: Sequence[MetadataFilter] = (),
     ) -> list[RepositoryDocument]:
-        """Scroll clearance-filtered points and rank by content term overlap."""
+        """Scroll clearance + tenant filtered points and rank by content overlap."""
         wanted = [term.lower() for term in terms if term]
         if not wanted:
             return []
-        records = self._scroll(collection, allowed_clearances, metadata_filters, limit * 4)
+        records = self._scroll(
+            collection, allowed_clearances, metadata_filters, limit * 4, tenant_id
+        )
         scored: list[tuple[float, RepositoryDocument]] = []
-        for payload in records:
-            content = str(payload.get("content", "")).lower()
+        for metadata in records:
+            content = str(metadata.get("content", "")).lower()
             matches = sum(1 for term in wanted if term in content)
             if matches:
-                scored.append((matches / len(wanted), _point_to_document(payload, 0.0)))
+                scored.append((matches / len(wanted), self._to_document(metadata, 0.0)))
         scored.sort(
             key=lambda item: (-item[0], item[1].document_id, item[1].chunk_id)
         )
@@ -113,12 +120,15 @@ class QdrantRetrievalConnector(RepositoryConnector):
         *,
         limit: int,
         allowed_clearances: Sequence[str],
+        tenant_id: str = "",
     ) -> list[RepositoryDocument]:
-        """Scroll points matching the clearance and metadata filters."""
+        """Scroll points matching the clearance, tenant, and metadata filters."""
         if not metadata_filters:
             return []
-        records = self._scroll(collection, allowed_clearances, metadata_filters, limit)
-        return [_point_to_document(payload, 1.0) for payload in records]
+        records = self._scroll(
+            collection, allowed_clearances, metadata_filters, limit, tenant_id
+        )
+        return [self._to_document(metadata, 1.0) for metadata in records]
 
     def _connect(self) -> Any:  # noqa: ANN401 - QdrantClient type is lazy
         if self._client is None:
@@ -142,9 +152,10 @@ class QdrantRetrievalConnector(RepositoryConnector):
         allowed_clearances: Sequence[str],
         metadata_filters: Sequence[MetadataFilter],
         limit: int,
+        tenant_id: str = "",
     ) -> list[Mapping[str, Any]]:
         client = self._connect()
-        query_filter = self._build_filter(allowed_clearances, metadata_filters)
+        query_filter = self._build_filter(allowed_clearances, metadata_filters, tenant_id)
         try:
             points, _ = client.scroll(
                 collection_name=collection,
@@ -157,50 +168,73 @@ class QdrantRetrievalConnector(RepositoryConnector):
             raise ConnectorError(
                 ConnectorErrorType.SEARCH_FAILED, f"qdrant scroll failed: {exc}"
             ) from exc
-        return [point.payload or {} for point in points]
+        return [self._metadata(point.payload or {}) for point in points]
+
+    def _metadata(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Return the governance metadata dict EKIE nests under the metadata key."""
+        if self._metadata_key:
+            nested = payload.get(self._metadata_key)
+            if isinstance(nested, Mapping):
+                return nested
+        return payload
+
+    def _field_key(self, field: str) -> str:
+        """Return the payload key path for ``field`` under the metadata prefix."""
+        return f"{self._metadata_key}.{field}" if self._metadata_key else field
 
     def _build_filter(
-        self, allowed_clearances: Sequence[str], metadata_filters: Sequence[MetadataFilter]
+        self,
+        allowed_clearances: Sequence[str],
+        metadata_filters: Sequence[MetadataFilter],
+        tenant_id: str = "",
     ) -> Any:  # noqa: ANN401 - qdrant models are lazy
         from qdrant_client import models
 
         conditions: list[Any] = [
             models.FieldCondition(
-                key=_CLEARANCE_FIELD, match=models.MatchAny(any=list(allowed_clearances))
+                key=self._field_key(_CLEARANCE_FIELD),
+                match=models.MatchAny(any=list(allowed_clearances)),
             )
         ]
+        if tenant_id:
+            conditions.append(
+                models.FieldCondition(
+                    key=self._field_key(_TENANT_FIELD),
+                    match=models.MatchValue(value=tenant_id),
+                )
+            )
         for metadata_filter in metadata_filters:
-            conditions.append(_filter_condition(models, metadata_filter))
+            conditions.append(self._filter_condition(models, metadata_filter))
         return models.Filter(must=conditions)
 
+    def _filter_condition(self, models: Any, metadata_filter: MetadataFilter) -> Any:  # noqa: ANN401
+        key = self._field_key(metadata_filter.field)
+        if metadata_filter.operator in {"gte", "lte"}:
+            try:
+                bound = float(metadata_filter.value)
+            except ValueError:
+                return models.FieldCondition(
+                    key=key, match=models.MatchValue(value=metadata_filter.value)
+                )
+            range_kwargs = {metadata_filter.operator: bound}
+            return models.FieldCondition(key=key, range=models.Range(**range_kwargs))
+        return models.FieldCondition(
+            key=key, match=models.MatchValue(value=metadata_filter.value)
+        )
 
-def _filter_condition(models: Any, metadata_filter: MetadataFilter) -> Any:  # noqa: ANN401
-    if metadata_filter.operator in {"gte", "lte"}:
-        try:
-            bound = float(metadata_filter.value)
-        except ValueError:
-            return models.FieldCondition(
-                key=metadata_filter.field, match=models.MatchValue(value=metadata_filter.value)
-            )
-        range_kwargs = {metadata_filter.operator: bound}
-        return models.FieldCondition(key=metadata_filter.field, range=models.Range(**range_kwargs))
-    return models.FieldCondition(
-        key=metadata_filter.field, match=models.MatchValue(value=metadata_filter.value)
-    )
-
-
-def _point_to_document(payload: Mapping[str, Any], score: float) -> RepositoryDocument:
-    return RepositoryDocument(
-        document_id=str(payload.get("document_id", "unknown")),
-        chunk_id=str(payload.get("chunk_id", "unknown")),
-        content=str(payload.get("content", "")),
-        source_path=str(payload.get("source_path", "")),
-        score=max(0.0, min(1.0, score)),
-        classification_clearance=str(payload.get(_CLEARANCE_FIELD, "public")),
-        repository_id=str(payload.get("repository_id", "")),
-        section_id=_optional_str(payload.get("section_id")),
-        language=_optional_str(payload.get("language")),
-    )
+    def _to_document(self, metadata: Mapping[str, Any], score: float) -> RepositoryDocument:
+        return RepositoryDocument(
+            document_id=str(metadata.get("document_id", "unknown")),
+            chunk_id=str(metadata.get("chunk_id", "unknown")),
+            content=str(metadata.get("content", "")),
+            source_path=str(metadata.get("source_path", "")),
+            score=max(0.0, min(1.0, score)),
+            tenant_id=str(metadata.get(_TENANT_FIELD, "")),
+            classification_clearance=str(metadata.get(_CLEARANCE_FIELD, "public")),
+            repository_id=str(metadata.get("repository_id", "")),
+            section_id=_optional_str(metadata.get("section_id")),
+            language=_optional_str(metadata.get("language")),
+        )
 
 
 def _optional_str(value: Any) -> str | None:  # noqa: ANN401

@@ -7,9 +7,10 @@ place that reads settings and injects dependencies.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
-from config.settings import EkreSettings
+from config.settings import EkreSettings, EmbeddingSettings
 from domain.assembly import AssemblyPolicy, ContextAssemblyEngine
 from domain.connectors import (
     InMemoryRepositoryConnector,
@@ -25,12 +26,15 @@ from domain.execution import (
 )
 from domain.fusion import CandidateCollector, CandidateFusion, FusionPolicy
 from domain.governance import (
+    AuditAction,
+    AuditResult,
     AuditSink,
     InMemoryAuditSink,
     LoggingAuditSink,
     Masker,
     MaskingConfig,
     RetrievalPipeline,
+    build_audit_record,
 )
 from domain.inheritance import (
     EmbeddingProfile,
@@ -82,7 +86,7 @@ def configure_observability(settings: EkreSettings) -> None:
 
 def build_security_validator(settings: EkreSettings) -> SecurityContextValidator:
     """Build the security context ingress validator from settings."""
-    return SecurityContextValidator.from_settings(settings.security)
+    return SecurityContextValidator.from_settings(settings.security)  # type: ignore[arg-type]
 
 
 def build_inheritance_resolver(settings: EkreSettings) -> InheritanceResolver:
@@ -100,7 +104,7 @@ def build_inheritance_resolver(settings: EkreSettings) -> InheritanceResolver:
             host=qdrant.host,
             port=qdrant.port,
             url=qdrant.url or None,
-            api_key=qdrant.api_key or None,
+            api_key=qdrant.api_key.get_secret_value() or None,
             timeout_seconds=qdrant.request_timeout_seconds,
         )
 
@@ -131,6 +135,7 @@ def build_retrieval_resources(
     (never hardcoded); the provider and connection come from settings.
     """
     embedding_settings = settings.embedding
+    _ensure_model_allowed(embedding_settings, profile.embedding_model)
     embeddings = build_embeddings(
         embedding_settings.provider,
         profile.embedding_model,
@@ -142,7 +147,7 @@ def build_retrieval_resources(
         host=settings.qdrant.host,
         port=settings.qdrant.port,
         url=settings.qdrant.url or None,
-        api_key=settings.qdrant.api_key or None,
+        api_key=settings.qdrant.api_key.get_secret_value() or None,
         distance=profile.distance_metric.value,
         vector_size=profile.dimension,
         create_collection=False,
@@ -201,8 +206,9 @@ def build_repository_connector(settings: EkreSettings) -> RepositoryConnector:
             host=qdrant.host,
             port=qdrant.port,
             url=qdrant.url,
-            api_key=qdrant.api_key,
+            api_key=qdrant.api_key.get_secret_value(),
             timeout_seconds=qdrant.request_timeout_seconds,
+            metadata_key=qdrant.payload_metadata_key,
         )
     return InMemoryRepositoryConnector()
 
@@ -218,6 +224,7 @@ def build_query_embedding_adapter(settings: EkreSettings) -> EmbeddingAdapter:
     if settings.workers.query_embedder == "langchain":
         embedding = settings.embedding
         profile = resolve_embedding_profile(settings)
+        _ensure_model_allowed(embedding, profile.embedding_model)
         return LangChainEmbeddingAdapter(
             embedding.provider,
             profile.embedding_model,
@@ -226,6 +233,20 @@ def build_query_embedding_adapter(settings: EkreSettings) -> EmbeddingAdapter:
             model_kwargs=_huggingface_model_kwargs(embedding.device, embedding.torch_dtype),
         )
     return LocalHashEmbeddingAdapter(settings.workers.local_embedding_dimension)
+
+
+def _ensure_model_allowed(embedding_settings: EmbeddingSettings, model: str) -> None:
+    """Reject an inherited embedding model that is not on the configured allowlist.
+
+    The embedding model name is inherited from the Qdrant vector payload; an
+    allowlist prevents a poisoned or unexpected payload from causing EKRE to load
+    an untrusted model. An empty allowlist permits any inherited model.
+    """
+    allowed = embedding_settings.allowed_model_set()
+    if allowed and model not in allowed:
+        raise ValueError(
+            f"embedding model {model!r} is not in the configured allowlist"
+        )
 
 
 def _huggingface_model_kwargs(device: str, torch_dtype: str) -> dict[str, Any]:
@@ -254,6 +275,7 @@ def build_retrieval_worker_registry(
         adapter,
         collection=settings.retrieval.default_collection,
         require_security_context=settings.security.require_security_context,
+        require_tenant_scope=settings.security.require_tenant_scope,
     )
 
 
@@ -326,6 +348,33 @@ def build_audit_sink(settings: EkreSettings) -> AuditSink:
     if settings.governance.audit_sink == "memory":
         return InMemoryAuditSink()
     return LoggingAuditSink()
+
+
+def record_access_denied(
+    settings: EkreSettings, *, actor: str, tenant_id: str, reason: str
+) -> None:
+    """Write an ACCESS_DENIED audit record for a rejected retrieval request.
+
+    Authorization failures (missing/invalid context, tenant mismatch, unknown
+    clearance) are security-relevant events and must be auditable, not only
+    logged. Honors the ``enable_audit`` governance toggle.
+    """
+    if not settings.governance.enable_audit:
+        return
+    from domain.observability import get_correlation_id
+
+    build_audit_sink(settings).record(
+        build_audit_record(
+            action=AuditAction.ACCESS_DENIED,
+            result=AuditResult.DENIED,
+            actor=actor or "unknown",
+            tenant_id=tenant_id,
+            execution_id=f"denied-{uuid.uuid4().hex[:12]}",
+            correlation_id=get_correlation_id(),
+            policy_version=settings.governance.policy_version,
+            detail={"reason": reason},
+        )
+    )
 
 
 def build_masker(settings: EkreSettings) -> Masker:
@@ -401,5 +450,6 @@ __all__ = [
     "build_tenant_limiter",
     "build_tracing_callbacks",
     "configure_observability",
+    "record_access_denied",
     "resolve_embedding_profile",
 ]

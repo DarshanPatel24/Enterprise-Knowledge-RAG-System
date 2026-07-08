@@ -7,17 +7,19 @@ from collections.abc import Awaitable, Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from domain.observability.context import (
     set_correlation_id,
     set_query_id,
     set_tenant_id,
 )
+from domain.resilience import TenantConcurrencyLimiter
 
 CORRELATION_HEADER = "X-Correlation-ID"
 TENANT_HEADER = "X-Tenant-ID"
 QUERY_HEADER = "X-Query-ID"
+_QUOTA_SCOPED_PREFIX = "/v1/query"
 
 
 class CorrelationMiddleware(BaseHTTPMiddleware):
@@ -47,3 +49,33 @@ class CorrelationMiddleware(BaseHTTPMiddleware):
         response.headers[CORRELATION_HEADER] = correlation_id
         response.headers[QUERY_HEADER] = query_id
         return response
+
+
+class TenantQuotaMiddleware(BaseHTTPMiddleware):
+    """Enforce a per-tenant concurrency ceiling on retrieval requests.
+
+    Applies only to the retrieval endpoints (``/v1/query``); health, readiness,
+    and configuration endpoints are never throttled. A tenant that exceeds its
+    ceiling receives ``429 Too Many Requests`` so no single tenant can exhaust
+    shared retrieval capacity. The limiter is read from application state.
+    """
+
+    def __init__(self, app: object, limiter: TenantConcurrencyLimiter) -> None:
+        super().__init__(app)  # type: ignore[arg-type]
+        self._limiter = limiter
+
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        tenant_id = request.headers.get(TENANT_HEADER)
+        if not request.url.path.startswith(_QUOTA_SCOPED_PREFIX) or not tenant_id:
+            return await call_next(request)
+        if not self._limiter.acquire(tenant_id):
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "tenant concurrency limit exceeded"},
+            )
+        try:
+            return await call_next(request)
+        finally:
+            self._limiter.release(tenant_id)

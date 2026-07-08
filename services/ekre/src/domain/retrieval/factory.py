@@ -18,6 +18,7 @@ def build_worker_registry(
     *,
     collection: str,
     require_security_context: bool = True,
+    require_tenant_scope: bool = True,
 ) -> WorkerRegistry:
     """Register vector, keyword, and metadata workers for ``connector``."""
     registry = WorkerRegistry()
@@ -27,6 +28,7 @@ def build_worker_registry(
             adapter,
             collection=collection,
             require_security_context=require_security_context,
+            require_tenant_scope=require_tenant_scope,
         )
     )
     registry.register(
@@ -34,6 +36,7 @@ def build_worker_registry(
             connector,
             collection=collection,
             require_security_context=require_security_context,
+            require_tenant_scope=require_tenant_scope,
         )
     )
     registry.register(
@@ -41,6 +44,7 @@ def build_worker_registry(
             connector,
             collection=collection,
             require_security_context=require_security_context,
+            require_tenant_scope=require_tenant_scope,
         )
     )
     return registry

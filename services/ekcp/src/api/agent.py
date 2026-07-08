@@ -29,9 +29,9 @@ class ExecuteAgentRequest(BaseModel):
     """Request body to execute an agent for a capability."""
 
     security_context: SecurityContextPayload
-    task_description: str = Field(min_length=1)
+    task_description: str = Field(min_length=1, max_length=16000)
     capability: str
-    prompt_text: str | None = None
+    prompt_text: str | None = Field(default=None, max_length=200000)
     granted_permissions: list[str] = Field(default_factory=list)
     roles: list[str] = Field(default_factory=list)
 
@@ -61,7 +61,7 @@ class PlanRequest(BaseModel):
     """Request body to plan an objective."""
 
     security_context: SecurityContextPayload
-    objective: str = Field(min_length=1)
+    objective: str = Field(min_length=1, max_length=16000)
 
 
 class PlanTaskResponse(BaseModel):

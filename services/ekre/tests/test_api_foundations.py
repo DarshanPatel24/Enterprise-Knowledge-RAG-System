@@ -42,6 +42,19 @@ async def test_retrieval_config_requires_tenant(hermetic_settings: EkreSettings)
     assert response.status_code == 400
 
 
+async def test_retrieval_config_rejects_disallowed_collection(
+    hermetic_settings: EkreSettings,
+) -> None:
+    async with _client(hermetic_settings) as client:
+        response = await client.get(
+            "/v1/retrieval/config",
+            headers={"X-Tenant-ID": "tenant-a"},
+            params={"collection": "other_tenant_secrets"},
+        )
+    # Default allowlist permits only the default collection for client overrides.
+    assert response.status_code == 403
+
+
 async def test_retrieval_config_returns_profile(hermetic_settings: EkreSettings) -> None:
     async with _client(hermetic_settings) as client:
         response = await client.get(

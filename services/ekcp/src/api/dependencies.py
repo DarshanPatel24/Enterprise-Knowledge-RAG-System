@@ -16,8 +16,10 @@ from composition import (
     build_conversation_engine,
     build_conversation_manager,
     build_conversation_store,
+    build_event_bus,
     build_event_sink,
     build_governance_guard,
+    build_knowledge_retriever,
     build_memory_framework,
     build_model_gateway,
     build_planning_engine,
@@ -26,6 +28,7 @@ from composition import (
     build_session_manager,
     build_session_store,
     build_tool_executor,
+    build_workflow_orchestrator,
 )
 from config.settings import EkcpSettings, get_settings
 from domain.agents import (
@@ -45,12 +48,14 @@ from domain.governance import (
     Role,
     parse_clearance,
 )
+from domain.knowledge import KnowledgeRetriever
 from domain.memory import MemoryFramework
 from domain.planning import PlanningEngine
 from domain.prompt import PromptOrchestrator
 from domain.security import SecurityContextValidator
 from domain.session import SessionManager
 from domain.tools import ToolExecutor
+from domain.workflow import EventBus, WorkflowOrchestrator
 
 
 def get_app_settings() -> EkcpSettings:
@@ -87,6 +92,9 @@ class AppResources:
     planning_engine: PlanningEngine
     governance_guard: GovernanceGuard
     governance_policy: GovernancePolicy
+    knowledge_retriever: KnowledgeRetriever
+    workflow_orchestrator: WorkflowOrchestrator
+    event_bus: EventBus
 
 
 def build_resources(settings: EkcpSettings) -> AppResources:
@@ -94,6 +102,7 @@ def build_resources(settings: EkcpSettings) -> AppResources:
     conversation_store = build_conversation_store(settings)
     session_store = build_session_store(settings)
     event_sink = build_event_sink(settings)
+    event_bus = build_event_bus(settings)
     return AppResources(
         settings=settings,
         security_validator=build_security_validator(settings),
@@ -117,6 +126,9 @@ def build_resources(settings: EkcpSettings) -> AppResources:
         planning_engine=build_planning_engine(settings),
         governance_guard=build_governance_guard(settings),
         governance_policy=GovernancePolicy.from_settings(settings.governance),  # type: ignore[arg-type]
+        knowledge_retriever=build_knowledge_retriever(settings),
+        workflow_orchestrator=build_workflow_orchestrator(settings, event_bus=event_bus),
+        event_bus=event_bus,
     )
 
 
@@ -159,9 +171,15 @@ def build_principal(
 ) -> Principal:
     """Build a governance principal from request identity and role assignment.
 
-    Roles default to the configured default role. An unknown role or clearance
-    is rejected with a 422 so governance never runs on an invalid principal.
+    Roles default to the configured default role. When
+    ``security.trust_request_roles`` is false, client-supplied roles are ignored
+    entirely and only the configured default role applies, so a caller can never
+    self-elevate by asserting roles in the request body. An unknown role or
+    clearance is rejected with a 422 so governance never runs on an invalid
+    principal.
     """
+    if not resources.settings.security.trust_request_roles:
+        roles = None
     try:
         resolved_roles = (
             frozenset(Role(role) for role in roles)

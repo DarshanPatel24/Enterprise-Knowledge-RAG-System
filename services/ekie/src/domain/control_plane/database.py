@@ -48,10 +48,10 @@ class ControlPlaneDatabase:
 
         # M-002: ingestion_jobs — durable async ingestion queue. Additive new
         # table; checkfirst makes this idempotent across SQL Server and SQLite.
-        IngestionJob.__table__.create(bind=self._engine, checkfirst=True)
+        IngestionJob.__table__.create(bind=self._engine, checkfirst=True)  # type: ignore[attr-defined]
 
         # M-003: ingestion_sources — shared source-byte handoff for async jobs.
-        IngestionSource.__table__.create(bind=self._engine, checkfirst=True)
+        IngestionSource.__table__.create(bind=self._engine, checkfirst=True)  # type: ignore[attr-defined]
 
         # M-001: assets.stage_metrics — per-stage processing metrics (JSON text).
         try:

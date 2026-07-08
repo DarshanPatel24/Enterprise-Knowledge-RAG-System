@@ -9,8 +9,8 @@ from api.dependencies import Resources, TenantId, build_principal
 from domain.governance import (
     AccessRequest,
     GovernanceError,
-    InMemoryAuditSink,
     Permission,
+    QueryableAuditSink,
     parse_clearance,
 )
 from domain.observability import get_logger
@@ -128,9 +128,9 @@ async def audit_history(
     tenant_id: TenantId,
     resources: Resources,
 ) -> AuditHistoryResponse:
-    """Return the audit trail for the tenant (in-memory sink only)."""
+    """Return the audit trail for the tenant (queryable sinks only)."""
     sink = resources.governance_guard.audit_sink
-    if not isinstance(sink, InMemoryAuditSink):
+    if not isinstance(sink, QueryableAuditSink):
         return AuditHistoryResponse(records=[], total=0)
     records = sink.history(tenant_id=tenant_id)
     return AuditHistoryResponse(

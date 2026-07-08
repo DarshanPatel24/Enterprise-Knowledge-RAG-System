@@ -31,6 +31,17 @@ def test_masking_disabled_is_noop() -> None:
     assert count == 0
 
 
+def test_masks_luhn_valid_card_only() -> None:
+    # Isolate the credit-card matcher (the phone matcher can also match digit runs).
+    masker = Masker(MaskingConfig(email=False, ssn=False, phone=False))
+    # 4242 4242 4242 4242 is Luhn-valid; the 16-digit sequence below is not.
+    masked, count = masker.mask_text("card 4242 4242 4242 4242 not 1234 5678 9012 3456")
+    assert "[REDACTED-CARD]" in masked
+    assert "4242 4242 4242 4242" not in masked
+    assert "1234 5678 9012 3456" in masked
+    assert count == 1
+
+
 def test_mask_package_preserves_citation() -> None:
     package = RetrievalContextPackage(
         query="q",

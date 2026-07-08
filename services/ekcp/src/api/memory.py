@@ -35,7 +35,7 @@ class StoreMemoryRequest(BaseModel):
     """Request body to store a memory item."""
 
     security_context: SecurityContextPayload
-    content: str = Field(min_length=1)
+    content: str = Field(min_length=1, max_length=16000)
     memory_type: MemoryType = MemoryType.FACT
     scope: MemoryScope = MemoryScope.CONVERSATION
     validation_method: ValidationMethod = ValidationMethod.USER_CONFIRMED
@@ -157,9 +157,15 @@ async def store_memory(
     _authorize(
         resources, request.security_context, tenant_id, Permission.WRITE_MEMORY, "memory"
     )
+    content, _ = resources.governance_guard.sanitize_input(
+        request.content,
+        actor=request.security_context.user_id,
+        tenant_id=tenant_id,
+        resource="memory",
+    )
     item = resources.memory_framework.remember(
         tenant_id=tenant_id,
-        content=request.content,
+        content=content,
         memory_type=request.memory_type,
         scope=request.scope,
         validation_method=request.validation_method,

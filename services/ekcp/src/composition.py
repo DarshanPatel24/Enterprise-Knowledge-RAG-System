@@ -46,6 +46,8 @@ from domain.gateway import (
     provider_registry_from_settings,
 )
 from domain.governance import (
+    AuditSink,
+    FileAuditSink,
     GovernanceGuard,
     GovernancePolicy,
     InMemoryAuditSink,
@@ -58,6 +60,13 @@ from domain.governance import (
     install_log_redaction,
 )
 from domain.intent import IntentClassifier, IntentGate, IntentPolicy
+from domain.knowledge import (
+    CircuitBreaker,
+    EkreHttpKnowledgeClient,
+    KnowledgeClient,
+    KnowledgePolicy,
+    KnowledgeRetriever,
+)
 from domain.memory import (
     InMemoryMemoryStore,
     MemoryFramework,
@@ -71,6 +80,19 @@ from domain.prompt import (
     PromptPolicy,
     default_prompt_registry,
 )
+from domain.readiness import (
+    HandoffKpis,
+    MasterHandoffPackage,
+    ReadinessReport,
+    TenantConcurrencyLimiter,
+    assess_deployment_readiness,
+    assess_handoff_readiness,
+    assess_multi_tenant_isolation,
+    default_handoff_kpis,
+)
+from domain.readiness import (
+    build_master_handoff_package as _assemble_handoff_package,
+)
 from domain.security import SecurityContextValidator
 from domain.session import InMemorySessionStore, SessionManager
 from domain.tools import (
@@ -78,6 +100,15 @@ from domain.tools import (
     ToolPolicy,
     ToolRegistry,
     default_tool_registry,
+)
+from domain.workflow import (
+    EventBus,
+    InMemoryEventBus,
+    InMemoryWorkflowStore,
+    LoggingEventBus,
+    WorkflowOrchestrator,
+    WorkflowPolicy,
+    WorkflowStore,
 )
 
 _LANGCHAIN_MODEL_ID = "ekcp-chat"
@@ -92,21 +123,29 @@ __all__ = [
     "build_conversation_engine",
     "build_conversation_manager",
     "build_conversation_store",
+    "build_deployment_readiness",
+    "build_event_bus",
     "build_event_sink",
     "build_governance_guard",
+    "build_handoff_readiness",
     "build_intent_gate",
+    "build_knowledge_retriever",
+    "build_master_handoff_package",
     "build_memory_framework",
     "build_memory_store",
     "build_model_gateway",
+    "build_multi_tenant_readiness",
     "build_planning_engine",
     "build_prompt_orchestrator",
     "build_secret_registry",
     "build_security_validator",
     "build_session_manager",
     "build_session_store",
+    "build_tenant_limiter",
     "build_tool_executor",
     "build_tool_registry",
     "build_tracing_callbacks",
+    "build_workflow_orchestrator",
     "configure_observability",
     "configure_security",
 ]
@@ -280,7 +319,13 @@ def build_governance_guard(settings: EkcpSettings) -> GovernanceGuard:
         enforce_authorization=policy.enforce_authorization,
         policy_version=policy.policy_version,
     )
-    sink = LoggingAuditSink() if policy.audit_sink == "logging" else InMemoryAuditSink()
+    sink: AuditSink
+    if policy.audit_sink == "logging":
+        sink = LoggingAuditSink()
+    elif policy.audit_sink == "file":
+        sink = FileAuditSink(policy.audit_file_path)
+    else:
+        sink = InMemoryAuditSink()
     masker = Masker(
         MaskingConfig(
             enabled=policy.enable_masking,
@@ -304,6 +349,7 @@ def build_secret_registry(settings: EkcpSettings) -> SecretRegistry:
         settings.observability.langfuse_secret_key,
         settings.redis.password,
         settings.control_plane.url,
+        settings.security.gateway_auth_token,
     ):
         registry.register(secret)
     return registry
@@ -314,6 +360,84 @@ def configure_security(settings: EkcpSettings) -> SecretRegistry:
     registry = build_secret_registry(settings)
     install_log_redaction(registry)
     return registry
+
+
+def build_knowledge_retriever(settings: EkcpSettings) -> KnowledgeRetriever:
+    """Build the resilient EKRE knowledge retriever from settings."""
+    policy = KnowledgePolicy.from_settings(settings.knowledge)  # type: ignore[arg-type]
+    client: KnowledgeClient | None = None
+    if policy.enabled:
+        client = EkreHttpKnowledgeClient(
+            base_url=policy.base_url, timeout_seconds=policy.timeout_seconds
+        )
+    breaker = CircuitBreaker(
+        failure_threshold=policy.circuit_breaker_threshold,
+        reset_timeout_seconds=policy.circuit_breaker_reset_seconds,
+    )
+    return KnowledgeRetriever(policy, client=client, circuit_breaker=breaker)
+
+
+def build_event_bus(settings: EkcpSettings) -> EventBus:
+    """Build the platform event bus from settings."""
+    if settings.workflow.event_bus == "logging":
+        return LoggingEventBus()
+    return InMemoryEventBus()
+
+
+def build_workflow_store(settings: EkcpSettings) -> WorkflowStore:
+    """Build the workflow store (in-memory offline default)."""
+    _ = settings.control_plane  # driver=mssql wires a durable workflow store later
+    return InMemoryWorkflowStore()
+
+
+def build_workflow_orchestrator(
+    settings: EkcpSettings,
+    *,
+    store: WorkflowStore | None = None,
+    event_bus: EventBus | None = None,
+) -> WorkflowOrchestrator:
+    """Build the workflow orchestrator from settings."""
+    policy = WorkflowPolicy.from_settings(settings.workflow)  # type: ignore[arg-type]
+    return WorkflowOrchestrator(
+        store or build_workflow_store(settings),
+        build_planning_engine(settings),
+        event_bus or build_event_bus(settings),
+        source_service=policy.source_service,
+        enable_events=policy.enable_events,
+    )
+
+
+def build_deployment_readiness(settings: EkcpSettings) -> ReadinessReport:
+    """Build the deployment readiness assessment from settings."""
+    return assess_deployment_readiness(settings.deployment)
+
+
+def build_multi_tenant_readiness(settings: EkcpSettings) -> ReadinessReport:
+    """Build the multi-tenant isolation readiness assessment from settings."""
+    return assess_multi_tenant_isolation(settings.deployment)
+
+
+def build_tenant_limiter(settings: EkcpSettings) -> TenantConcurrencyLimiter:
+    """Build the per-tenant concurrency limiter from settings."""
+    return TenantConcurrencyLimiter(settings.deployment.tenant_max_concurrent)
+
+
+def build_handoff_readiness(
+    settings: EkcpSettings, kpis: HandoffKpis | None = None
+) -> ReadinessReport:
+    """Build the master handoff KPI readiness assessment from settings."""
+    return assess_handoff_readiness(
+        kpis or default_handoff_kpis(), targets=settings.deployment
+    )
+
+
+def build_master_handoff_package(
+    settings: EkcpSettings, kpis: HandoffKpis | None = None
+) -> MasterHandoffPackage:
+    """Build the master integration handoff package from settings."""
+    resolved = kpis or default_handoff_kpis()
+    report = assess_handoff_readiness(resolved, targets=settings.deployment)
+    return _assemble_handoff_package(resolved, report)
 
 
 def _build_model_registry(settings: EkcpSettings) -> ModelRegistry:

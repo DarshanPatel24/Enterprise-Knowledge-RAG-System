@@ -13,6 +13,7 @@ class SecurityErrorType(StrEnum):
     INVALID_USER = "invalid_user"
     UNKNOWN_CLEARANCE = "unknown_clearance"
     TENANT_MISMATCH = "tenant_mismatch"
+    INVALID_SIGNATURE = "invalid_signature"
 
 
 class SecurityError(Exception):

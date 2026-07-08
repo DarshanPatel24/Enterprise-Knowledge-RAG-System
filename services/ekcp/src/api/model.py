@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.dependencies import Resources, TenantId, build_principal
 from domain.context import ContextError, ContextErrorType
@@ -34,7 +34,7 @@ class InvokeModelRequest(BaseModel):
     """
 
     security_context: SecurityContextPayload
-    prompt_text: str | None = None
+    prompt_text: str | None = Field(default=None, max_length=200000)
     context_id: str | None = None
     template_id: str | None = None
     model_id: str | None = None

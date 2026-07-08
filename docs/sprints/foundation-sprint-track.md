@@ -28,6 +28,8 @@ This track operationalizes the Global Enterprise Integration Contracts and Imple
 
 ## Sprint F1: Contracts and Governance Baseline
 
+> Status: Approved (contracts package: 5 pytest green, ruff clean; cross-engine usage validated by Master Integration M1 — no forks, EKRE↔EKCP compatibility). The canonical contracts live in [../../packages/contracts](../../packages/contracts) and are the single authoritative definition consumed by EKIE, EKRE, and EKCP.
+
 ### Sprint Objective
 Lock contract and governance baselines so engine teams can execute with controlled dependencies and blocking quality gates.
 
@@ -74,6 +76,13 @@ All engines start from one canonical contract and policy baseline, reducing inte
 2. Signed compatibility and deprecation policy.
 3. Signed governance workflow and quality gate blueprint.
 
+### Delivery Evidence
+1. F1-S1 Approved: `packages/contracts/src/contracts/` uses a domain-per-module taxonomy (`security_context`, `retrieval`, `execution_context`, `events`, `vector_schema`, `enums`) with one canonical package and a shared `VersionedContract` base. No engine forks a contract (verified automatically by the Master Integration M1 compatibility matrix).
+2. F1-S2 Approved: the five mandated cross-engine schemas are implemented and pinned at `CONTRACTS_VERSION = 1.0.0` — `VectorCollectionRecord` (document_id, chunk_id, tenant_id, classification_clearance, distance_metric, source_path, embedding_model, embedding_version), `SecurityContext` (user_id, tenant_id, classification_clearance), `RetrievalContextPackage` + `Citation`/`RetrievalCandidate` (source_path, document_id), `ExecutionContext` (request_id, correlation_id, session_id, timestamp), and `EnterpriseDataPurgeEvent`. Contracts package: 5 pytest green, ruff clean.
+3. F1-S3 Approved: `contracts/version.py` defines `CONTRACTS_VERSION` and `MIN_SUPPORTED_CONTRACTS_VERSION` (both 1.0.0), and every payload carries a defaulted `schema_version` via `VersionedContract`, providing the versioning and backward-compatibility baseline.
+4. F1-S4 Approved: the governance guardrails are codified in `.github/copilot-instructions.md` and the engine instruction files (contracts must live in `packages/contracts`; no local forks; Pydantic v2). The M1 matrix operationalizes the no-fork check as an automated gate.
+5. F1-S5 Approved: the blocking quality gate is `ruff` + `mypy --strict` + `pytest` green, enforced per engine and for the integration suite, with contracts consumed via a single pinned package.
+
 ### Dependencies
 1. Master architecture baseline must be approved.
 
@@ -84,6 +93,8 @@ All engines start from one canonical contract and policy baseline, reducing inte
 ### Exit Gate
 1. Foundation gate accepted by Product, Architecture, and Quality.
 2. Engine sprint tracks authorized to begin in sequence.
+
+> Foundation track complete: F1 approved. Canonical contracts frozen at v1.0.0 in `packages/contracts` and validated in production use across EKIE, EKRE, and EKCP plus the Master Integration compatibility matrix.
 
 ## Risk Register (Track Level)
 1. Risk: unclear contract ownership causes decision delays.

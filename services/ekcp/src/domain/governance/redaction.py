@@ -74,9 +74,18 @@ class RedactionFilter(logging.Filter):
 
 
 def install_log_redaction(registry: SecretRegistry) -> RedactionFilter:
-    """Attach a :class:`RedactionFilter` to every root logger handler."""
+    """Attach a :class:`RedactionFilter` to root and framework logger handlers.
+
+    The filter is added to the root handlers and to the uvicorn logger handlers
+    (which do not propagate to root) so secrets are scrubbed from application,
+    access, and server logs alike. Loggers whose handlers are configured later
+    are covered on the next call.
+    """
     log_filter = RedactionFilter(registry)
-    root = logging.getLogger()
-    for handler in root.handlers:
-        handler.addFilter(log_filter)
+    logger_names = ("", "uvicorn", "uvicorn.error", "uvicorn.access", "ekcp")
+    for name in logger_names:
+        target = logging.getLogger(name)
+        for handler in target.handlers:
+            if not any(isinstance(f, RedactionFilter) for f in handler.filters):
+                handler.addFilter(log_filter)
     return log_filter

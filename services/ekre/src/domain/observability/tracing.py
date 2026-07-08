@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any, Protocol
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from pydantic import SecretStr
+
 
 class TracingSettingsLike(Protocol):
     """Structural view of the observability settings needed for tracing."""
@@ -19,7 +21,7 @@ class TracingSettingsLike(Protocol):
     langfuse_enabled: bool
     langfuse_host: str
     langfuse_public_key: str
-    langfuse_secret_key: str
+    langfuse_secret_key: SecretStr
 
 
 def build_langfuse_callbacks(settings: TracingSettingsLike) -> list[Any]:
@@ -37,7 +39,7 @@ def build_langfuse_callbacks(settings: TracingSettingsLike) -> list[Any]:
     handler = CallbackHandler(
         host=settings.langfuse_host,
         public_key=settings.langfuse_public_key or None,
-        secret_key=settings.langfuse_secret_key or None,
+        secret_key=settings.langfuse_secret_key.get_secret_value() or None,
     )
     callbacks: Sequence[Any] = [handler]
     return list(callbacks)

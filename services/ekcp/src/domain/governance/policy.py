@@ -15,11 +15,13 @@ class GovernanceSettingsLike(Protocol):
     enforce_authorization: bool
     enable_audit: bool
     audit_sink: str
+    audit_file_path: str
     enable_masking: bool
     mask_email: bool
     mask_phone: bool
     mask_ssn: bool
     mask_credit_card: bool
+    mask_inbound: bool
     allow_classification_downgrade: bool
     policy_version: str
     default_role: str
@@ -33,11 +35,13 @@ class GovernancePolicy(BaseModel):
     enforce_authorization: bool = True
     enable_audit: bool = True
     audit_sink: str = "memory"
+    audit_file_path: str = "./storage/audit/ekcp_audit.jsonl"
     enable_masking: bool = True
     mask_email: bool = True
     mask_phone: bool = True
     mask_ssn: bool = True
     mask_credit_card: bool = True
+    mask_inbound: bool = True
     allow_classification_downgrade: bool = False
     policy_version: str = "v1"
     default_role: Role = Role.POWER_USER
@@ -49,11 +53,13 @@ class GovernancePolicy(BaseModel):
             enforce_authorization=settings.enforce_authorization,
             enable_audit=settings.enable_audit,
             audit_sink=settings.audit_sink,
+            audit_file_path=settings.audit_file_path,
             enable_masking=settings.enable_masking,
             mask_email=settings.mask_email,
             mask_phone=settings.mask_phone,
             mask_ssn=settings.mask_ssn,
             mask_credit_card=settings.mask_credit_card,
+            mask_inbound=settings.mask_inbound,
             allow_classification_downgrade=settings.allow_classification_downgrade,
             policy_version=settings.policy_version,
             default_role=Role(settings.default_role),
