@@ -234,6 +234,7 @@ class QdrantRetrievalConnector(RepositoryConnector):
             classification_clearance=str(metadata.get(_CLEARANCE_FIELD, "public")),
             repository_id=str(metadata.get("repository_id", "")),
             section_id=_optional_str(metadata.get("section_id")),
+            section_title=_optional_str(metadata.get("section_title")),
             language=_optional_str(metadata.get("language")),
         )
 

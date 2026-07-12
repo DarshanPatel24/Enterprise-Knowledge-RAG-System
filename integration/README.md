@@ -8,10 +8,18 @@ interpreter), preserving the decoupling mandated by the architecture.
 
 ## Layout
 - `harness/servers.py` — subprocess launcher (own `PYTHONPATH`/cwd per engine), health-gated readiness wait, teardown.
-- `harness/clients.py` — httpx client injecting `X-Tenant-ID` / `X-Correlation-ID`.
+- `harness/clients.py` — httpx client injecting `X-Tenant-ID` / `X-Correlation-ID` (and Bearer auth when required).
+- `harness/stub_ekre.py` — configurable EKRE stub for resilience/backpressure tests.
+- `harness/purge.py` — DSAR purge orchestrator fanning `EnterpriseDataPurgeEvent` to EKCP + EKIE.
+- `harness/readiness.py` — aggregates per-engine readiness into an evidence report.
 - `matrix/contract_matrix.py` — producer/consumer compatibility checks against `packages/contracts`.
-- `tests/` — the sprint suites (M1 baseline first).
-- `evidence/` — generated evidence artifacts.
+- `release/readiness_package.py` — release readiness + Go/No-Go decision record builder.
+- `tests/` — the sprint suites (M1 contracts/interfaces, M2 resilience/purge/readiness/web-ui E2E, M3 release).
+- `evidence/` — generated evidence artifacts (contract matrix, readiness, go/no-go).
+
+## Status
+M1–M3 complete and approved; release decision is **GO**. See
+[master-integration-sprint-track.md](../docs/sprints/master-integration-sprint-track.md).
 
 ## Running (from `integration/`)
 ```

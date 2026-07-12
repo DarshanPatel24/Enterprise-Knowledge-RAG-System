@@ -125,9 +125,15 @@ A safe, mode-based PowerShell script is provided at the repo root: [`cleanup.ps1
 
 # Also remove Tier 2 (node_modules, .venv, egg-info) to fully reset the workspace:
 .\cleanup.ps1 -Apply -Deep
+
+# Preview a destructive local DATA reset (wipes Docker volumes; model weights kept):
+.\cleanup.ps1 -ResetData
+
+# Execute the data reset (prompts for a typed RESET confirmation):
+.\cleanup.ps1 -Apply -ResetData
 ```
 
-The script **never** touches Tier 3 (data/models) or Tier 4 (notebooks/demos/reviews). After a `-Deep` clean you must reinstall dependencies (`pip install …`, `npm ci`) before running the system again.
+The script **never** touches Tier 3 (data/models) or Tier 4 (notebooks/demos/reviews) during Tier 1/Tier 2 cleanup. After a `-Deep` clean you must reinstall dependencies (`pip install …`, `npm ci`) before running the system again. The optional `-ResetData` tier runs `docker compose -f docker-compose.local.yml down -v` to wipe Qdrant/MinIO/Redis/Langfuse volumes for a clean-slate re-ingest; downloaded model weights are preserved and the SQL Server control plane is not auto-dropped.
 
 ### C.3 What to keep
 

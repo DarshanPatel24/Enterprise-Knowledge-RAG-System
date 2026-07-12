@@ -149,7 +149,7 @@ def build_cross_encoder(
 
     A cross-encoder scores query/document relevance directly (no chat
     generation), the purpose-built way to rerank candidates. The model (for
-    example ``Qwen/Qwen3-VL-Reranker-2B``) and device/precision come from
+    example ``BAAI/bge-reranker-base``) and device/precision come from
     settings, so no runtime is hardcoded. The import is lazy so the offline path
     never loads the model.
     """

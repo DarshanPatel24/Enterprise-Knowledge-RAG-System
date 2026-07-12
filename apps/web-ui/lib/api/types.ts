@@ -58,6 +58,8 @@ export type Citation = {
   documentId: string;
   chunkId: string;
   title: string;
+  sectionTitle: string;
+  snippet: string;
   confidence: number;
   clearance: ClassificationClearance;
   explanation: string;
@@ -72,6 +74,7 @@ export type Citation = {
 export type SseEvent =
   | { type: "token"; text: string }
   | { type: "citation"; citation: Citation }
+  | { type: "stage"; key: string; label: string }
   | { type: "done"; done: StreamDone }
   | { type: "error"; errorType: string; message: string };
 
@@ -99,4 +102,6 @@ export type ChatMessage = {
   content: string;
   status: ChatMessageStatus;
   citations: Citation[];
+  /** Current pipeline stage label shown while the assistant is thinking. */
+  stage?: string;
 };

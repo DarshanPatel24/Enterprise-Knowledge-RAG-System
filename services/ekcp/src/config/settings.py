@@ -242,6 +242,11 @@ class ModelGatewaySettings(BaseSettings):
     model_name: str = ""
     base_url: str = "http://localhost:11434"
     temperature: float = Field(default=0.0, ge=0.0)
+    # Nucleus (top_p) and top_k sampling. Only applied when temperature > 0
+    # (sampling on). top_p=1.0 and top_k=0 mean "no restriction"; lower values
+    # keep generation focused on the most probable, relevant tokens.
+    top_p: float = Field(default=1.0, ge=0.0, le=1.0)
+    top_k: int = Field(default=0, ge=0)
     device: str = ""
     torch_dtype: str = ""
     context_window: int = Field(default=8192, gt=0)
@@ -363,7 +368,12 @@ class KnowledgeSettings(BaseSettings):
 
     enabled: bool = False
     base_url: str = "http://localhost:8002"
-    timeout_seconds: float = Field(default=10.0, gt=0.0)
+    # Per-request HTTP timeout for one EKRE retrieval. Sized to cover a full live
+    # EKRE request (query understanding + execution + rerank + assembly), whose
+    # per-worker execution budget alone is EKRE_EXECUTION__DEFAULT_TASK_TIMEOUT_MS.
+    # Keep it above EKRE's task budget so a slow-but-healthy retrieval is not cut
+    # off; the circuit breaker still sheds load during a sustained EKRE outage.
+    timeout_seconds: float = Field(default=500.0, gt=0.0)
     max_retries: int = Field(default=3, ge=0)
     circuit_breaker_threshold: int = Field(default=5, gt=0)
     circuit_breaker_reset_seconds: float = Field(default=60.0, gt=0.0)

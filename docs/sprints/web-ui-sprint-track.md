@@ -3,10 +3,10 @@
 > Track Owner: Web UI Lead
 > Start Condition: EKCP-S0 exit gate passed (SSE streaming chat API contract approved)
 > Objective: Deliver a self-hosted, local-first enterprise web chat UI that streams responses, renders citations, and manages conversation sessions, consuming the EKCP API gateway exclusively.
-> Source Of Truth: [../master-architecture.md](../master-architecture.md) Section 13
+> Source Of Truth: [../master-architecture.md](../master-architecture.md) Section 11
 
 ## Alignment To Architecture
-This track implements the Web UI Layer defined in master-architecture.md Section 13. The UI is a consuming REST and SSE client of the EKCP API gateway only. It has no direct access to any engine database, vector store, cache, or internal service. All enterprise data flows through the EKCP boundary. No cloud dependencies. No external analytics or telemetry.
+This track implements the Web UI Layer defined in master-architecture.md Section 11. The UI is a consuming REST and SSE client of the EKCP API gateway only. It has no direct access to any engine database, vector store, cache, or internal service. All enterprise data flows through the EKCP boundary. No cloud dependencies. No external analytics or telemetry.
 
 Build order follows the delivery dependency chain: scaffold and API client first, then streaming chat core, then citation and context display, then session management.
 

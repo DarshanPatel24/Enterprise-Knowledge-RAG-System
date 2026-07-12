@@ -2,7 +2,7 @@
 
 Feature-flagged and off by default. The deterministic evidence-weighted ordering
 is always the default and the fallback. When enabled, a purpose-built reranker
-model (for example ``Qwen/Qwen3-VL-Reranker-2B``) scores each (query, passage)
+model (for example ``BAAI/bge-reranker-base``) scores each (query, passage)
 pair and reorders the top candidates; the model performs no chat generation
 (that is EKCP). Any failure degrades gracefully to the deterministic order, so
 ranking stays reproducible. All model parameters come from settings.
@@ -60,7 +60,7 @@ class IdentityReranker(Reranker):
 class CrossEncoderReranker(Reranker):
     """Cross-encoder reranker that scores query/document relevance.
 
-    Loads a purpose-built reranker model (for example ``Qwen/Qwen3-VL-Reranker-2B``)
+    Loads a purpose-built reranker model (for example ``BAAI/bge-reranker-base``)
     lazily, scores each (query, passage) pair, and reorders by score. The model
     is loaded once and cached. Any failure (model unavailable, scoring error)
     degrades gracefully to the deterministic input order.

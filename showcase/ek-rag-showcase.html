@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EK-RAG — Enterprise Knowledge RAG System</title>
+<style>
+  /* ============================================================
+     OCTAVE BRAND SYSTEM
+     Black-dominant. White text. Grays for hierarchy.
+     One accent per slide (Act rhythm). Accents only for eyebrows,
+     section numbers, one highlighted keyword, thin rules, data-viz.
+     ============================================================ */
+  :root{
+    --oct-black:#1A1A1F;
+    --gray5:#3E4047;
+    --gray4:#6F7480;
+    --gray3:#B2B8C4;
+    --gray2:#CBD0D8;
+    --gray1:#E7EBF2;
+    --white:#FFFFFF;
+    --blue:#0000FF;
+    --aqua:#00FFFF;
+    --green:#4FFF00;
+    --pink:#FF00C7;
+    --yellow:#FFF500;
+    --orange:#F46600;
+    /* accent is set per-slide via [data-accent] */
+    --accent:var(--aqua);
+    --panel:#23232a;
+    --panel-2:#2c2c34;
+    --font:-apple-system,BlinkMacSystemFont,"Inter","Helvetica Neue",Arial,"Segoe UI",sans-serif;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--oct-black);
+    color:var(--white);
+    font-family:var(--font);
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+    letter-spacing:-0.01em;
+  }
+
+  /* Per-slide accent mapping */
+  .slide[data-accent="aqua"]  {--accent:var(--aqua)}
+  .slide[data-accent="green"] {--accent:var(--green)}
+  .slide[data-accent="yellow"]{--accent:var(--yellow)}
+  .slide[data-accent="orange"]{--accent:var(--orange)}
+  .slide[data-accent="pink"]  {--accent:var(--pink)}
+  .slide[data-accent="blue"]  {--accent:var(--blue)}
+
+  /* ---------- Deck & slide plumbing (fixed 16:9 stage, scaled to fit) ---------- */
+  .deck{position:fixed;top:50%;left:50%;width:1280px;height:720px;
+    transform:translate(-50%,-50%) scale(var(--scale,1));transform-origin:center center}
+  .slide{
+    position:absolute;inset:0;
+    display:none;
+    flex-direction:column;
+    justify-content:center;
+    padding:52px 92px;
+    opacity:0;
+    transition:opacity .4s ease;
+    overflow:hidden;
+  }
+  .slide.active{display:flex;opacity:1;z-index:2}
+  .slide.light{background:var(--gray1);color:var(--oct-black)}
+  .slide.light .sub,.slide.light .lead{color:var(--gray4)}
+
+  /* Decorative thin ring motif (brand nod), used sparingly */
+  .rings{position:absolute;right:-60px;top:-70px;width:520px;height:520px;pointer-events:none;opacity:.5}
+  .rings svg{width:100%;height:100%}
+
+  /* ---------- Typography ---------- */
+  .eyebrow{
+    text-transform:uppercase;
+    letter-spacing:.32em;
+    font-size:.72rem;
+    font-weight:700;
+    color:var(--accent);
+    margin-bottom:1.4rem;
+    display:flex;align-items:center;gap:.9rem;
+  }
+  .eyebrow .num{
+    font-size:.72rem;color:var(--gray4);letter-spacing:.15em;
+  }
+  h1{font-size:3.7rem;font-weight:800;line-height:1.03;letter-spacing:-0.03em}
+  h2{font-size:2.55rem;font-weight:800;line-height:1.07;letter-spacing:-0.03em;margin-bottom:1.05rem}
+  h3{font-size:1.15rem;font-weight:700;letter-spacing:-0.01em}
+  .kw{color:var(--accent)}
+  .lead{font-size:1.28rem;color:var(--gray2);max-width:46ch;line-height:1.5;margin-top:1.25rem}
+  .sub{color:var(--gray3)}
+  .thinrule{width:64px;height:3px;background:var(--accent);margin:1.6rem 0}
+  .mono{font-family:"SFMono-Regular",Consolas,"Roboto Mono",monospace}
+
+  /* "In plain English" callout */
+  .plain{
+    border-left:3px solid var(--accent);
+    background:rgba(255,255,255,.04);
+    padding:.9rem 1.15rem;border-radius:0 8px 8px 0;
+    margin-top:1.5rem;max-width:58ch;
+  }
+  .plain b{color:var(--accent);text-transform:uppercase;font-size:.68rem;letter-spacing:.18em;display:block;margin-bottom:.35rem}
+  .plain p{color:var(--gray2);font-size:1.02rem;line-height:1.5}
+
+  /* Tech detail band (hidden in Executive view) */
+  .tech{
+    background:var(--panel);
+    border:1px solid var(--gray5);
+    border-radius:10px;
+    padding:1.15rem 1.35rem;
+    margin-top:1.5rem;
+    max-width:70ch;
+  }
+  .tech .tag{
+    color:var(--gray4);text-transform:uppercase;letter-spacing:.2em;font-size:.64rem;font-weight:700;
+    display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;
+  }
+  .tech .tag::before{content:"";width:7px;height:7px;background:var(--accent);border-radius:50%}
+  .tech .mono,.tech li,.tech p{color:var(--gray2);font-size:.92rem;line-height:1.65}
+  .tech ul{list-style:none}
+  .tech li{padding-left:1.1rem;position:relative}
+  .tech li::before{content:"›";position:absolute;left:0;color:var(--accent)}
+  body.exec .tech{display:none}
+
+  /* ---------- Layout helpers ---------- */
+  .row{display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap}
+  .col{flex:1 1 0;min-width:280px}
+  .grid{display:grid;gap:1rem}
+  .grid.g3{grid-template-columns:repeat(3,1fr)}
+  .grid.g2{grid-template-columns:repeat(2,1fr)}
+  .grid.g5{grid-template-columns:repeat(5,1fr)}
+
+  .card{
+    background:var(--panel);border:1px solid var(--gray5);border-radius:12px;
+    padding:1.15rem 1.2rem;
+  }
+  .card .kicker{color:var(--accent);font-weight:800;font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;margin-bottom:.5rem}
+  .card h3{margin-bottom:.35rem}
+  .card p{color:var(--gray3);font-size:.9rem;line-height:1.5}
+  .card .role{color:var(--gray4);font-size:.78rem;font-style:italic;margin-bottom:.5rem}
+
+  /* Pipeline / node flow (data-viz — accents allowed) */
+  .flow{display:flex;align-items:stretch;gap:.5rem;flex-wrap:wrap;margin-top:1.6rem}
+  .node{
+    flex:1 1 0;min-width:130px;
+    background:var(--panel);border:1px solid var(--gray5);border-top:3px solid var(--nodeC,var(--accent));
+    border-radius:10px;padding:.85rem .9rem;
+  }
+  .node .n{font-weight:800;font-size:1rem}
+  .node .r{color:var(--gray4);font-size:.72rem;font-style:italic;margin:.15rem 0 .35rem}
+  .node .d{color:var(--gray3);font-size:.8rem;line-height:1.4}
+  .arrow{display:flex;align-items:center;color:var(--gray4);font-size:1.4rem;padding:0 .1rem}
+
+  /* Numbered "chapter" list (brand style) */
+  .chapters{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--gray5);border:1px solid var(--gray5);border-radius:12px;overflow:hidden;margin-top:1.4rem}
+  .chapter{background:var(--oct-black);padding:1.2rem 1.1rem;min-height:200px;display:flex;flex-direction:column}
+  .chapter .big{font-size:2.4rem;font-weight:800;color:var(--accent);line-height:1}
+  .chapter h3{margin:.5rem 0 .1rem}
+  .chapter .role{color:var(--gray4);font-size:.74rem;font-style:italic;margin-bottom:.5rem}
+  .chapter p{color:var(--gray3);font-size:.82rem;line-height:1.45}
+  .chapter .stack{margin-top:auto;color:var(--gray4);font-size:.7rem;letter-spacing:.02em;padding-top:.6rem}
+
+  /* Before / After */
+  .ba{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1.4rem}
+  .ba .box{border-radius:12px;padding:1.2rem 1.3rem}
+  .ba .before{background:var(--panel);border:1px solid var(--gray5)}
+  .ba .after{background:var(--panel-2);border:1px solid var(--accent)}
+  .ba h3{margin-bottom:.8rem;font-size:1rem;text-transform:uppercase;letter-spacing:.1em}
+  .ba .before h3{color:var(--gray4)}
+  .ba .after h3{color:var(--accent)}
+  .ba li{list-style:none;color:var(--gray2);font-size:.92rem;line-height:1.6;padding-left:1.4rem;position:relative}
+  .ba .before li::before{content:"✕";position:absolute;left:0;color:var(--gray4)}
+  .ba .after li::before{content:"✓";position:absolute;left:0;color:var(--accent)}
+
+  /* Stat row */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-top:1.5rem}
+  .stat{background:var(--panel);border:1px solid var(--gray5);border-radius:12px;padding:1.1rem 1.2rem}
+  .stat .v{font-size:2rem;font-weight:800;color:var(--accent);line-height:1}
+  .stat .l{color:var(--gray3);font-size:.82rem;margin-top:.4rem;line-height:1.4}
+
+  /* Badge chips (clearance legend / data-viz) */
+  .chips{display:flex;gap:.55rem;flex-wrap:wrap;margin-top:1rem}
+  .chip{font-size:.74rem;font-weight:700;padding:.28rem .7rem;border-radius:999px;color:var(--oct-black)}
+  .chip.pub{background:var(--green)} .chip.int{background:var(--aqua)}
+  .chip.con{background:var(--orange)} .chip.res{background:var(--pink)}
+
+  /* Feature list with accent ticks */
+  .feats{display:grid;grid-template-columns:1fr 1fr;gap:.6rem 2rem;margin-top:1.3rem}
+  .feats div{color:var(--gray2);font-size:.95rem;line-height:1.5;padding-left:1.5rem;position:relative}
+  .feats div::before{content:"◆";position:absolute;left:0;color:var(--accent);font-size:.7rem;top:.28rem}
+  .feats b{color:var(--white)}
+
+  /* Sequence / journey steps */
+  .steps{counter-reset:st;margin-top:1.3rem;display:grid;gap:.55rem;max-width:82ch}
+  .step{display:flex;gap:1rem;align-items:flex-start;background:var(--panel);border:1px solid var(--gray5);border-radius:10px;padding:.75rem 1rem}
+  .step .i{counter-increment:st;min-width:30px;height:30px;border-radius:50%;border:2px solid var(--accent);color:var(--accent);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:.85rem}
+  .step .i::before{content:counter(st)}
+  .step .t{color:var(--gray2);font-size:.94rem;line-height:1.45;padding-top:.25rem}
+  .step .t b{color:var(--white)}
+
+  /* Stack layers */
+  .layers{display:grid;gap:.6rem;margin-top:1.3rem}
+  .layer{background:var(--panel);border:1px solid var(--gray5);border-left:3px solid var(--accent);border-radius:8px;padding:.7rem 1rem;display:flex;gap:1rem;flex-wrap:wrap;align-items:baseline}
+  .layer .lb{min-width:150px;font-weight:800;font-size:.9rem}
+  .layer .lv{color:var(--gray3);font-size:.86rem;line-height:1.5}
+  .layer .lv .mono{color:var(--gray2)}
+
+  /* ---------- Chrome: progress, nav, counter, toggle ---------- */
+  .progress{position:fixed;top:0;left:0;height:3px;background:var(--accent);width:0;z-index:50;transition:width .3s ease}
+  .chrome{position:fixed;z-index:40;display:flex;align-items:center;gap:.5rem}
+  .topbar{top:1.1rem;right:1.4rem}
+  .btn{
+    background:transparent;border:1px solid var(--gray5);color:var(--gray2);
+    font-family:var(--font);font-size:.74rem;font-weight:600;letter-spacing:.02em;
+    padding:.45rem .8rem;border-radius:999px;cursor:pointer;transition:.2s;
+  }
+  .btn:hover{border-color:var(--accent);color:var(--white)}
+  .btn .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);margin-right:.5rem;vertical-align:middle}
+  .navbar{bottom:1.1rem;right:1.4rem}
+  .counter{bottom:1.35rem;left:1.4rem;color:var(--gray4);font-size:.8rem;letter-spacing:.08em;position:fixed;z-index:40}
+  .counter b{color:var(--white)}
+  .navbtn{width:38px;height:38px;border-radius:50%;border:1px solid var(--gray5);background:transparent;color:var(--gray2);cursor:pointer;font-size:1rem;transition:.2s}
+  .navbtn:hover{border-color:var(--accent);color:var(--white)}
+  .hint{position:fixed;bottom:1.15rem;left:50%;transform:translateX(-50%)}
+
+  /* Octave logo (white only; never recolored / distorted) */
+  .brandlogo{position:fixed;top:1.05rem;left:1.5rem;z-index:45;font-size:17px;color:var(--white)}
+  .logo{display:inline-flex;align-items:center;gap:.5em;line-height:1;color:currentColor;white-space:nowrap}
+  .logo-mark{height:1.5em;width:auto;flex:0 0 auto}
+  .logo-word{font-weight:800;letter-spacing:.06em;font-size:1em}
+  .logo-img{height:1.7em;width:auto;display:block}
+  .logo.display{font-size:4rem}
+  .logo.display .logo-word{letter-spacing:.01em}
+  .logo.display .logo-img{height:auto;width:440px}
+
+  /* Mode-change confirmation toast */
+  .toast{position:fixed;top:1.1rem;left:50%;transform:translateX(-50%) translateY(-18px);
+    background:var(--panel);border:1px solid var(--gray5);color:var(--gray2);
+    font-size:.78rem;font-weight:600;letter-spacing:.02em;padding:.5rem .95rem;border-radius:999px;
+    z-index:60;opacity:0;pointer-events:none;transition:opacity .3s ease,transform .3s ease}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:.5rem;vertical-align:middle}
+
+  /* Title lockup */
+  .wordmark{font-weight:800;letter-spacing:.02em;font-size:1rem}
+  .wordmark .kw{color:var(--accent)}
+
+  /* ---------- Print / PDF export ---------- */
+  @media print{
+    @page{size:1280px 720px;margin:0}
+    body{overflow:visible;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body.exec .tech{display:block !important}
+    .chrome,.counter,.progress,.hint,.navbar,.topbar{display:none !important}
+    .deck{position:static;transform:none;width:auto;height:auto;top:auto;left:auto}
+    .slide{position:relative;display:flex !important;opacity:1 !important;height:720px;width:1280px;page-break-after:always;overflow:hidden}
+  }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+<div class="toast" id="toast"><span class="dot"></span><span id="toastMsg"></span></div>
+<div class="brandlogo"><span class="logo" aria-label="Octave"></span></div>
+
+<div class="chrome topbar">
+  <button class="btn" id="modeBtn" title="Toggle technical depth"><span class="dot"></span><span id="modeLabel">Full detail</span></button>
+</div>
+
+<div class="deck" id="deck">
+
+  <!-- 1 · TITLE -->
+  <section class="slide active" data-accent="aqua">
+    <div class="rings"><svg viewBox="0 0 100 100" fill="none">
+      <circle cx="55" cy="45" r="30" stroke="var(--aqua)" stroke-width=".5" opacity=".55"/>
+      <circle cx="55" cy="45" r="42" stroke="var(--gray5)" stroke-width=".5"/>
+      <circle cx="62" cy="52" r="20" stroke="var(--aqua)" stroke-width=".5" opacity=".35"/>
+    </svg></div>
+    <div class="eyebrow">Enterprise Knowledge RAG System <span class="num">· EK-RAG</span></div>
+    <h1>Turn scattered enterprise documents into a private,<br>&nbsp;<span class="kw">trusted</span> AI expert.</h1>
+    <p class="lead">A self-hosted platform that reads your organization's own knowledge and answers questions in plain language — grounded, cited, and governed. Nothing leaves your environment.</p>
+    <div class="thinrule"></div>
+    <div class="sub" style="font-size:.85rem;letter-spacing:.04em">Product Showcase · Local-first Retrieval-Augmented Generation</div>
+  </section>
+
+  <!-- 2 · PROBLEM -->
+  <section class="slide" data-accent="aqua">
+    <div class="eyebrow"><span class="num">01 / WHY</span> The problem</div>
+    <h2>Your answers exist — but they're <span class="kw">trapped</span>, untrusted, or too risky to send to the cloud.</h2>
+    <div class="grid g2" style="margin-top:1.4rem">
+      <div class="card"><div class="kicker">Scattered</div><p>Knowledge is spread across thousands of PDFs, Word docs, slide decks, wikis, and spreadsheets. Finding the right answer is slow.</p></div>
+      <div class="card"><div class="kicker">Hallucinated</div><p>Generic AI chatbots don't know your private documents and confidently make things up — with no source you can verify.</p></div>
+      <div class="card"><div class="kicker">Private</div><p>Sensitive enterprise data can't be shipped to third-party cloud LLMs. Compliance and legal say no.</p></div>
+      <div class="card"><div class="kicker">Governed</div><p>Not everyone should see everything. Access clearance, audit, and "delete my data" (DSAR) are non-negotiable.</p></div>
+    </div>
+    <div class="plain"><b>In plain English</b><p>People waste time hunting for answers, AI tools can't be trusted, and the safest data can't use the cloud at all.</p></div>
+  </section>
+
+  <!-- 3 · PROMISE / PILLARS -->
+  <section class="slide" data-accent="aqua">
+    <div class="eyebrow"><span class="num">02 / WHY</span> Our promise</div>
+    <h2>One assistant that is <span class="kw">grounded, private, and governed</span> by design.</h2>
+    <div class="grid g5" style="margin-top:1.5rem">
+      <div class="card"><div class="kicker">01</div><h3>Grounded</h3><p>Every answer traces back to real source documents.</p></div>
+      <div class="card"><div class="kicker">02</div><h3>Private</h3><p>Self-hosted. Data never leaves your environment.</p></div>
+      <div class="card"><div class="kicker">03</div><h3>Governed</h3><p>Clearance, audit, masking, and purge are built in.</p></div>
+      <div class="card"><div class="kicker">04</div><h3>Decoupled</h3><p>Independent engines scale and evolve on their own.</p></div>
+      <div class="card"><div class="kicker">05</div><h3>Vendor-neutral</h3><p>Models & tools sit behind swappable abstractions.</p></div>
+    </div>
+    <div class="plain"><b>The one-liner</b><p>It's ChatGPT for your company's knowledge — but it cites its sources and runs entirely on your own machines.</p></div>
+  </section>
+
+  <!-- 4 · WHAT IT IS / ASSEMBLY LINE -->
+  <section class="slide" data-accent="green">
+    <div class="eyebrow"><span class="num">03 / WHAT</span> The product</div>
+    <h2>Five components on one <span class="kw">assembly line</span>.</h2>
+    <div class="flow">
+      <div class="node" style="--nodeC:var(--aqua)"><div class="n">EKDC</div><div class="r">The Translator</div><div class="d">Converts any file → clean Markdown.</div></div>
+      <div class="arrow">→</div>
+      <div class="node" style="--nodeC:var(--green)"><div class="n">EKIE</div><div class="r">The Factory</div><div class="d">Chunks, embeds & publishes vectors.</div></div>
+      <div class="arrow">→</div>
+      <div class="node" style="--nodeC:var(--yellow)"><div class="n">EKRE</div><div class="r">The Librarian</div><div class="d">Finds & ranks cited passages.</div></div>
+      <div class="arrow">→</div>
+      <div class="node" style="--nodeC:var(--orange)"><div class="n">EKCP</div><div class="r">The Brain</div><div class="d">Runs the governed conversation.</div></div>
+      <div class="arrow">→</div>
+      <div class="node" style="--nodeC:var(--pink)"><div class="n">Web UI</div><div class="r">The Face</div><div class="d">Streaming chat with citations.</div></div>
+    </div>
+    <div class="plain"><b>In plain English</b><p>Raw files become clean text, clean text becomes searchable knowledge, a question becomes ranked evidence, and evidence becomes a trustworthy answer on screen.</p></div>
+    <div class="tech"><div class="tag">Under the hood</div>
+      <p>Each stage is an independently deployable service. No engine reads another's database — they collaborate only via versioned REST + events and shared Pydantic contracts (<span class="mono">packages/contracts</span>). This decoupling lets any stage scale or be replaced without destabilizing the rest.</p>
+    </div>
+  </section>
+
+  <!-- 5 · HOW IT WORKS IN 60s -->
+  <section class="slide" data-accent="green">
+    <div class="eyebrow"><span class="num">04 / HOW</span> End-to-end in 60 seconds</div>
+    <h2>From a raw file to a <span class="kw">cited answer</span>.</h2>
+    <div class="steps">
+      <div class="step"><div class="i"></div><div class="t"><b>Convert.</b> EKDC watches a folder and turns any dropped file — PDF, Word, PowerPoint, image, audio, video — into clean Markdown (with OCR & transcription).</div></div>
+      <div class="step"><div class="i"></div><div class="t"><b>Ingest.</b> EKIE chunks the Markdown, creates embeddings, and publishes vectors into the database — each tagged with tenant, classification, and source path.</div></div>
+      <div class="step"><div class="i"></div><div class="t"><b>Ask.</b> A user asks a question in the web chat; the request streams to EKCP with their identity and clearance.</div></div>
+      <div class="step"><div class="i"></div><div class="t"><b>Retrieve.</b> EKCP asks EKRE, which searches, fuses, and re-ranks the best passages — filtered by the user's clearance before anything is ranked.</div></div>
+      <div class="step"><div class="i"></div><div class="t"><b>Answer.</b> EKCP grounds the language model on those passages and streams the answer back token-by-token, with citation cards for every source used.</div></div>
+    </div>
+    <div class="tech"><div class="tag">Under the hood</div>
+      <p>The browser consumes Server-Sent Events: <span class="mono">stage</span> frames (understanding → retrieving → reranking → reasoning → generating), then <span class="mono">token</span> and <span class="mono">citation</span> frames. If retrieval is slow or returns HTTP&nbsp;429, a circuit breaker degrades gracefully to memory instead of failing the chat.</p>
+    </div>
+  </section>
+
+  <!-- 6 · DAY IN THE LIFE -->
+  <section class="slide" data-accent="green">
+    <div class="eyebrow"><span class="num">05 / HOW</span> A day in the life</div>
+    <h2>“What is our <span class="kw">remote-work policy</span>?”</h2>
+    <div class="row" style="margin-top:1rem">
+      <div class="col">
+        <div class="steps" style="margin-top:.4rem">
+          <div class="step"><div class="i"></div><div class="t">Jane types the question and hits enter.</div></div>
+          <div class="step"><div class="i"></div><div class="t">The assistant shows live progress: <i>understanding → retrieving → reranking → generating</i>.</div></div>
+          <div class="step"><div class="i"></div><div class="t">The answer streams in, formatted with headings and lists.</div></div>
+          <div class="step"><div class="i"></div><div class="t">Citation cards appear — each with a source path, a confidence score, and a clearance badge.</div></div>
+          <div class="step"><div class="i"></div><div class="t">Jane only ever sees sources at or below her own clearance.</div></div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="plain" style="margin-top:.4rem"><b>Jobs to be done</b><p>“When I have a question about company knowledge, I want a trustworthy, cited answer — without my data leaving the building.”</p></div>
+        <div class="tech"><div class="tag">Under the hood</div>
+          <ul>
+            <li>The <span class="mono">security_context</span> {user, tenant, clearance} rides every hop — signed between EKCP and EKRE.</li>
+            <li>Clearance filtering happens at the vector-DB boundary, <b>before</b> ranking.</li>
+            <li>PII is masked and citations preserved end-to-end.</li>
+            <li>Rule: <b>if it can't be cited, it isn't generated.</b></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · COMPONENTS UP CLOSE -->
+  <section class="slide" data-accent="green">
+    <div class="eyebrow"><span class="num">06 / WHAT</span> The components up close</div>
+    <h2>Each engine does <span class="kw">one job</span> — and does it well.</h2>
+    <div class="chapters">
+      <div class="chapter"><div class="big">1</div><h3>EKDC</h3><div class="role">The Translator</div><p>Watches a folder; converts any format to Markdown with image capture, OCR, and transcription.</p><div class="stack mono">Docling · Whisper · Tesseract</div></div>
+      <div class="chapter"><div class="big">2</div><h3>EKIE</h3><div class="role">The Factory</div><p>Models each doc as a versioned digital twin; chunks, embeds, and publishes governed vectors.</p><div class="stack mono">FastAPI · LangGraph · Qdrant</div></div>
+      <div class="chapter"><div class="big">3</div><h3>EKRE</h3><div class="role">The Librarian</div><p>Understands the query, searches, fuses (RRF), re-ranks, and assembles a cited context package.</p><div class="stack mono">Hybrid search · cross-encoder</div></div>
+      <div class="chapter"><div class="big">4</div><h3>EKCP</h3><div class="role">The Brain</div><p>Owns the conversation, memory, model gateway, agents, and governance; streams the answer.</p><div class="stack mono">Model gateway · SSE · RBAC</div></div>
+      <div class="chapter"><div class="big">5</div><h3>Web UI</h3><div class="role">The Face</div><p>A local-first chat app — streaming answers, citation cards, clearance badges, sessions.</p><div class="stack mono">Next.js 16 · React 19</div></div>
+    </div>
+  </section>
+
+  <!-- 8 · ARCHITECTURE TOPOLOGY -->
+  <section class="slide" data-accent="yellow">
+    <div class="eyebrow"><span class="num">07 / UNDER THE HOOD</span> Architecture</div>
+    <h2>Strictly <span class="kw">decoupled</span> engines around shared data stores.</h2>
+    <div class="flow" style="margin-top:1.2rem">
+      <div class="node" style="--nodeC:var(--aqua)"><div class="n">EKDC</div><div class="d">any format → Markdown</div></div>
+      <div class="arrow">→</div>
+      <div class="node" style="--nodeC:var(--green)"><div class="n">EKIE · 8001</div><div class="d">ingest → embed → publish</div></div>
+      <div class="arrow">→</div>
+      <div class="node" style="--nodeC:var(--yellow)"><div class="n">EKRE · 8002</div><div class="d">retrieve → rank → cite</div></div>
+      <div class="arrow">→</div>
+      <div class="node" style="--nodeC:var(--orange)"><div class="n">EKCP · 8003</div><div class="d">converse → govern → stream</div></div>
+      <div class="arrow">→</div>
+      <div class="node" style="--nodeC:var(--pink)"><div class="n">Web UI · 3001</div><div class="d">SSE client</div></div>
+    </div>
+    <div class="grid g3" style="margin-top:1.1rem">
+      <div class="card"><div class="kicker">Vectors</div><p class="mono" style="color:var(--gray2)">Qdrant</p><p>Semantic search over embedded chunks.</p></div>
+      <div class="card"><div class="kicker">Control plane</div><p class="mono" style="color:var(--gray2)">MS SQL Server</p><p>Digital twins, lineage, and jobs.</p></div>
+      <div class="card"><div class="kicker">Cache · Objects · Traces</div><p class="mono" style="color:var(--gray2)">Redis · MinIO · Langfuse</p><p>State, assets, observability.</p></div>
+    </div>
+    <div class="tech"><div class="tag">Under the hood</div>
+      <p>The Web UI talks only to the EKCP gateway — never to a database, vector store, or internal service. Every request carries <span class="mono">X-Tenant-ID</span> and <span class="mono">X-Correlation-ID</span>, so a single request is traceable across all engines.</p>
+    </div>
+  </section>
+
+  <!-- 9 · STACK & MODELS -->
+  <section class="slide" data-accent="yellow">
+    <div class="eyebrow"><span class="num">08 / UNDER THE HOOD</span> Stack &amp; models</div>
+    <h2>A modern, <span class="kw">local-first</span> stack — no cloud dependencies.</h2>
+    <div class="layers">
+      <div class="layer"><div class="lb">Experience</div><div class="lv"><span class="mono">Next.js 16 · React 19 · TypeScript · Tailwind + shadcn/ui</span> — streaming chat, citations, clearance badges.</div></div>
+      <div class="layer"><div class="lb">Services</div><div class="lv"><span class="mono">Python 3.11+ · FastAPI · Pydantic v2 · SQLAlchemy</span> — four decoupled engines behind versioned contracts.</div></div>
+      <div class="layer"><div class="lb">Orchestration</div><div class="lv"><span class="mono">LangChain · LangGraph</span> — behind engine-owned abstractions so the core stays model-independent.</div></div>
+      <div class="layer"><div class="lb">Models</div><div class="lv">Embeddings <span class="mono">BAAI/bge-base-en-v1.5</span> (768-dim, cosine) · Reranker <span class="mono">bge-reranker-base</span> · Chat <span class="mono">Qwen2.5-3B-Instruct</span> · Image captions <span class="mono">Qwen2.5-VL-3B</span>.</div></div>
+      <div class="layer"><div class="lb">Data &amp; infra</div><div class="lv"><span class="mono">Qdrant · Redis · MinIO · MS SQL Server</span> — all self-hosted, run locally.</div></div>
+      <div class="layer"><div class="lb">Observability</div><div class="lv"><span class="mono">Langfuse · OpenTelemetry</span> — structured JSON logs carry tenant &amp; correlation IDs.</div></div>
+    </div>
+    <div class="plain"><b>In plain English</b><p>Everything runs on hardware you control. Models are swappable — nothing is locked to a single vendor, and no data goes to the cloud.</p></div>
+  </section>
+
+  <!-- 10 · TRUST & GOVERNANCE -->
+  <section class="slide" data-accent="yellow">
+    <div class="eyebrow"><span class="num">09 / UNDER THE HOOD</span> Trust &amp; governance</div>
+    <h2>The features that make it <span class="kw">enterprise-grade</span>.</h2>
+    <div class="feats">
+      <div><b>Citations by default</b> — if an answer can't be cited, it isn't generated.</div>
+      <div><b>Clearance-aware retrieval</b> — filtered at the database boundary, before ranking.</div>
+      <div><b>PII masking</b> — emails, SSNs, cards, phones scrubbed before answers leave.</div>
+      <div><b>Signed security context</b> — verifiable trust between engines (JWT/HMAC).</div>
+      <div><b>DSAR / GDPR purge</b> — "delete my data" fans out across engines.</div>
+      <div><b>Audit trails</b> — every grant, denial, and purge is recorded.</div>
+      <div><b>Graceful degradation</b> — a slow or down dependency never crashes the chat.</div>
+      <div><b>Multi-tenant isolation</b> — one tenant's data is never returned to another.</div>
+    </div>
+    <div class="row" style="margin-top:.4rem;align-items:center">
+      <div style="color:var(--gray4);font-size:.8rem;letter-spacing:.14em;text-transform:uppercase">Clearance model</div>
+      <div class="chips">
+        <span class="chip pub">public</span><span class="chip int">internal</span><span class="chip con">confidential</span><span class="chip res">restricted</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11 · BEFORE / AFTER -->
+  <section class="slide" data-accent="orange">
+    <div class="eyebrow"><span class="num">10 / SO WHAT</span> The shift</div>
+    <h2>From guesswork to <span class="kw">grounded answers</span>.</h2>
+    <div class="ba">
+      <div class="box before"><h3>Before</h3><ul>
+        <li>Hunt through folders, wikis, and inboxes for hours.</li>
+        <li>AI tools hallucinate with no verifiable source.</li>
+        <li>Sensitive data can't touch a cloud LLM.</li>
+        <li>No control over who sees what.</li>
+        <li>No record of what was asked or answered.</li>
+      </ul></div>
+      <div class="box after"><h3>After</h3><ul>
+        <li>Ask in plain language; get an answer in seconds.</li>
+        <li>Every answer is grounded and cited to a real source.</li>
+        <li>Everything runs on your own infrastructure.</li>
+        <li>Clearance-aware — people see only what they may.</li>
+        <li>Full audit trail and one-click data purge.</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <!-- 12 · PERSONAS -->
+  <section class="slide" data-accent="orange">
+    <div class="eyebrow"><span class="num">11 / SO WHAT</span> Who benefits</div>
+    <h2>Value for <span class="kw">every seat</span> at the table.</h2>
+    <div class="grid g2" style="margin-top:1.3rem">
+      <div class="card"><div class="kicker">Knowledge worker</div><p>Instant, cited answers from company knowledge — no more digging through folders.</p></div>
+      <div class="card"><div class="kicker">Compliance &amp; risk</div><p>Audit trails, PII masking, clearance enforcement, and DSAR purge — governance by design.</p></div>
+      <div class="card"><div class="kicker">Platform operator</div><p>Config-driven, self-hosted, observable — ingest repositories and tune models without code changes.</p></div>
+      <div class="card"><div class="kicker">Solution architect</div><p>Decoupled engines and versioned contracts — extend or swap parts without breaking the whole.</p></div>
+    </div>
+  </section>
+
+  <!-- 13 · BUSINESS VALUE -->
+  <section class="slide" data-accent="orange">
+    <div class="eyebrow"><span class="num">12 / SO WHAT</span> Business value</div>
+    <h2>Outcomes leadership <span class="kw">cares about</span>.</h2>
+    <div class="grid g2" style="margin-top:1.3rem">
+      <div class="card"><div class="kicker">Speed</div><h3>Faster time-to-answer</h3><p>Minutes of searching collapse into a single grounded response.</p></div>
+      <div class="card"><div class="kicker">Trust</div><h3>Decisions you can defend</h3><p>Every answer is traceable to a source — no unverifiable AI claims.</p></div>
+      <div class="card"><div class="kicker">Privacy &amp; compliance</div><h3>Data never leaves</h3><p>Self-hosted by default; clearance, audit, and purge satisfy governance.</p></div>
+      <div class="card"><div class="kicker">Cost &amp; control</div><h3>No per-seat cloud-LLM bill</h3><p>Runs on your infrastructure; models are swappable, avoiding vendor lock-in.</p></div>
+    </div>
+    <div class="plain"><b>The bottom line</b><p>Faster answers, lower risk, and full data control — without paying a per-seat cloud-AI tax.</p></div>
+  </section>
+
+  <!-- 14 · PROOF / STATUS -->
+  <section class="slide" data-accent="orange">
+    <div class="eyebrow"><span class="num">13 / SO WHAT</span> Where we are</div>
+    <h2>Built, tested, and <span class="kw">integration-verified</span>.</h2>
+    <div class="stats">
+      <div class="stat"><div class="v">5</div><div class="l">components delivered — converter, three engines, and web UI</div></div>
+      <div class="stat"><div class="v">GO</div><div class="l">cross-engine integration release decision</div></div>
+      <div class="stat"><div class="v">100%</div><div class="l">citation-trace &amp; contract-compatibility on integrated flows</div></div>
+      <div class="stat"><div class="v">0</div><div class="l">cloud dependencies at default configuration</div></div>
+    </div>
+    <div class="tech"><div class="tag">Delivery evidence</div>
+      <ul>
+        <li>EKIE ingestion S0–S9 · EKRE retrieval S0–S8 · EKCP chat S0–S8 · Web UI S0–S3 — all approved.</li>
+        <li>Master integration M1–M3 complete: contract matrix, resilience, DSAR purge, readiness — decision <b>GO</b>.</li>
+        <li>Quality gates enforced repo-wide: strict typing (<span class="mono">mypy --strict</span>), lint, tests, and contract compliance.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 15 · ROADMAP -->
+  <section class="slide" data-accent="pink">
+    <div class="eyebrow"><span class="num">14 / WHAT'S NEXT</span> Roadmap</div>
+    <h2>From evaluation-ready to <span class="kw">production-hardened</span>.</h2>
+    <div class="grid g3" style="margin-top:1.3rem">
+      <div class="card"><div class="kicker">Now</div><h3>Package &amp; deploy</h3><p>Container images and one-command bring-up for all engines and the UI.</p></div>
+      <div class="card"><div class="kicker">Next</div><h3>Harden the edge</h3><p>Reverse proxy + TLS, secrets manager, and process supervision.</p></div>
+      <div class="card"><div class="kicker">Later</div><h3>Scale &amp; enrich</h3><p>Multi-node scaling, more connectors, and richer multimodal ingestion.</p></div>
+    </div>
+    <div class="plain"><b>Honest status</b><p>The application logic is complete and verified. The remaining work is operational packaging — turning "run the services" into "deploy the product."</p></div>
+  </section>
+
+  <!-- 16 · CLOSE / CTA -->
+  <section class="slide" data-accent="aqua">
+    <span class="logo display" aria-label="Octave" style="margin-bottom:1.7rem"></span>
+    <div class="eyebrow">EK-RAG · Enterprise Knowledge RAG System</div>
+    <h1>Your knowledge. Your infrastructure.<br><span class="kw">Answers you can trust.</span></h1>
+    <p class="lead">Grounded, private, and governed retrieval-augmented generation — ready to demo.</p>
+    <div class="thinrule"></div>
+    <div class="sub" style="font-size:.9rem">Let's schedule a live walkthrough → chat, citations, and the governance controls in action.</div>
+  </section>
+
+</div>
+
+<!-- Chrome -->
+<div class="counter"><b id="cur">1</b> / <span id="total">16</span></div>
+<div class="chrome navbar">
+  <button class="navbtn" id="prev" title="Previous (←)">‹</button>
+  <button class="navbtn" id="next" title="Next (→)">›</button>
+</div>
+<div class="chrome hint"><span style="color:var(--gray5);font-size:.7rem">← → navigate · F fullscreen · P print</span></div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  let i = 0;
+  const cur = document.getElementById('cur');
+  const total = document.getElementById('total');
+  const prog = document.getElementById('progress');
+  total.textContent = slides.length;
+
+  function show(n){
+    i = Math.max(0, Math.min(slides.length-1, n));
+    slides.forEach((s,x)=>s.classList.toggle('active', x===i));
+    cur.textContent = i+1;
+    prog.style.width = ((i)/(slides.length-1)*100)+'%';
+    // sync progress-bar accent to the active slide
+    const acc = getComputedStyle(slides[i]).getPropertyValue('--accent');
+    prog.style.background = acc;
+  }
+  function nextS(){ show(i+1); }
+  function prevS(){ show(i-1); }
+
+  document.getElementById('next').onclick = nextS;
+  document.getElementById('prev').onclick = prevS;
+
+  document.addEventListener('keydown', e=>{
+    if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '){ e.preventDefault(); nextS(); }
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){ e.preventDefault(); prevS(); }
+    else if(e.key==='Home'){ show(0); }
+    else if(e.key==='End'){ show(slides.length-1); }
+    else if(e.key==='f'||e.key==='F'){ if(!document.fullscreenElement){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();}else{document.exitFullscreen&&document.exitFullscreen();} }
+    else if(e.key==='p'||e.key==='P'){ window.print(); }
+  });
+
+  // Swipe (touch)
+  let tx=null;
+  document.addEventListener('touchstart',e=>tx=e.changedTouches[0].clientX,{passive:true});
+  document.addEventListener('touchend',e=>{ if(tx===null)return; const dx=e.changedTouches[0].clientX-tx; if(Math.abs(dx)>50){dx<0?nextS():prevS();} tx=null; },{passive:true});
+
+  // Executive / Full-detail toggle
+  const modeBtn = document.getElementById('modeBtn');
+  const modeLabel = document.getElementById('modeLabel');
+  const toast = document.getElementById('toast');
+  const toastMsg = document.getElementById('toastMsg');
+  let toastTimer = null;
+  function flash(msg){
+    toastMsg.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>toast.classList.remove('show'), 1800);
+  }
+  modeBtn.onclick = ()=>{
+    const exec = document.body.classList.toggle('exec');
+    modeLabel.textContent = exec ? 'Executive view' : 'Full detail';
+    flash(exec ? 'Executive view · technical detail hidden' : 'Full detail · technical detail shown');
+  };
+
+  // Octave logo — auto-detect an official file in ./assets, else a white inline rendition (offline).
+  // Drop the real logo at: showcase/assets/octave-logo-white.svg (or .png). No code change needed.
+  const LOGO_CANDIDATES = [
+    'assets/Octave_logo_primary_rgb_white.svg',
+    'assets/Octave_logo_primary_rgb_white.png',
+    'assets/Octave_logo_secondary_rgb_white.svg',
+    'assets/Octave_logo_secondary_rgb_white.png',
+    'assets/octave-logo-white.svg',
+    'assets/octave-logo-white.png',
+    'assets/octave-logo.svg',
+    'assets/octave-logo.png'
+  ];
+  const LOGO_MARK = '<svg class="logo-mark" viewBox="0 0 60 64" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M23 24 a16 16 0 1 0 32 0 a16 16 0 1 0 -32 0 Z M31 24 a8 8 0 1 1 16 0 a8 8 0 1 1 -16 0 Z"/><path fill="currentColor" fill-rule="evenodd" d="M13 42 a12 12 0 1 0 24 0 a12 12 0 1 0 -24 0 Z M19 42 a6 6 0 1 1 12 0 a6 6 0 1 1 -12 0 Z"/></svg>';
+  function fillLogos(src){
+    document.querySelectorAll('.logo').forEach(el=>{
+      el.innerHTML = src
+        ? '<img class="logo-img" src="'+src+'" alt="Octave">'
+        : LOGO_MARK + '<span class="logo-word">OCTAVE</span>';
+    });
+  }
+  (function(){
+    let idx = 0;
+    (function tryNext(){
+      if(idx >= LOGO_CANDIDATES.length){ fillLogos(null); return; }
+      const src = LOGO_CANDIDATES[idx++];
+      const probe = new Image();
+      probe.onload = ()=>fillLogos(src);
+      probe.onerror = tryNext;
+      probe.src = src;
+    })();
+  })();
+
+  // Scale the fixed 16:9 stage to fit the screen (letterboxed, no scroll).
+  const deck = document.getElementById('deck');
+  function fit(){
+    const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+    deck.style.setProperty('--scale', s);
+  }
+  window.addEventListener('resize', fit);
+  fit();
+
+  show(0);
+</script>
+</body>
+</html>

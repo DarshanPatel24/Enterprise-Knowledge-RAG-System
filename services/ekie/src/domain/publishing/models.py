@@ -52,9 +52,18 @@ class VectorMetadata(BaseModel):
     embedding_version: int
     dimension: int
     repository_id: str = ""
+    # The original document path/filename (e.g. "1/Integrity Installation
+    # Guide.pdf.md") so citations can show a human-readable source instead of an
+    # opaque id. Sourced from the control-plane Document; empty for legacy
+    # vectors published before this field existed.
+    source_path: str = ""
     section_id: str | None = None
     section_title: str | None = None
     language: str = ""
+    # The chunk text itself, published so the retrieval engine (EKRE) can return
+    # and rerank the actual passage. Sourced from the chunk set like the other
+    # enrichment fields; empty only when that set is unavailable at publish time.
+    content: str = ""
 
 
 class VectorPoint(BaseModel):

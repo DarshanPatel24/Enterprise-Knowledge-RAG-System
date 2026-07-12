@@ -158,14 +158,14 @@ python -m venv .venv
 ### 3.2 Install Dependencies
 
 ```powershell
-# Core service + all production extras including VL embedding model support
+# Core service + all production extras including embedding model support
 pip install -e "services/ekie[dev,mssql,storage]"
 pip install -e packages/contracts
 
-# Required for Qwen3-VL-Embedding-2B (vision-language embedding model)
-pip install -U "sentence-transformers[image]" torchvision
+# Required for BAAI/bge-base-en-v1.5 (text embedding model; no image extras needed)
+pip install -U sentence-transformers
 
-# Required for HuggingFace intelligence LLM (Qwen/Qwen2.5-7B-Instruct)
+# Required for HuggingFace intelligence LLM (Qwen/Qwen2.5-3B-Instruct, optional)
 pip install langchain-huggingface torch transformers accelerate
 
 # GPU acceleration (NVIDIA): the default `torch` above is CPU-only. Install a CUDA
@@ -174,8 +174,9 @@ pip install --force-reinstall "torch==2.12.1" --index-url https://download.pytor
 #   (use .../whl/cu128 or cu126 for older drivers). Verify with:
 #   python -c "import torch; print(torch.cuda.is_available())"
 # Then in services/ekie/.env set EKIE_EMBEDDING__DEVICE=auto and
-# EKIE_EMBEDDING__TORCH_DTYPE=float16 (float16 halves VRAM so a 2B model uses
-# ~4.3GB and fits a 6GB GPU; fp32 would need ~8GB and OOM).
+# EKIE_EMBEDDING__TORCH_DTYPE=float16. bge-base is small (~250MB VRAM during
+# ingest); the EKRE query embedder + reranker run on CPU so the EKCP chat LLM
+# keeps the full 6GB GPU.
 
 # Required for Langfuse tracing
 pip install "langfuse>=2.0,<3.0"
@@ -295,31 +296,32 @@ need to preserve in-flight ingestion state across machine moves.
 | Key | Current value | Notes |
 |---|---|---|
 | `EKIE_EMBEDDING__PROVIDER` | `huggingface` | `local` = hash-based (CI/offline), `huggingface` for real embeddings |
-| `EKIE_EMBEDDING__DEFAULT_MODEL` | `Qwen/Qwen3-VL-Embedding-2B` | Vision-language embedding model; 2B parameter variant |
-| `EKIE_EMBEDDING__DIMENSION` | `1536` | Output dimension for Qwen3-VL-Embedding-2B |
+| `EKIE_EMBEDDING__DEFAULT_MODEL` | `BAAI/bge-base-en-v1.5` | Text embedding model (768 dimensions) |
+| `EKIE_EMBEDDING__DIMENSION` | `768` | Output dimension for BAAI/bge-base-en-v1.5 |
+| `EKIE_EMBEDDING__MAX_INPUT_TOKENS` | `512` | Max tokens per chunk (bge-base context window) |
 | `EKIE_EMBEDDING__BATCH_SIZE` | `16` | Chunks per embedding request; raise (32-64) for throughput |
 | `EKIE_EMBEDDING__MAX_REQUESTS_PER_MINUTE` | `0` | Optional cap on embedding requests/min (0 = unlimited) |
-| `HF_HOME` | `./storage` | Local cache path for downloaded model weights |
+| `HF_HOME` | `./storage/hf` | Local cache path for downloaded model weights |
 
-**Prerequisites for Qwen3-VL-Embedding-2B:**
+**Prerequisites for BAAI/bge-base-en-v1.5:**
 
-This model is part of the Qwen3 vision-language family and requires additional image processing libraries:
+This is a text-only embedding model; no image processing libraries are required:
 
 ```powershell
-pip install -U "sentence-transformers[image]" torchvision
+pip install -U sentence-transformers
 ```
 
 First-run behavior:
-1. On first ingest request, model weights (~4 GB) are downloaded to `HF_HOME`.
+1. On first ingest request, model weights (~500 MB) are downloaded to `HF_HOME`.
 2. All subsequent requests load weights from local cache — no internet required.
 3. To force offline-only after download: add `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` to `.env`.
 
-**Dimension reference for other Qwen3 embedding models:**
+**Dimension reference for other embedding models:**
 
 | Model | Dimension |
 |---|---|
-| `Qwen/Qwen3-VL-Embedding-2B` | 1536 |
-| `Qwen/Qwen3-VL-Embedding-8B` | 3584 |
+| `BAAI/bge-base-en-v1.5` | 768 |
+| `BAAI/bge-large-en-v1.5` | 1024 |
 | `sentence-transformers/all-MiniLM-L6-v2` | 384 |
 | `nomic-embed-text` (Ollama) | 768 |
 
@@ -394,14 +396,14 @@ If Langfuse fails to start, see [Section 19 — Troubleshooting Langfuse](EKIE-H
 
 ### 4.6 Document Intelligence (LLM Analysis)
 
-LLM-based topic extraction and summarization is enabled and uses `Qwen/Qwen2.5-7B-Instruct` locally.
+LLM-based topic extraction and summarization is **optional and off by default**. When enabled it uses `Qwen/Qwen2.5-3B-Instruct` locally.
 
-Required `.env` settings (already active):
+To enable, set in `.env`:
 
 ```dotenv
 EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS=true
 EKIE_INTELLIGENCE__LLM_PROVIDER=huggingface
-EKIE_INTELLIGENCE__LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+EKIE_INTELLIGENCE__LLM_MODEL=Qwen/Qwen2.5-3B-Instruct
 ```
 
 Prerequisites:
@@ -410,7 +412,7 @@ Prerequisites:
 pip install langchain-huggingface torch transformers accelerate
 ```
 
-First-run behavior: model weights (~15 GB) are downloaded to `HF_HOME` on first document with high complexity. All subsequent inference is local.
+First-run behavior: model weights (~3 GB) are downloaded to `HF_HOME` on first document with high complexity. All subsequent inference is local.
 
 To disable temporarily (for performance testing):
 
@@ -810,7 +812,7 @@ HF_HUB_OFFLINE=1
 TRANSFORMERS_OFFLINE=1
 HF_HUB_DISABLE_SYMLINKS_WARNING=1
 
-# LLM analysis (enable only after Qwen2.5-7B-Instruct is downloaded)
+# LLM analysis (enable only after Qwen2.5-3B-Instruct is downloaded)
 EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS=true
 
 # Keep classification downgrade disabled

@@ -118,6 +118,7 @@ Open `http://localhost:3001`. The home page probes EKCP `/health/live` and rende
 | `npm run start` | Serve the production build. |
 | `npm run lint` | ESLint. |
 | `npm run typecheck` | `tsc --noEmit`. |
+| `npm run test:e2e` | Playwright browser end-to-end tests. |
 
 ---
 
@@ -159,6 +160,7 @@ After starting the UI:
 - [ ] The card shows **connected** (green) with the EKCP service name and status — confirms `GET /health/live` succeeds.
 - [ ] In **Settings**, Tenant ID, User ID, and API key are set; the chat input becomes enabled.
 - [ ] Sending a message streams tokens incrementally (no full-page refresh).
+- [ ] A **stage progress indicator** appears while the answer is being prepared, cycling through *understanding → retrieving → reranking → reasoning → generating* (delivered as SSE `stage` events).
 - [ ] Responses that carry sources render **citation cards** with source path, score, and a clearance badge.
 - [ ] Browser dev tools **Network** tab shows requests only to the EKCP base URL — no external hosts.
 - [ ] Every EKCP request carries `X-Tenant-ID` and `X-Correlation-ID` headers.
@@ -212,7 +214,7 @@ If EKCP is also proxied, keep the UI's `NEXT_PUBLIC_EKCP_URL` (or the runtime Se
 
 ## References
 
-- [../master-architecture.md](../master-architecture.md) — Section 13 (Web UI Layer)
+- [../master-architecture.md](../master-architecture.md) — Section 11 (Web UI Layer)
 - [../../apps/web-ui/README.md](../../apps/web-ui/README.md)
 - [../../.github/instructions/nextjs.instructions.md](../../.github/instructions/nextjs.instructions.md)
 - [Web-UI-Help_Guide.md](Web-UI-Help_Guide.md)

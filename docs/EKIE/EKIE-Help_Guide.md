@@ -50,7 +50,7 @@ EKIE (Enterprise Knowledge Ingestion Engine) is a dedicated enterprise platform 
 | Document transformation | Normalizes incoming Markdown into canonical Markdown assets (front matter, Unicode normalization, validation) |
 | Document intelligence | Extracts metadata, detects language, classifies content, identifies sensitive data |
 | Intelligent chunking | Splits Markdown into semantically meaningful chunks preserving structure |
-| Embedding generation | Generates vector embeddings via local, Ollama, or HuggingFace providers (active: `Qwen/Qwen3-VL-Embedding-2B`) |
+| Embedding generation | Generates vector embeddings via local, Ollama, or HuggingFace providers (active: `BAAI/bge-base-en-v1.5`) |
 | Vector publishing | Publishes embeddings to Qdrant with mandatory metadata enforcement |
 | Workflow orchestration | Runs the full pipeline as a checkpointed, resumable graph |
 | Security & governance | RBAC/ABAC authorization, audit logging, classification enforcement |
@@ -168,7 +168,7 @@ The Control Plane (Microsoft SQL Server) is the single source of truth for all i
 |---|---|---|
 | CPU | 4 cores | 8+ cores |
 | RAM | 16 GB | 32 GB (required for HuggingFace model inference) |
-| Disk | 40 GB free | 100+ GB SSD (HuggingFace model weights ~15 GB LLM + ~4 GB embedder) |
+| Disk | 40 GB free | 100+ GB SSD (HuggingFace model weights ~500 MB embedder + ~3 GB LLM when analysis enabled) |
 | GPU | Not required | NVIDIA GPU strongly recommended for HuggingFace model performance |
 
 ---
@@ -274,10 +274,10 @@ pip install -r requirements.txt
 # EKIE service with all production extras
 pip install -e "services/ekie[dev,mssql,storage]"
 
-# Required for Qwen/Qwen3-VL-Embedding-2B (vision-language embedding model)
-pip install -U "sentence-transformers[image]" torchvision
+# Required for BAAI/bge-base-en-v1.5 (text embedding model; no image extras needed)
+pip install -U sentence-transformers
 
-# Required for HuggingFace intelligence LLM (Qwen/Qwen2.5-7B-Instruct)
+# Required for HuggingFace intelligence LLM (Qwen/Qwen2.5-3B-Instruct, optional)
 pip install langchain-huggingface torch transformers accelerate
 
 # Shared contracts package
@@ -493,15 +493,15 @@ EkieSettings
 | `EKIE_INTELLIGENCE__CLASSIFY_CONTENT` | `true` | Classify document type |
 | `EKIE_INTELLIGENCE__DETECT_SENSITIVE_CONTENT` | `true` | Detect PII/sensitive data |
 | `EKIE_INTELLIGENCE__HIGH_COMPLEXITY_SECTION_THRESHOLD` | `12` | Section complexity threshold |
-| `EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS` | `true` | Enable LLM-based topic analysis |
+| `EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS` | `false` | Enable LLM-based topic analysis (optional, off by default) |
 | `EKIE_INTELLIGENCE__LLM_PROVIDER` | `huggingface` | Allowed values: `ollama` or `huggingface` |
-| `EKIE_INTELLIGENCE__LLM_MODEL` | `Qwen/Qwen2.5-7B-Instruct` | LLM model name |
+| `EKIE_INTELLIGENCE__LLM_MODEL` | `Qwen/Qwen2.5-3B-Instruct` | LLM model name |
 | `EKIE_INTELLIGENCE__LLM_BASE_URL` | `http://localhost:11434` | LLM endpoint |
 | `EKIE_INTELLIGENCE__LLM_TEMPERATURE` | `0.0` | LLM temperature (deterministic) |
 
 If an unsupported provider value is configured, EKIE fails configuration validation at startup.
 
-> **Note on using HuggingFace locally for Intelligence:** To use a HuggingFace LLM (e.g., `Qwen/Qwen2.5-7B-Instruct`) for topic analysis, install the dependencies (`pip install langchain-huggingface torch transformers accelerate`). Then set `EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS=true`, `EKIE_INTELLIGENCE__LLM_PROVIDER=huggingface`, and update `EKIE_INTELLIGENCE__LLM_MODEL` to your model ID. The model weights will be downloaded and cached in your `HF_HOME` directory.
+> **Note on using HuggingFace locally for Intelligence:** To use a HuggingFace LLM (e.g., `Qwen/Qwen2.5-3B-Instruct`) for topic analysis, install the dependencies (`pip install langchain-huggingface torch transformers accelerate`). Then set `EKIE_INTELLIGENCE__ENABLE_LLM_ANALYSIS=true`, `EKIE_INTELLIGENCE__LLM_PROVIDER=huggingface`, and update `EKIE_INTELLIGENCE__LLM_MODEL` to your model ID. The model weights will be downloaded and cached in your `HF_HOME` directory.
 
 > **Use a text-generation model, not a vision model.** `EKIE_INTELLIGENCE__LLM_MODEL` must be a text/chat instruct model (loaded as a `text-generation` pipeline), for example `Qwen/Qwen2.5-3B-Instruct`. A **vision-language** model such as `Qwen/Qwen2.5-VL-3B-Instruct` cannot be loaded this way; the analyzer logs `llm_analysis_skipped` and falls back to the deterministic heuristic topic (ingestion still completes). CPU inference on multi-billion-parameter models is slow (minutes per document); use a smaller model, an Ollama backend, or set `ENABLE_LLM_ANALYSIS=false` to skip it. See §19.1.
 
@@ -527,19 +527,19 @@ If an unsupported provider value is configured, EKIE fails configuration validat
 | Variable | Default | Description |
 |---|---|---|
 | `EKIE_EMBEDDING__PROVIDER` | `huggingface` | Allowed values: `local`, `ollama`, or `huggingface` |
-| `EKIE_EMBEDDING__DEFAULT_MODEL` | `Qwen/Qwen3-VL-Embedding-2B` | Active model — vision-language embedding model |
-| `EKIE_EMBEDDING__DIMENSION` | `1536` | Output dimension of Qwen/Qwen3-VL-Embedding-2B |
+| `EKIE_EMBEDDING__DEFAULT_MODEL` | `BAAI/bge-base-en-v1.5` | Active model — text embedding model |
+| `EKIE_EMBEDDING__DIMENSION` | `768` | Output dimension of BAAI/bge-base-en-v1.5 |
 | `EKIE_EMBEDDING__DISTANCE_METRIC` | `cosine` | Allowed values: `cosine`, `dot_product`, or `euclidean` |
-| `EKIE_EMBEDDING__MAX_INPUT_TOKENS` | `8192` | Maximum input token limit |
+| `EKIE_EMBEDDING__MAX_INPUT_TOKENS` | `512` | Maximum input token limit (bge-base context window) |
 | `EKIE_EMBEDDING__BATCH_SIZE` | `16` | Chunks per embedding request. Raise (e.g. 32-64) for higher throughput on large document sets; it does not change the vectors |
 | `EKIE_EMBEDDING__NORMALIZE_VECTORS` | `true` | L2-normalize output vectors |
 | `EKIE_EMBEDDING__MAX_RETRIES` | `3` | Retry count on provider failures |
 | `EKIE_EMBEDDING__MAX_REQUESTS_PER_MINUTE` | `0` | Optional throughput cap on embedding requests per minute (0 = unlimited) |
 | `EKIE_EMBEDDING__OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API endpoint |
 
-> **Note on using HuggingFace locally:** The active embedding model is `Qwen/Qwen3-VL-Embedding-2B` (dim=1536). Required packages: `pip install -U "sentence-transformers[image]" torchvision langchain-huggingface`. Model weights (~4 GB) are cached in `HF_HOME=./storage/hf`. To switch models, update `EKIE_EMBEDDING__DEFAULT_MODEL` and `EKIE_EMBEDDING__DIMENSION` in `.env` then restart.
+> **Note on using HuggingFace locally:** The active embedding model is `BAAI/bge-base-en-v1.5` (dim=768). Required packages: `pip install -U sentence-transformers langchain-huggingface`. Model weights (~500 MB) are cached in `HF_HOME=./storage/hf`. To switch models, update `EKIE_EMBEDDING__DEFAULT_MODEL` and `EKIE_EMBEDDING__DIMENSION` in `.env` then restart.
 
-> **GPU acceleration:** The default `torch` from PyPI is **CPU-only**. For an NVIDIA GPU, install a CUDA build matching your driver, e.g. (CUDA 13): `pip install --force-reinstall "torch==2.12.1" --index-url https://download.pytorch.org/whl/cu130` (verify with `python -c "import torch; print(torch.cuda.is_available())"`). Set `EKIE_EMBEDDING__DEVICE=auto` and `EKIE_EMBEDDING__TORCH_DTYPE=float16` — fp16 halves VRAM so the 2B model fits a 6 GB GPU (~4.3 GB vs ~8 GB in fp32). The embedding provider then runs on the GPU automatically. Restart the ingest worker (or API) for it to take effect.
+> **GPU acceleration:** The default `torch` from PyPI is **CPU-only**. For an NVIDIA GPU, install a CUDA build matching your driver, e.g. (CUDA 13): `pip install --force-reinstall "torch==2.12.1" --index-url https://download.pytorch.org/whl/cu130` (verify with `python -c "import torch; print(torch.cuda.is_available())"`). Set `EKIE_EMBEDDING__DEVICE=auto` and `EKIE_EMBEDDING__TORCH_DTYPE=float16` — bge-base is small (~250 MB VRAM during ingest). The EKRE query embedder + reranker run on CPU so the EKCP chat LLM keeps the full 6 GB GPU. Restart the ingest worker (or API) for it to take effect.
 
 The embedding dimension must be a plain integer (for example `768`), not a comma-formatted value.
 
@@ -688,16 +688,16 @@ mc mb local/ekie-assets
 The active configuration uses HuggingFace for both embedding and intelligence. Install the required packages:
 
 ```powershell
-# Vision-language embedding model dependencies
-pip install -U "sentence-transformers[image]" torchvision
+# Text embedding model dependencies (bge-base; no image extras needed)
+pip install -U sentence-transformers
 
 # Intelligence LLM dependencies
 pip install langchain-huggingface torch transformers accelerate
 ```
 
 On first ingest:
-1. `Qwen/Qwen3-VL-Embedding-2B` (~4 GB) downloads to `./storage/hf`.
-2. `Qwen/Qwen2.5-7B-Instruct` (~15 GB) downloads on first document with high complexity.
+1. `BAAI/bge-base-en-v1.5` (~500 MB) downloads to `./storage/hf`.
+2. `Qwen/Qwen2.5-3B-Instruct` (~3 GB) downloads on first document with high complexity (only when `ENABLE_LLM_ANALYSIS=true`).
 3. After download, set `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` for strict offline operation.
 
 ### 7.6 Optional: Use Ollama Instead of HuggingFace
@@ -1151,7 +1151,7 @@ Analyzes the canonical Markdown to extract rich metadata and quality signals.
 6. **TableAnalyzer** — Extracts table statistics (count, dimensions, headers).
 7. **FigureAnalyzer** — Identifies figure/image references and captions.
 8. **CodeAnalyzer** — Detects code blocks with language identification.
-9. **LlmAnalyzer** *(active when `ENABLE_LLM_ANALYSIS=true`)* — Uses a local HuggingFace model (`Qwen/Qwen2.5-7B-Instruct`) for advanced topic extraction and summarization.
+9. **LlmAnalyzer** *(active when `ENABLE_LLM_ANALYSIS=true`)* — Uses a local HuggingFace model (`Qwen/Qwen2.5-3B-Instruct`) for advanced topic extraction and summarization.
 
 **Output:** A `DocumentIntelligenceReport` containing:
 - Semantic metadata (title, description, topics, author)
@@ -1199,7 +1199,7 @@ Generates vector embeddings from chunk text.
 | Provider | Configuration | Description |
 |---|---|---|
 | `local` | `EKIE_EMBEDDING__PROVIDER=local` | Deterministic SHA-256 hash-based embeddings. Zero dependencies, fully offline. Produces reproducible vectors for testing and development. |
-| `huggingface` | `EKIE_EMBEDDING__PROVIDER=huggingface` | Real neural embeddings via a local HuggingFace model. **Active default.** Current model: `Qwen/Qwen3-VL-Embedding-2B` (dim=1536). Requires `sentence-transformers[image]` and `torchvision`. |
+| `huggingface` | `EKIE_EMBEDDING__PROVIDER=huggingface` | Real neural embeddings via a local HuggingFace model. **Active default.** Current model: `BAAI/bge-base-en-v1.5` (dim=768). Requires `sentence-transformers` only. |
 | `ollama` | `EKIE_EMBEDDING__PROVIDER=ollama` | Real neural embeddings via a locally-hosted Ollama model. Recommended models: `nomic-embed-text` (768d), `mxbai-embed-large` (1024d). |
 
 **Features:**
@@ -1818,7 +1818,7 @@ Hybrid profile example:
 
 - [ ] `EKIE_SECURITY__REQUIRE_AUTHENTICATION=true`
 - [ ] `EKIE_EMBEDDING__PROVIDER=huggingface` (active) or `ollama`
-- [ ] `EKIE_EMBEDDING__DEFAULT_MODEL=Qwen/Qwen3-VL-Embedding-2B` (active, dim=1536)
+- [ ] `EKIE_EMBEDDING__DEFAULT_MODEL=BAAI/bge-base-en-v1.5` (active, dim=768)
 - [ ] `EKIE_PUBLISHING__PROVIDER=qdrant`
 - [ ] `EKIE_ENVIRONMENT=production` (activates MinIO durable storage)
 - [ ] `EKIE_STORAGE__ACCESS_KEY` and `SECRET_KEY` set
@@ -1860,16 +1860,17 @@ docker compose -f docker-compose.local.yml ps
 4. Install Python dependencies (run once per machine)
 ```powershell
 pip install -e "services/ekie[dev,mssql,storage]"
-pip install -U "sentence-transformers[image]" torchvision langchain-huggingface torch transformers accelerate "langfuse>=2.0,<3.0"
+pip install -U sentence-transformers langchain-huggingface torch transformers accelerate "langfuse>=2.0,<3.0"
+# The mssql extra installs pyodbc (required for the SQL Server control plane).
 ```
 
-5. Download HuggingFace models (run once; ~19 GB total)
+5. Download HuggingFace models (run once; ~500 MB embedding, +~3 GB if LLM analysis enabled)
 ```powershell
 python services/ekie/scripts/setup.py
 # Or manually:
 Push-Location services/ekie
-..\..\.venv\Scripts\python.exe -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-VL-Embedding-2B', ignore_patterns=['*.gguf','*.bin'])"
-..\..\.venv\Scripts\python.exe -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen2.5-7B-Instruct', ignore_patterns=['*.gguf','*.bin'])"
+..\..\.venv\Scripts\python.exe -c "from huggingface_hub import snapshot_download; snapshot_download('BAAI/bge-base-en-v1.5', ignore_patterns=['*.gguf','*.bin'])"
+..\..\.venv\Scripts\python.exe -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen2.5-3B-Instruct', ignore_patterns=['*.gguf','*.bin'])"
 Pop-Location
 ```
 
@@ -1988,7 +1989,95 @@ EmbeddingValidationError: Expected dimension 768, got 256
 
 **Solution:** Ensure `EKIE_EMBEDDING__DIMENSION` matches the actual output dimension of your embedding model. For example, `nomic-embed-text` outputs 768 dimensions. Use plain integers only (`768`, not `4,096`).
 
+#### Large documents dead-letter at the embed stage (`token_limit_exceeded`)
+
+**Symptom:** Small documents ingest fine, but larger ones dead-letter. `last_error`
+(via `requeue_jobs.py --list`) reads similar to:
+
+```
+chunk 'CHK-000042' has 731 tokens; model 'BAAI/bge-base-en-v1.5' allows 512
+```
+
+**Cause:** A chunk is larger than the embedding model's context window. The chunker
+may emit a chunk up to `EKIE_CHUNKING__MAX_TOKEN_BUDGET`, and preserved tables/code
+blocks are exempt from that budget entirely — so a dense section, big table, or long
+code block in a large document produces a chunk over `EKIE_EMBEDDING__MAX_INPUT_TOKENS`.
+Small documents never contain such a chunk, so only the big ones fail. The budgets are
+whitespace-word estimates, while models such as bge tokenize into sub-words (~1.3× more),
+so a chunk near the limit can overflow even when the word count looks safe.
+
+**Fix — choose one:**
+
+1. **Truncate to fit (default, no dead-letters).** Set
+   `EKIE_EMBEDDING__TRUNCATE_OVERSIZED_CHUNKS=true`. Oversized chunks are clipped to the
+   model window and an `EmbeddingTruncated` warning event is emitted; the document always
+   completes. Combine with a smaller `EKIE_CHUNKING__TARGET_TOKEN_BUDGET` (for bge-base's
+   512-token window, `350` leaves headroom) so truncation almost never triggers.
+
+2. **Size chunks so nothing is truncated (no code change).** Set
+   `EKIE_EMBEDDING__TRUNCATE_OVERSIZED_CHUNKS=false` and size chunks below the model
+   window. For guaranteed sub-window chunks — including large tables/code — use the
+   character splitter:
+
+   ```dotenv
+   EKIE_EMBEDDING__MAX_INPUT_TOKENS=512          # match your model (bge-base = 512)
+   EKIE_EMBEDDING__TRUNCATE_OVERSIZED_CHUNKS=false
+   EKIE_CHUNKING__DEFAULT_STRATEGY=recursive     # splits within blocks; needs langchain-text-splitters
+   EKIE_CHUNKING__RECURSIVE_CHUNK_SIZE=1500       # ~375 tokens; safely under 512
+   EKIE_CHUNKING__RECURSIVE_CHUNK_OVERLAP=200
+   ```
+
+   The `semantic` strategy keeps tables/code atomic and never sub-splits a single block,
+   so with `truncate=false` a single oversized block will still dead-letter — use
+   `recursive` (or keep `truncate=true`) if your documents contain large tables/code.
+
+After editing `.env`, restart the API and the ingest worker so both load the new settings,
+then re-ingest the affected documents (see **Re-ingesting after a fix**, below).
+
+#### Re-ingesting after a fix
+
+Re-embedding **every** document is not required. Documents that already completed were
+embedded with their full content and stay valid — leave them. Only re-process the
+documents that dead-lettered (they have no vectors yet), and only re-chunk when you
+changed a chunking setting and want it applied.
+
+1. **List what needs attention:**
+
+   ```powershell
+   python services/ekie/scripts/requeue_jobs.py --list
+   ```
+
+2. **Fast path — requeue (resume from the failed stage).** Best when
+   `TRUNCATE_OVERSIZED_CHUNKS=true`. The orchestrator reconciles completed stages from
+   the `assets` table, so the job resumes at embed using the **existing** chunks:
+
+   ```powershell
+   python services/ekie/scripts/requeue_jobs.py --all-dead --yes   # or --document-id <id>
+   python services/ekie/scripts/start_ingest_worker.py             # process the requeued jobs
+   ```
+
+   > Because requeue reuses the already-stored chunks, a new smaller
+   > `TARGET_TOKEN_BUDGET` is **not** applied by this path. If you set
+   > `TRUNCATE_OVERSIZED_CHUNKS=false`, a plain requeue would resume with the same
+   > oversized chunks and dead-letter again — use the clean path below instead.
+
+3. **Clean path — re-chunk from source.** Use when you set `truncate=false` or changed
+   chunking budgets/strategy and want the new chunking applied. Hard-delete the affected
+   documents (removes any partial assets, lineage, jobs, and staged source), then let the
+   sync worker re-discover and re-ingest them from the source Markdown:
+
+   ```powershell
+   python services/ekie/scripts/purge_documents.py --document-id <id> --yes
+   # re-run your normal ingestion (sync worker or POST /v1/documents/{id}/ingest)
+   ```
+
+No manual vector cleanup is needed for dead-lettered documents: they never published to
+Qdrant, so there is nothing stale to remove. A full clean re-ingest of the whole corpus
+is only required when you **change the embedding model or dimension** (Qdrant collection
+dimensions cannot change in place — see the Deployment Guide).
+
 #### Async jobs stay `queued` and never run
+
 
 **Symptom:** With `EKIE_INGESTION__ASYNC_ENABLED=true`, the monitor shows documents as `queued` indefinitely.
 

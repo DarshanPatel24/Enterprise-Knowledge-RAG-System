@@ -47,7 +47,7 @@ function AssistantBubble({
         )}
       >
         {isThinking ? (
-          <AgentActivity />
+          <AgentActivity label={message.stage} />
         ) : (
           <MarkdownContent content={message.content} />
         )}

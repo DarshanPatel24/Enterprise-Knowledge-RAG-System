@@ -19,6 +19,7 @@ class EmbeddingEventType(StrEnum):
     MODEL_SELECTED = "ModelSelected"
     EMBEDDINGS_GENERATED = "EmbeddingsGenerated"
     EMBEDDINGS_VALIDATED = "EmbeddingsValidated"
+    EMBEDDING_TRUNCATED = "EmbeddingTruncated"
     ASSET_STORED = "AssetStored"
     EMBEDDING_SKIPPED = "EmbeddingSkipped"
     EMBEDDING_FAILED = "EmbeddingFailed"

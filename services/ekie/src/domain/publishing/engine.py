@@ -79,6 +79,7 @@ class _ChunkFacts:
     section_id: str | None
     section_title: str | None
     language: str
+    content: str
 
 
 class VectorPublishingEngine:
@@ -252,9 +253,11 @@ class VectorPublishingEngine:
                 embedding_version=embedding_version,
                 dimension=embedding_document.dimension,
                 repository_id=document.repository_id,
+                source_path=document.source_path,
                 section_id=facts.section_id if facts else None,
                 section_title=facts.section_title if facts else None,
                 language=facts.language if facts else "",
+                content=facts.content if facts else "",
             )
             missing = missing_required_fields(metadata)
             if missing:
@@ -523,6 +526,7 @@ class VectorPublishingEngine:
                 section_id=chunk.metadata.section_id,
                 section_title=chunk.metadata.section_title,
                 language=chunk.metadata.language,
+                content=chunk.content,
             )
             for chunk in chunk_document.chunks
         }

@@ -252,6 +252,10 @@ class EmbeddingSettings(BaseSettings):
     cost_per_1k_tokens: float = 0.0
     max_retries: int = 3
     max_requests_per_minute: int = 0
+    # When a chunk exceeds ``max_input_tokens`` the engine truncates its text to
+    # fit the model context window (emitting a warning) instead of dead-lettering
+    # the document. Set false to enforce a hard token-limit failure instead.
+    truncate_oversized_chunks: bool = True
     ollama_base_url: str = "http://localhost:11434"
     request_timeout_seconds: float = 60.0
     # HuggingFace provider device/precision. "auto" preserves library defaults

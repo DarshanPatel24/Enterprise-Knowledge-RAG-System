@@ -183,7 +183,7 @@ def build_query_intelligence_engine(settings: EkreSettings) -> QueryIntelligence
     intent = IntentClassificationEngine(policy)
     enrichment = QueryEnrichmentEngine(vocabulary=vocabulary)
     planner = QueryPlanner(
-        vector_timeout_ms=settings.retrieval.budget_vector_ms,
+        vector_timeout_ms=settings.execution.default_task_timeout_ms,
         total_timeout_ms=settings.retrieval.budget_total_ms,
     )
     interpreter = (

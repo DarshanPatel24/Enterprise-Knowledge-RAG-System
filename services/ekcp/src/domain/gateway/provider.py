@@ -27,7 +27,11 @@ _USER_REQUEST_MARKER = "User request:"
 # parameters. The HuggingFace pipeline loads multi-GB weights from disk, so
 # building the chain once and reusing it is essential: without this the model
 # would be reloaded on every request.
-_CHAIN_CACHE: dict[tuple[str, str, str, float, int, str, str], ChatModelLike] = {}
+_CHAIN_CACHE: dict[tuple[str, str, str, float, int, str, str, float, int], ChatModelLike] = {}
+# Raw chat models (before the StrOutputParser) keyed identically. HuggingFace token
+# streaming needs the underlying transformers pipeline, which the LCEL chain hides;
+# both caches reference the same built model so weights load exactly once.
+_RAW_MODEL_CACHE: dict[tuple[str, str, str, float, int, str, str, float, int], Any] = {}
 _logger = get_logger("ekcp.gateway.provider")
 
 
@@ -107,12 +111,29 @@ class LangChainChatProvider(ChatModelProvider):
     def stream(
         self, descriptor: ModelDescriptor, prompt_text: str, constraints: ResponseConstraints
     ) -> Iterator[str]:
+        # The HuggingFace provider streams real tokens through a transformers
+        # TextIteratorStreamer (LangChain's ``chain.stream`` does not stream a local
+        # pipeline). Providers with native streaming (ollama) stream through LCEL,
+        # falling back to a single full generation only if streaming yields nothing.
+        if descriptor.provider == "huggingface":
+            yield from self._stream_huggingface(descriptor, prompt_text)
+            return
         chain = self._chain(descriptor)
+        model_input = self._model_input(descriptor, prompt_text)
+        streamed_any = False
         try:
-            for chunk in chain.stream(self._model_input(descriptor, prompt_text)):
-                yield str(chunk)
+            for chunk in chain.stream(model_input):
+                text = str(chunk)
+                if text:
+                    streamed_any = True
+                    yield text
         except Exception as exc:  # noqa: BLE001 - isolate any provider failure
-            raise ProviderInvocationError(str(exc)) from exc
+            if streamed_any:
+                raise ProviderInvocationError(str(exc)) from exc
+        else:
+            if streamed_any:
+                return
+        yield from self._generate_fragment(descriptor, prompt_text)
 
     @staticmethod
     def _model_input(descriptor: ModelDescriptor, prompt_text: str) -> Any:  # noqa: ANN401 - chat model accepts str or message list
@@ -136,8 +157,10 @@ class LangChainChatProvider(ChatModelProvider):
         ]
 
     @staticmethod
-    def _chain(descriptor: ModelDescriptor) -> ChatModelLike:
-        key = (
+    def _model_key(
+        descriptor: ModelDescriptor,
+    ) -> tuple[str, str, str, float, int, str, str, float, int]:
+        return (
             descriptor.provider,
             descriptor.model_name,
             descriptor.base_url,
@@ -145,7 +168,45 @@ class LangChainChatProvider(ChatModelProvider):
             descriptor.max_output_tokens,
             descriptor.device,
             descriptor.torch_dtype,
+            descriptor.top_p,
+            descriptor.top_k,
         )
+
+    @classmethod
+    def _raw_model(cls, descriptor: ModelDescriptor) -> Any:  # noqa: ANN401 - concrete chat model type varies by provider
+        """Build and cache the raw chat model so weights load exactly once."""
+        key = cls._model_key(descriptor)
+        cached = _RAW_MODEL_CACHE.get(key)
+        if cached is not None:
+            return cached
+        try:
+            model = build_chat_model(
+                descriptor.provider,
+                descriptor.model_name,
+                base_url=descriptor.base_url or "http://localhost:11434",
+                temperature=descriptor.temperature,
+                top_p=descriptor.top_p,
+                top_k=descriptor.top_k,
+                max_new_tokens=descriptor.max_output_tokens,
+                device=descriptor.device,
+                torch_dtype=descriptor.torch_dtype,
+            )
+        except Exception as exc:  # noqa: BLE001 - isolate any model-load failure (offline cache miss, missing weights, OOM) so the gateway can fall back instead of crashing
+            raise ProviderInvocationError(str(exc)) from exc
+        _RAW_MODEL_CACHE[key] = model
+        _logger.info(
+            "chat_model_loaded",
+            extra={
+                "model_id": descriptor.model_id,
+                "device": descriptor.device or "cpu",
+                "cache_size": len(_RAW_MODEL_CACHE),
+            },
+        )
+        return model
+
+    @classmethod
+    def _chain(cls, descriptor: ModelDescriptor) -> ChatModelLike:
+        key = cls._model_key(descriptor)
         cached = _CHAIN_CACHE.get(key)
         if cached is not None:
             return cached
@@ -155,29 +216,100 @@ class LangChainChatProvider(ChatModelProvider):
             raise ProviderInvocationError(
                 "langchain-core is required for the LangChain chat provider"
             ) from exc
-        try:
-            model = build_chat_model(
-                descriptor.provider,
-                descriptor.model_name,
-                base_url=descriptor.base_url or "http://localhost:11434",
-                temperature=descriptor.temperature,
-                max_new_tokens=descriptor.max_output_tokens,
-                device=descriptor.device,
-                torch_dtype=descriptor.torch_dtype,
-            )
-        except Exception as exc:  # noqa: BLE001 - isolate any model-load failure (offline cache miss, missing weights, OOM) so the gateway can fall back instead of crashing
-            raise ProviderInvocationError(str(exc)) from exc
-        chain = cast("ChatModelLike", model | StrOutputParser())  # type: ignore[operator]
+        chain = cast("ChatModelLike", cls._raw_model(descriptor) | StrOutputParser())
         _CHAIN_CACHE[key] = chain
-        _logger.info(
-            "chat_model_loaded",
-            extra={
-                "model_id": descriptor.model_id,
-                "device": descriptor.device or "cpu",
-                "cache_size": len(_CHAIN_CACHE),
-            },
-        )
         return chain
+
+    def _stream_huggingface(
+        self, descriptor: ModelDescriptor, prompt_text: str
+    ) -> Iterator[str]:
+        """Stream real tokens from a local HuggingFace pipeline as they are produced.
+
+        Generation runs in a background thread feeding a ``TextIteratorStreamer`` so
+        each decoded token is yielded the instant the model emits it. If the raw
+        pipeline cannot be reached, it degrades to a single full-text generation so
+        the answer is never lost.
+        """
+        model = self._raw_model(descriptor)
+        hf_pipeline = getattr(getattr(model, "llm", None), "pipeline", None)
+        hf_model = getattr(hf_pipeline, "model", None)
+        tokenizer = getattr(hf_pipeline, "tokenizer", None)
+        if hf_model is None or tokenizer is None:
+            yield from self._generate_fragment(descriptor, prompt_text)
+            return
+        try:
+            import threading
+
+            from transformers import TextIteratorStreamer
+        except ImportError as exc:
+            raise ProviderInvocationError(str(exc)) from exc
+
+        messages: list[dict[str, str]] = []
+        if descriptor.system_prompt:
+            messages.append({"role": "system", "content": descriptor.system_prompt})
+        messages.append({"role": "user", "content": prompt_text})
+        try:
+            encoded = tokenizer.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                return_tensors="pt",
+                return_dict=True,
+            )
+        except Exception:  # noqa: BLE001 - tokenizer without a usable chat template
+            encoded = tokenizer(prompt_text, return_tensors="pt")
+        encoded = encoded.to(hf_model.device)
+        streamer: Any = TextIteratorStreamer(
+            tokenizer, skip_prompt=True, skip_special_tokens=True
+        )
+        generation_kwargs: dict[str, Any] = {
+            "streamer": streamer,
+            "max_new_tokens": descriptor.max_output_tokens or 512,
+            "do_sample": descriptor.temperature > 0.0,
+        }
+        if descriptor.temperature > 0.0:
+            generation_kwargs["temperature"] = descriptor.temperature
+            # top_p/top_k narrow the sampling pool to the most relevant tokens;
+            # they only apply when sampling is on. Skip neutral values.
+            if 0.0 < descriptor.top_p < 1.0:
+                generation_kwargs["top_p"] = descriptor.top_p
+            if descriptor.top_k > 0:
+                generation_kwargs["top_k"] = descriptor.top_k
+        errors: list[Exception] = []
+
+        def _generate() -> None:
+            try:
+                hf_model.generate(**encoded, **generation_kwargs)
+            except Exception as exc:  # noqa: BLE001 - surfaced after the stream drains
+                errors.append(exc)
+            finally:
+                # Always release the consumer: on a generation error the model never
+                # signals end-of-stream, which would otherwise deadlock the
+                # ``for text in streamer`` iteration forever.
+                streamer.end()
+
+        thread = threading.Thread(target=_generate, daemon=True)
+        thread.start()
+        try:
+            for text in streamer:
+                if text:
+                    yield text
+        finally:
+            thread.join()
+        if errors:
+            raise ProviderInvocationError(str(errors[0])) from errors[0]
+
+    def _generate_fragment(
+        self, descriptor: ModelDescriptor, prompt_text: str
+    ) -> Iterator[str]:
+        """Yield the full generation as one fragment (non-streaming fallback)."""
+        chain = self._chain(descriptor)
+        try:
+            output = chain.invoke(self._model_input(descriptor, prompt_text))
+        except Exception as exc:  # noqa: BLE001 - isolate any provider failure
+            raise ProviderInvocationError(str(exc)) from exc
+        text = str(output)
+        if text:
+            yield text
 
 
 def default_provider_registry() -> dict[str, ChatModelProvider]:

@@ -5930,13 +5930,13 @@ Example:
   -------------------------------------------------------------------------
   **Model**                 **Provider**   **Dimensions**   **Status**
   ------------------------- -------------- ---------------- ---------------
-  text-embedding-3-large    OpenAI         3072             Active
+  BAAI/bge-base-en-v1.5     HuggingFace    768              Active
 
-  text-embedding-3-small    OpenAI         1536             Active
+  all-MiniLM-L6-v2          HuggingFace    384              Approved
 
-  Voyage Large              Voyage AI      Configurable     Approved
+  nomic-embed-text          Ollama         768              Approved
 
-  BGE-M3                    Local          1024             Experimental
+  Local Hash                Local          256              Experimental
   -------------------------------------------------------------------------
 
 The registry supports governance, auditing, and controlled upgrades.
@@ -6752,7 +6752,7 @@ classification: Internal
 
 version: 5
 
-embedding_model: text-embedding-3-large
+embedding_model: BAAI/bge-base-en-v1.5
 
 Rich metadata enables powerful downstream filtering without additional
 joins.
@@ -7924,8 +7924,8 @@ because it provides:
 
 - Integration with enterprise ecosystems
 
-Future versions may support PostgreSQL or other relational databases
-through an abstraction layer.
+Additional relational database backends can be introduced through the
+database abstraction layer if required.
 
 ## 13.4 High-Level Architecture
 
@@ -9379,13 +9379,13 @@ Example:
 
 embedding:
 
-model: text-embedding-3-large
+model: BAAI/bge-base-en-v1.5
 
-provider: openai
+provider: huggingface
 
-max_tokens: 8000
+max_tokens: 512
 
-fallback_model: bge-m3
+fallback_model: local-hash
 
 **3. Publishing Policy**
 

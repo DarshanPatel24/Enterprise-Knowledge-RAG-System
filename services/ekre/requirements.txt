@@ -26,9 +26,12 @@ accelerate>=0.21.0
 sentence-transformers>=3.0.0
 huggingface-hub>=0.23
 langchain-huggingface>=0.0.3
-# The Qwen3-VL embedding model's image processor imports torchvision + pillow
-# even for text-only embedding. pillow installs from PyPI; install torchvision
-# from the CUDA index matching your torch build, e.g. (CUDA 13):
-#   pip install torchvision --index-url https://download.pytorch.org/whl/cu130
+# bge-base / bge-reranker-base are text-only models and do NOT require
+# torchvision. pillow is a transitive sentence-transformers dependency; it is
+# pinned here only to guarantee it is present.
 pillow>=10.0
+
+# --- Test tooling (needed to run the EKRE test suite: python -m pytest) ---
+pytest>=8.2.0
+pytest-asyncio>=0.23.0
 

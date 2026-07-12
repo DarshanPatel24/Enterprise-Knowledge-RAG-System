@@ -7,8 +7,9 @@ metric); it never ingests, embeds documents, or generates responses.
 
 ## Pipeline
 Query Intelligence → Execution Core → Retrieval Workers (+ pre-pool security
-filter) → Candidate Fusion (RRF) → Ranking → Context Assembly → handoff package,
-with cross-cutting tracing, immutable audit, and PII masking.
+filter) → Candidate Fusion (RRF) → Ranking (cross-encoder reranker) → Context
+Assembly → handoff package, with cross-cutting tracing, immutable audit, and PII
+masking.
 
 ## Layout
 1. `src/config` — `EkreSettings` (all `EKRE_*` groups) and `get_settings()`.

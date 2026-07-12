@@ -7,9 +7,10 @@ store, cache, or internal service, and makes zero external HTTP calls at default
 configuration.
 
 ## Stack
-- Next.js 14 App Router, TypeScript strict
+- Next.js 16 App Router, React 19, TypeScript strict
 - Tailwind CSS + shadcn/ui primitives
 - SSE streaming via `fetch` + `ReadableStream` (no `EventSource`)
+- ESLint 9 flat config; Playwright browser E2E
 
 ## Getting started
 1. Copy the environment template and fill values:
@@ -24,13 +25,16 @@ configuration.
    ```
    npm run dev
    ```
+   The dev server listens on port **3001** (avoids a clash with Langfuse on 3000).
 4. Open the app; the home page confirms EKCP connectivity.
 
 ## Scripts
-- `npm run dev` — start the development server.
-- `npm run build` — production build (TypeScript strict + ESLint gate).
-- `npm run lint` — ESLint.
+- `npm run dev` — start the development server (port 3001).
+- `npm run build` — production build (Turbopack).
+- `npm run start` — serve the production build (port 3001).
+- `npm run lint` — ESLint (flat config).
 - `npm run typecheck` — `tsc --noEmit`.
+- `npm run test:e2e` — Playwright browser E2E.
 
 ## Conventions
 See [../../.github/instructions/nextjs.instructions.md](../../.github/instructions/nextjs.instructions.md).

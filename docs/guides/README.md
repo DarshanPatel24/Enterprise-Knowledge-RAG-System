@@ -42,7 +42,7 @@ These guides summarize and operationalize the detailed engineering handbooks. Fo
 | EKIE API | 8001 | Ingestion engine |
 | EKRE API | 8002 | Retrieval engine |
 | EKCP API | 8003 | Chat platform (the only API the Web UI talks to) |
-| Web UI | 3000 (dev) | **Conflicts with Langfuse — run the Web UI on 3001 if Langfuse uses 3000** |
+| Web UI | 3001 (dev) | Defaults to 3001 to avoid the Langfuse (3000) clash |
 | Qdrant | 6333 | Vector database |
 | Redis | 6379 | Cache (used by Langfuse) |
 | MinIO | 9005 / 9006 | Object storage API / console |

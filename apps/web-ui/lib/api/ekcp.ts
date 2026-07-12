@@ -142,14 +142,24 @@ function toClearance(value: unknown): ClassificationClearance {
     : "internal";
 }
 
+/** Derive a human-readable document name from a source path (basename, no `.md`). */
+function friendlyDocName(sourcePath: string): string {
+  const base = sourcePath.split(/[\\/]/).pop() ?? "";
+  return base.replace(/\.md$/i, "").trim();
+}
+
 /** Map a raw `citation` frame payload to a typed `Citation`. */
 function toCitation(data: Record<string, unknown>): Citation {
   const sourcePath = String(data.source_path ?? data.source ?? "");
+  const sectionTitle = String(data.section_title ?? "");
+  const docName = friendlyDocName(sourcePath);
   return {
     sourcePath,
     documentId: String(data.document_id ?? data.doc ?? ""),
     chunkId: String(data.chunk_id ?? data.chunk ?? ""),
-    title: String(data.title ?? sourcePath.split(/[\\/]/).pop() ?? "Source"),
+    title: String(data.title ?? "") || docName || sectionTitle || "Source",
+    sectionTitle,
+    snippet: String(data.snippet ?? data.content ?? ""),
     confidence: Number(data.confidence ?? data.relevance_score ?? 0),
     clearance: toClearance(data.classification_clearance ?? data.clearance),
     explanation: String(data.explanation ?? ""),
@@ -181,6 +191,12 @@ export function parseSseBlock(block: string): SseEvent | null {
       return { type: "token", text: String(data.text ?? "") };
     case "citation":
       return { type: "citation", citation: toCitation(data) };
+    case "stage":
+      return {
+        type: "stage",
+        key: String(data.key ?? ""),
+        label: String(data.label ?? ""),
+      };
     case "done":
       return {
         type: "done",

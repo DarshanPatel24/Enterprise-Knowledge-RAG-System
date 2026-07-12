@@ -96,6 +96,8 @@ class ModelDescriptor(BaseModel):
     lifecycle_state: ModelLifecycleState = ModelLifecycleState.REGISTERED
     base_url: str = ""
     temperature: float = 0.0
+    top_p: float = 1.0
+    top_k: int = 0
     device: str = ""
     torch_dtype: str = ""
     system_prompt: str = ""

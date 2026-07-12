@@ -42,7 +42,10 @@ from domain.embedding.retry import run_with_retry
 from domain.embedding.selection import ModelSelectionError, ModelSelector
 from domain.embedding.tokens import batched, estimate_cost, estimate_tokens
 from domain.embedding.validation import EmbeddingValidator
+from domain.observability import get_logger
 from domain.storage import AssetStorage, compute_content_hash
+
+logger = get_logger("ekie.embedding.engine")
 
 
 @dataclass(frozen=True)
@@ -139,9 +142,22 @@ class EmbeddingEngine:
                     detail=f"{model.name} ({model.provider}, dim={model.dimensions})",
                 )
             )
-            embedding_document, batch_count, generation_ms = self._generate(
-                document_id, tenant_id, chunk_document, model
+            embedding_document, batch_count, generation_ms, truncated_chunk_ids = (
+                self._generate(document_id, tenant_id, chunk_document, model)
             )
+            if truncated_chunk_ids:
+                events.append(
+                    self._event(
+                        EmbeddingEventType.EMBEDDING_TRUNCATED,
+                        document_id,
+                        tenant_id,
+                        detail=(
+                            f"{len(truncated_chunk_ids)} chunk(s) exceeded the "
+                            f"{model.max_input_tokens}-token window of model "
+                            f"{model.name!r} and were truncated to fit"
+                        ),
+                    )
+                )
             events.append(
                 self._event(
                     EmbeddingEventType.EMBEDDINGS_GENERATED,
@@ -196,7 +212,7 @@ class EmbeddingEngine:
         tenant_id: str,
         chunk_document: ChunkDocument,
         model: EmbeddingModelSpec,
-    ) -> tuple[EmbeddingDocument, int, float]:
+    ) -> tuple[EmbeddingDocument, int, float, list[str]]:
         try:
             provider = self._providers.get(model.provider)
         except EmbeddingProviderError as exc:
@@ -208,6 +224,7 @@ class EmbeddingEngine:
         self._validate_tokens(chunks, model)
 
         records: list[EmbeddingRecord] = []
+        truncated_chunk_ids: list[str] = []
         batch_count = 0
         total_tokens = 0
         started = time.perf_counter()
@@ -219,9 +236,8 @@ class EmbeddingEngine:
         for batch in batched(chunks, self._policy.batch_size):
             batch_count += 1
             self._rate_limiter.acquire(1)
-            vectors = self._embed_batch(
-                provider, [chunk.content for chunk in batch], model.dimensions
-            )
+            texts = [self._fit_to_context(chunk, model, truncated_chunk_ids) for chunk in batch]
+            vectors = self._embed_batch(provider, texts, model.dimensions)
             for chunk, vector in zip(batch, vectors, strict=True):
                 self._validate_vector(validator, vector, chunk)
                 tokens = estimate_tokens(chunk.content)
@@ -254,11 +270,19 @@ class EmbeddingEngine:
             total_tokens=total_tokens,
             records=records,
         )
-        return embedding_document, batch_count, generation_ms
+        return embedding_document, batch_count, generation_ms, truncated_chunk_ids
 
     def _validate_tokens(
         self, chunks: list[Chunk], model: EmbeddingModelSpec
     ) -> None:
+        """Reject chunks over the model window unless truncation is enabled.
+
+        When ``truncate_oversized_chunks`` is set (the default), oversized chunks
+        are truncated at embed time by :meth:`_fit_to_context` instead of failing;
+        this guard only fires when an operator has opted into strict enforcement.
+        """
+        if self._policy.truncate_oversized_chunks:
+            return
         for chunk in chunks:
             tokens = estimate_tokens(chunk.content)
             if tokens > model.max_input_tokens:
@@ -267,6 +291,31 @@ class EmbeddingEngine:
                     f"chunk {chunk.metadata.chunk_id!r} has {tokens} tokens; "
                     f"model {model.name!r} allows {model.max_input_tokens}",
                 )
+
+    def _fit_to_context(
+        self, chunk: Chunk, model: EmbeddingModelSpec, truncated: list[str]
+    ) -> str:
+        """Return chunk text fitted to the model window, recording truncations.
+
+        The whitespace token estimate mirrors chunk-budget accounting, so a chunk
+        within ``max_input_tokens`` is returned unchanged; a larger one is clipped
+        to the window and its id is recorded so the caller can emit a warning.
+        """
+        if not self._policy.truncate_oversized_chunks:
+            return chunk.content
+        words = chunk.content.split()
+        if len(words) <= model.max_input_tokens:
+            return chunk.content
+        truncated.append(chunk.metadata.chunk_id)
+        logger.warning(
+            "Truncating chunk %s from %d to %d tokens to fit model %r context window",
+            chunk.metadata.chunk_id,
+            len(words),
+            model.max_input_tokens,
+            model.name,
+        )
+        return " ".join(words[: model.max_input_tokens])
+
 
     def _embed_batch(
         self, provider: EmbeddingProvider, texts: list[str], dimension: int

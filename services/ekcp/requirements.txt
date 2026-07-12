@@ -28,3 +28,7 @@ transformers>=4.0.0
 accelerate>=0.21.0
 huggingface-hub>=0.23
 langchain-huggingface>=0.0.3
+
+# --- Test tooling (needed to run the EKCP test suite: python -m pytest) ---
+pytest>=8.2.0
+pytest-asyncio>=0.23.0

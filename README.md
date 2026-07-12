@@ -2,22 +2,27 @@
 
 Welcome to the Enterprise Knowledge RAG System (EK-RAG) repository.
 
-EK-RAG is a fully decoupled, production-grade Retrieval-Augmented Generation platform built around three independent, specialized engines. Rather than building a monolithic chatbot-plus-search application, this repository orchestrates ingestion, retrieval, and chat orchestration as highly scalable, distinct microservices.
+EK-RAG is a fully decoupled, production-grade Retrieval-Augmented Generation platform. Rather than building a monolithic chatbot-plus-search application, this repository orchestrates document conversion, ingestion, retrieval, and chat orchestration as highly scalable, distinct components — fronted by a local-first web chat UI. Data flows left to right: **EKDC → EKIE → (Vector DB) → EKRE → EKCP → Web UI.**
 
 ## 📖 Architecture & Documentation
 The system architecture is entirely decoupled and documented. Before contributing, you **must** read the Master Architecture Blueprint to understand how the three engines integrate.
 
 - **[Master Architecture Blueprint](docs/master-architecture.md):** Start here. Covers the end-to-end topology, data flow, and global integration contracts (Vector Mismatches, Citations, DSAR Purging, and HTTP 429 Backpressure).
-- **[EKIE - Enterprise Knowledge Ingestion Engine](docs/EKIE/EKIE-handbook.md):** The factory. Connects to repositories, extracts intelligence, chunks, and publishes embeddings.
+- **[EKDC - Enterprise Knowledge Document Converter](services/ekdc/README.md):** The translator. A background agent that converts any file (PDF, Word, PowerPoint, images, audio, video) into clean Markdown for ingestion.
+- **[EKIE - Enterprise Knowledge Ingestion Engine](docs/EKIE/EKIE-handbook.md):** The factory. Ingests Markdown, extracts intelligence, chunks, and publishes embeddings.
 - **[EKRE - Enterprise Knowledge Retrieval Engine](docs/EKRE/EKRE-handbook.md):** The librarian. Handles query intelligence, vector/keyword math, candidate fusion, and citation lineage.
 - **[EKCP - Enterprise Knowledge Chat Platform](docs/EKCP/EKCP-handbook.md):** The brain. Manages conversation digital twins, memory, agent tools, and LLM prompting.
+- **[Web UI](apps/web-ui/README.md):** The face. A local-first Next.js chat app that is a REST/SSE client of the EKCP gateway only.
+- **New here?** The [Product Guides](docs/guides/README.md) explain every component from scratch in plain English.
 
 ## 🏗️ Repository Structure (Monorepo)
 We utilize a domain-isolated monorepo structure. Engines cannot share databases or internal states. They communicate exclusively via REST APIs and Event Buses.
 
 ```
 /docs                       # Enterprise architecture specifications and handbooks
+/docs/guides                # From-scratch product guides (start here if new)
 /docs/sprints               # Per-engine and master integration sprint tracks
+/services/ekdc              # Document Converter agent (any format -> Markdown)
 /services/ekie              # Ingestion Engine (Python/FastAPI)
 /services/ekre              # Retrieval Engine (Python/FastAPI)
 /services/ekcp              # Chat Platform (Python/FastAPI)
@@ -25,7 +30,9 @@ We utilize a domain-isolated monorepo structure. Engines cannot share databases 
 /services/<engine>/src/api      # FastAPI routers and handlers
 /services/<engine>/src/domain   # Engine domain logic
 /services/<engine>/tests        # Service tests
+/apps/web-ui                # Local-first Next.js chat UI (EKCP client only)
 /packages/contracts         # Shared cross-engine Pydantic v2 schemas
+/integration                # Cross-engine integration harness + evidence
 ```
 
 ## 🗺️ Delivery Planning
@@ -52,7 +59,7 @@ The architecture remains vendor-neutral (Technology Independence). The current r
 
 ## 🚀 Getting Started (Local Setup)
 
-Because the entire infrastructure (Qdrant, Redis, MinIO, MS SQL Server, Ollama) runs locally via containers, you must have Docker installed before you can start the system.
+The local infrastructure (Qdrant, Redis, MinIO, and Langfuse) runs via Docker Compose, so you must have Docker installed before you start the system. Microsoft SQL Server (control plane) runs as a Windows-native instance, and Ollama (optional local LLM/embedding runtime) runs as its own local server — neither is managed by the compose file.
 
 ### 1. Install Docker Desktop
 If you do not have Docker installed, please download and install **Docker Desktop**:

@@ -12,7 +12,7 @@
 | EKIE | Python/FastAPI (uvicorn) | 8001 | SQL Server (control plane) + MinIO (assets) + Qdrant (vectors) | `python services/ekie/scripts/start_api.py` |
 | EKRE | Python/FastAPI (uvicorn) | 8002 | none (reads Qdrant) | `python services/ekre/scripts/start_api.py` |
 | EKCP | Python/FastAPI (uvicorn) | 8003 | in-memory by default; optional Redis + SQL Server | `python services/ekcp/scripts/start_api.py` |
-| Web UI | Next.js | 3000/3001 | browser localStorage only | `npm run start` |
+| Web UI | Next.js | 3001 | browser localStorage only | `npm run start` |
 | EKDC | Python watcher | n/a | files on disk + model cache | `python agent.py` |
 | Infra | Docker Compose | 6333/6379/9005/3000 | Qdrant/Redis/MinIO/Langfuse | `docker compose -f docker-compose.local.yml up -d` |
 

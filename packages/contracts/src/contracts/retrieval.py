@@ -11,6 +11,9 @@ class Citation(VersionedContract):
     document_id: str = Field(min_length=1)
     chunk_id: str = Field(min_length=1)
     source_path: str = Field(min_length=1)
+    # Human-readable section heading for the cited passage (e.g. "Windows
+    # Authentication"). Optional so legacy candidates without it still validate.
+    section_title: str | None = None
 
 
 class RetrievalCandidate(VersionedContract):

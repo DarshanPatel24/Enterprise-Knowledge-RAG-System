@@ -78,7 +78,7 @@ A Next.js browser app where users:
 - Manage multiple conversations (saved locally in the browser).
 - Configure their connection (API URL, tenant, user, API key) on a Settings screen.
 
-The Web UI is a **pure client of EKCP** — it never touches a database or another engine directly. It runs on **port 3000** in development.
+The Web UI is a **pure client of EKCP** — it never touches a database or another engine directly. It runs on **port 3001** in development (chosen to avoid a clash with the local Langfuse UI on 3000).
 
 ---
 
@@ -172,7 +172,7 @@ In per-service `.env` files (see the [Admin Guide](04-admin-guide.md)). Note tha
 | Chat returns 403 | Security context invalid or tenant mismatch | Ensure tenant/user/clearance are set and tenant matches |
 | Answers have no citations | Knowledge disabled, EKRE down, or no documents ingested | Enable `EKCP_KNOWLEDGE__ENABLED`, start EKRE, ingest documents |
 | EKDC converts nothing | Wrong `INPUT_DIRECTORY`, or Tesseract/FFmpeg missing | Check `services/ekdc/.env` and prerequisites |
-| Web UI and Langfuse both want port 3000 | Port conflict | Run the Web UI on 3001 (`npm run dev -- --port 3001`) |
+| Web UI port already in use | Another process holds 3001 | Run the Web UI on a free port (`npm run dev -- --port <port>`) |
 | EKRE first query is very slow | Loading a HuggingFace embedding model | Expected on first call; use local hash embedder for dev |
 
 More component-specific troubleshooting lives in each engine's Help Guide (linked from the [guides index](README.md)).

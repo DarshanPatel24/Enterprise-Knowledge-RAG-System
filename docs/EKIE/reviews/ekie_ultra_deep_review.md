@@ -345,7 +345,7 @@ Section status: Completed (2026-07-03)
 |---|---|---|
 | `langfuse` | Pinned to `>=2.0,<3.0` | v4 uses OTEL protocol incompatible with self-hosted stack |
 | `pymupdf` | Added to `richmedia` extras | Required for scanned PDF page rendering (no poppler dependency) |
-| `sentence-transformers[image]` + `torchvision` | Added to install guide | Required for Qwen3-VL-Embedding-2B vision-language processor |
+| `sentence-transformers` | Added to install guide | Required for the `BAAI/bge-base-en-v1.5` text embedding model |
 | Tesseract binary | Added to prerequisites | Required for OCR on scanned PDFs; must be on system PATH |
 
 ### 11.4 New Automation

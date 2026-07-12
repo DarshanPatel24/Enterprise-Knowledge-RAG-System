@@ -27,7 +27,8 @@ This plan defines the official sprint model for EK-RAG delivery. Each feature an
 2. EKIE: [sprints/ekie-sprint-track.md](sprints/ekie-sprint-track.md)
 3. EKRE: [sprints/ekre-sprint-track.md](sprints/ekre-sprint-track.md)
 4. EKCP: [sprints/ekcp-sprint-track.md](sprints/ekcp-sprint-track.md)
-5. Master integration: [sprints/master-integration-sprint-track.md](sprints/master-integration-sprint-track.md)
+5. Web UI: [sprints/web-ui-sprint-track.md](sprints/web-ui-sprint-track.md)
+6. Master integration: [sprints/master-integration-sprint-track.md](sprints/master-integration-sprint-track.md)
 
 ## 5. Required Sprint Metadata (For Every Sprint)
 1. Objective and business outcome

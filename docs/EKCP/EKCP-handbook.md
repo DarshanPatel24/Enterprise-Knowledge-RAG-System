@@ -14480,7 +14480,7 @@ Data Type → Storage Type
 
 \-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\--
 
-Transactional Data → PostgreSQL
+Transactional Data → SQL Server (control plane)
 
 Session State → Redis / Key-Value Store
 
@@ -14506,7 +14506,7 @@ Metrics → Time-Series DB (Prometheus-like)
 
 **Storage Type**
 
-- PostgreSQL (primary)
+- SQL Server (primary)
 
 - Redis (cache)
 

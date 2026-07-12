@@ -335,7 +335,7 @@ directory. The full template is [services/ekcp/.env.example](../../services/ekcp
 |---|---|---|
 | `ENABLED` | `false` | Fetch live knowledge from EKRE. |
 | `BASE_URL` | `http://localhost:8002` | EKRE service URL. |
-| `TIMEOUT_SECONDS` | `10.0` | Retrieval timeout. |
+| `TIMEOUT_SECONDS` | `500.0` | Per-request EKRE retrieval timeout (covers a full live retrieval incl. EKRE task budget + rerank/assembly). |
 | `MAX_RETRIES` | `3` | Retry budget. |
 | `CIRCUIT_BREAKER_THRESHOLD` | `5` | Failures before the breaker opens. |
 | `CIRCUIT_BREAKER_RESET_SECONDS` | `60.0` | Half-open probe delay. |

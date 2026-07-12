@@ -80,6 +80,22 @@ class RetrievalOrchestrator:
         failed = len(outcomes) - succeeded
         status = _status(succeeded, failed)
 
+        for outcome in outcomes:
+            if not outcome.succeeded:
+                _logger.warning(
+                    "retrieval_worker_failed",
+                    extra={
+                        "session_id": session_id,
+                        "plan_id": plan.plan_id,
+                        "task_id": outcome.task_id,
+                        "engine": outcome.engine.value,
+                        "worker_id": outcome.worker_id,
+                        "state": outcome.state.value,
+                        "error_type": outcome.error_type,
+                        "error_message": outcome.message,
+                    },
+                )
+
         if status is ExecutionStatus.FAILED and not self._policy.fail_open:
             raise ExecutionError(
                 ExecutionErrorType.ALL_WORKERS_FAILED,

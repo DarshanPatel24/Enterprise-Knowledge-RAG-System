@@ -10,7 +10,8 @@ function formatConfidence(confidence: number): string {
 }
 
 /**
- * Source citation card showing title, source path, confidence, and the
+ * Source citation card showing the document name, the section it came from, a
+ * readable snippet of the cited text, the relevance score, and the
  * classification clearance badge for a single retrieved source.
  */
 export function CitationCard({ citation }: { citation: Citation }): React.JSX.Element {
@@ -19,23 +20,28 @@ export function CitationCard({ citation }: { citation: Citation }): React.JSX.El
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <FileText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-          <span className="truncate text-sm font-medium">{citation.title}</span>
+          <span className="truncate text-sm font-medium" title={citation.sourcePath || citation.title}>
+            {citation.title}
+          </span>
         </div>
         <ClearanceBadge clearance={citation.clearance} />
       </div>
-      <p className="mt-1 truncate text-xs text-muted-foreground" title={citation.sourcePath}>
-        {citation.sourcePath}
-      </p>
-      {citation.explanation && (
-        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-          {citation.explanation}
+      {citation.sectionTitle && (
+        <p className="mt-1 truncate text-xs font-medium text-foreground/80" title={citation.sectionTitle}>
+          Section: {citation.sectionTitle}
         </p>
       )}
-      <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+      {citation.snippet && (
+        <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">{citation.snippet}</p>
+      )}
+      <div
+        className="mt-2 flex items-center gap-1 text-xs text-muted-foreground"
+        title={citation.explanation || undefined}
+      >
         <span className="font-medium text-foreground">
           {formatConfidence(citation.confidence)}
         </span>
-        <span>confidence</span>
+        <span>relevance</span>
       </div>
     </div>
   );

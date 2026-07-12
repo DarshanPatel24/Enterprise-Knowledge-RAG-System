@@ -52,7 +52,7 @@ Provide production-grade changes for EK-RAG while preserving strict engine bound
 - The UI is a REST and SSE client of the EKCP API gateway exclusively. No direct database, vector, cache, or engine internal access.
 - All outbound requests must carry `X-Tenant-ID` and `X-Correlation-ID` headers.
 - Configuration (API base URL, tenant ID, API key) is environment-backed; use `NEXT_PUBLIC_` env vars; never hardcode.
-- Before any `apps/web-ui/` change, read master-architecture.md Section 13 and `.github/instructions/nextjs.instructions.md`.
+- Before any `apps/web-ui/` change, read master-architecture.md Section 11 and `.github/instructions/nextjs.instructions.md`.
 - No external analytics, telemetry, or CDN dependencies at default configuration.
 - Before adding UI features that cross the EKCP boundary, confirm the API contract exists (starts with EKCP-S0-5).
 

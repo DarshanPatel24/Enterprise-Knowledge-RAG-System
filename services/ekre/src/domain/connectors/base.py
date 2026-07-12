@@ -39,6 +39,7 @@ class RepositoryDocument(BaseModel):
     classification_clearance: str = "public"
     repository_id: str = ""
     section_id: str | None = None
+    section_title: str | None = None
     language: str | None = None
 
 

@@ -66,9 +66,10 @@ The card is a quick health check — if it is red, chat will not work until the 
 
 1. Go to **Chat** (`/chat`).
 2. Type your question in the input at the bottom and send it (Enter to send).
-3. The answer **streams in token by token** — you see it being written in real time, with no page refresh.
-4. Answers render **Markdown**: headings, lists, tables, and syntax-highlighted code blocks.
-5. You can send a follow-up once the current answer finishes; the conversation keeps its context.
+3. While the system works, a **progress indicator** shows the current pipeline stage — *understanding* your question, *retrieving* and *reranking* sources, *reasoning*, then *generating* the answer — so you always know what is happening.
+4. The answer **streams in token by token** — you see it being written in real time, with no page refresh.
+5. Answers render **Markdown**: headings, lists, tables, and syntax-highlighted code blocks.
+6. You can send a follow-up once the current answer finishes; the conversation keeps its context.
 
 If something goes wrong mid-answer, an inline error message explains what happened; you can retry your question.
 
@@ -165,4 +166,4 @@ Connectivity only checks that the gateway is reachable. You still need Tenant ID
 
 - [Web-UI-Deployment-Guide.md](Web-UI-Deployment-Guide.md)
 - [../../apps/web-ui/README.md](../../apps/web-ui/README.md)
-- [../master-architecture.md](../master-architecture.md) — Section 13 (Web UI Layer)
+- [../master-architecture.md](../master-architecture.md) — Section 11 (Web UI Layer)

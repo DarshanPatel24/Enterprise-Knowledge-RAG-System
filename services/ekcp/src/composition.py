@@ -462,6 +462,8 @@ def _build_model_registry(settings: EkcpSettings) -> ModelRegistry:
                 lifecycle_state=ModelLifecycleState.PRODUCTION,
                 base_url=model.base_url,
                 temperature=model.temperature,
+                top_p=model.top_p,
+                top_k=model.top_k,
                 device=model.device,
                 torch_dtype=model.torch_dtype,
                 system_prompt=model.system_prompt,

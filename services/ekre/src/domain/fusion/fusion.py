@@ -91,6 +91,7 @@ class CandidateFusion:
                 document_id=citation.document_id,
                 chunk_id=representative.candidate.citation.chunk_id,
                 source_path=citation.source_path,
+                section_title=citation.section_title,
             )
         return KnowledgeObject(
             knowledge_id="ko-" + "-".join(key),

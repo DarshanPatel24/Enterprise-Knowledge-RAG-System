@@ -12,7 +12,8 @@ This folder contains execution-ready sprint tracks.
 2. [ekie-sprint-track.md](ekie-sprint-track.md)
 3. [ekre-sprint-track.md](ekre-sprint-track.md)
 4. [ekcp-sprint-track.md](ekcp-sprint-track.md)
-5. [master-integration-sprint-track.md](master-integration-sprint-track.md)
+5. [web-ui-sprint-track.md](web-ui-sprint-track.md)
+6. [master-integration-sprint-track.md](master-integration-sprint-track.md)
 
 ## Required Sections
 1. Track Definition Of Ready

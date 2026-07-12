@@ -63,6 +63,8 @@ def build_chat_model(
     *,
     base_url: str = _DEFAULT_OLLAMA_BASE_URL,
     temperature: float = 0.0,
+    top_p: float = 1.0,
+    top_k: int = 0,
     max_new_tokens: int = 0,
     device: str = "",
     torch_dtype: str = "",
@@ -93,6 +95,12 @@ def build_chat_model(
         }
         if max_new_tokens > 0:
             pipeline_kwargs["max_new_tokens"] = max_new_tokens
+        if temperature > 0.0:
+            # top_p/top_k only bite when sampling is on; skip neutral values.
+            if 0.0 < top_p < 1.0:
+                pipeline_kwargs["top_p"] = top_p
+            if top_k > 0:
+                pipeline_kwargs["top_k"] = top_k
         from_model_id_kwargs: dict[str, Any] = {
             "model_id": model,
             "task": "text-generation",
@@ -110,10 +118,16 @@ def build_chat_model(
             raise LangChainResourceError(
                 "langchain-ollama is not installed; install it to use an Ollama chat model"
             ) from exc
-        return cast(
-            "ChatModelLike",
-            ChatOllama(model=model, base_url=base_url, temperature=temperature),
-        )
+        ollama_kwargs: dict[str, Any] = {
+            "model": model,
+            "base_url": base_url,
+            "temperature": temperature,
+        }
+        if 0.0 < top_p < 1.0:
+            ollama_kwargs["top_p"] = top_p
+        if top_k > 0:
+            ollama_kwargs["top_k"] = top_k
+        return cast("ChatModelLike", ChatOllama(**ollama_kwargs))
     raise LangChainResourceError(
         f"chat model provider {provider!r} is not supported; use 'huggingface' or 'ollama'"
     )

@@ -257,7 +257,16 @@ class ExecutionSettings(BaseSettings):
 
     runner: Literal["concurrent", "langgraph"] = "concurrent"
     max_parallel_workers: int = Field(default=4, gt=0)
-    default_task_timeout_ms: float = Field(default=150.0, gt=0.0)
+    # Hard per-task execution deadline (the runner kills a worker future that
+    # exceeds it). This is the wall-clock budget for one live worker call
+    # (embedding inference + vector/keyword query over the network), NOT the
+    # ``EKRE_RETRIEVAL__BUDGET_*`` latency SLO targets used for stage-timeline
+    # reporting. Sized for the live Qdrant + embedding-model path where a single
+    # query embedding on a shared/contended GPU can take well over ten seconds;
+    # if the worker is killed mid-call its completed result is discarded, so the
+    # budget must exceed real embedding latency. The deterministic in-memory path
+    # completes far inside it.
+    default_task_timeout_ms: float = Field(default=30000.0, gt=0.0)
     max_attempts_per_task: int = Field(default=1, gt=0)
     admission_enabled: bool = True
     fail_open: bool = True
@@ -312,10 +321,10 @@ class RankingSettings(BaseSettings):
     fusion_weight: float = Field(default=0.3, ge=0.0)
     policy_version: str = "v1"
     # Cross-encoder reranker (handbook Chapter 25.11): a purpose-built reranker
-    # model (for example Qwen/Qwen3-VL-Reranker-2B) scores query/document
+    # model (for example BAAI/bge-reranker-base) scores query/document
     # relevance and reorders the top candidates. It performs no chat generation
     # (that is EKCP). Disabled by default; when enabled it degrades gracefully to
-    # the deterministic ordering. Device/precision mirror the query embedder.
+    # the deterministic ordering. Runs on CPU by default so the EKCP LLM keeps the GPU.
     enable_reranker: bool = False
     reranker_model: str = ""
     reranker_device: str = "auto"

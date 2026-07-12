@@ -20,6 +20,7 @@ from domain.embedding import (
     EmbeddingEngine,
     EmbeddingError,
     EmbeddingErrorType,
+    EmbeddingEventType,
     EmbeddingPolicy,
 )
 from domain.intelligence import DocumentIntelligenceEngine, IntelligencePolicy
@@ -200,12 +201,31 @@ def test_embedding_requires_chunk_asset(
     assert excinfo.value.error_type is EmbeddingErrorType.MISSING_CHUNKS
 
 
-def test_embedding_enforces_token_limit(
+def test_embedding_truncates_oversized_chunks_by_default(
     control_plane_db: ControlPlaneDatabase,
 ) -> None:
     document_id, storage = _prepare(control_plane_db)
     engine = EmbeddingEngine(
         control_plane_db, storage, EmbeddingPolicy(max_input_tokens=1)
+    )
+
+    result = engine.embed(document_id, "tenant-a")
+
+    assert result.embedding_document.embedding_count > 0
+    assert any(
+        event.event_type is EmbeddingEventType.EMBEDDING_TRUNCATED
+        for event in result.events
+    )
+
+
+def test_embedding_enforces_token_limit_when_truncation_disabled(
+    control_plane_db: ControlPlaneDatabase,
+) -> None:
+    document_id, storage = _prepare(control_plane_db)
+    engine = EmbeddingEngine(
+        control_plane_db,
+        storage,
+        EmbeddingPolicy(max_input_tokens=1, truncate_oversized_chunks=False),
     )
 
     with pytest.raises(EmbeddingError) as excinfo:

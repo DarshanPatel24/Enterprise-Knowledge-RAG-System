@@ -26,8 +26,11 @@ const SETTINGS: UiSettings = {
 };
 
 const SSE_BODY = [
+  "event: stage",
+  'data: {"key":"retrieving","label":"Retrieving relevant documents"}',
+  "",
   "event: citation",
-  'data: {"document_id":"doc-9","chunk_id":"chunk-1","source_path":"/enterprise/retention.md","confidence":0.91,"explanation":"policy match"}',
+  'data: {"document_id":"doc-9","chunk_id":"chunk-1","source_path":"/enterprise/Data Retention Policy.md","section_title":"Retention Rules","snippet":"Enterprise data is retained for seven years.","confidence":0.91,"explanation":"policy match"}',
   "",
   "event: token",
   'data: {"text":"Enterprise "}',
@@ -79,8 +82,9 @@ test("streams a grounded answer and renders a citation card", async ({ page }) =
     page.getByText("Enterprise retention is seven years."),
   ).toBeVisible();
 
-  // Citation card renders with source path, clearance badge, and a Sources header.
-  await expect(page.getByText("/enterprise/retention.md")).toBeVisible();
+  // Citation card renders with the friendly document name, section, clearance badge, and a Sources header.
+  await expect(page.getByText("Data Retention Policy")).toBeVisible();
+  await expect(page.getByText("Section: Retention Rules")).toBeVisible();
   await expect(page.getByText("Internal", { exact: true })).toBeVisible();
   await expect(page.getByText(/Sources \(1\)/)).toBeVisible();
 });

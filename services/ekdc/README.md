@@ -220,7 +220,7 @@ Set `EKDC_DESCRIBE_IMAGES=false` in `.env` and restart the agent. **No model is 
 
 > **Fail-safe:** if the model/server is unavailable or misconfigured, EKDC **logs a warning and skips the description** — the document still converts successfully. Descriptions are **cached by image hash**, so re-runs don't re-pay the cost.
 
-> ⚠️ **The model MUST be a VISION (VL) model.** For HuggingFace use e.g. `Qwen/Qwen2.5-VL-7B-Instruct` — **not** `Qwen/Qwen2.5-7B-Instruct` (that is text-only and cannot see images). For Ollama use a vision tag such as `qwen2.5vl` or `llama3.2-vision`. The Qwen3-VL-**Embedding** model used by the retrieval engine is an *embedding* model and also cannot describe images.
+> ⚠️ **The model MUST be a VISION (VL) model.** For HuggingFace use e.g. `Qwen/Qwen2.5-VL-7B-Instruct` — **not** `Qwen/Qwen2.5-7B-Instruct` (that is text-only and cannot see images). For Ollama use a vision tag such as `qwen2.5vl` or `llama3.2-vision`. The `BAAI/bge-base-en-v1.5` embedding model used by the ingestion/retrieval engines is an *embedding* model and also cannot describe images.
 
 ### 📦 Where local models are stored (persistent cache)
 

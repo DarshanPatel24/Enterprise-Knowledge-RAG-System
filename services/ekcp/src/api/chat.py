@@ -26,6 +26,7 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 
 from api.dependencies import Resources, TenantId
 from contracts.retrieval import RetrievalCandidate
@@ -59,6 +60,42 @@ class ChatStreamRequest(BaseModel):
 def format_sse_event(event: str, data: dict[str, object]) -> str:
     """Serialize a single Server-Sent Events frame."""
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+
+
+# Human-readable pipeline stage labels streamed to the UI so the user sees live
+# progress instead of a single static spinner during the long retrieval and
+# generation phases. Keys are stable; labels are display text.
+_STAGE_LABELS: dict[str, str] = {
+    "understanding": "Understanding your question",
+    "retrieving": "Retrieving relevant documents",
+    "reranking": "Reranking for the best results",
+    "reasoning": "Reasoning over the retrieved context",
+    "generating": "Generating response",
+}
+
+
+def _stage_event(key: str) -> str:
+    """Serialize a ``stage`` SSE frame carrying a pipeline progress label."""
+    return format_sse_event("stage", {"key": key, "label": _STAGE_LABELS.get(key, key)})
+
+
+def _citation_snippet(content: str, *, max_chars: int = 240) -> str:
+    """Return a short, human-readable snippet of the cited chunk.
+
+    Drops the leading breadcrumb context line (``> Context: ...``) and heading
+    markers the chunker prepends, collapses whitespace, and truncates so the
+    citation card shows readable source text rather than raw markdown.
+    """
+    lines = [
+        line.strip()
+        for line in content.splitlines()
+        if line.strip() and not line.lstrip().startswith((">", "#"))
+    ]
+    text = " ".join(lines) if lines else content.strip()
+    text = " ".join(text.split())
+    if len(text) > max_chars:
+        text = text[:max_chars].rstrip() + "\u2026"
+    return text
 
 
 def _build_grounded_prompt(message: str, candidates: list[RetrievalCandidate]) -> str:
@@ -100,14 +137,20 @@ async def _gateway_stream(
 ) -> AsyncIterator[str]:
     """Stream a gateway response as SSE frames.
 
-    When enterprise knowledge is available it emits ``citation`` frames for each
-    retrieved source and grounds the prompt on that context; token frames and a
-    terminal ``done`` frame follow. Knowledge failures degrade silently to an
-    ungrounded response (the session never fails because EKRE is unavailable).
+    Emits ``stage`` frames at each pipeline boundary so the UI shows live
+    progress, then ``citation`` frames for each retrieved source, then ``token``
+    frames and a terminal ``done`` frame. The blocking knowledge retrieval and
+    model generation run in a worker thread (so the event loop is never frozen
+    and every frame flushes to the client the moment it is produced). Knowledge
+    failures degrade silently to an ungrounded response (the session never fails
+    because EKRE is unavailable).
     """
+    yield _stage_event("understanding")
     prompt_text = _build_no_context_prompt(message)
     if security_context is not None:
-        result = resources.knowledge_retriever.retrieve(
+        yield _stage_event("retrieving")
+        result = await run_in_threadpool(
+            resources.knowledge_retriever.retrieve,
             message,
             tenant_id=tenant_id,
             security_context=security_context,
@@ -115,6 +158,8 @@ async def _gateway_stream(
         )
         if result.has_knowledge and result.package is not None:
             candidates = result.package.candidates
+            if candidates:
+                yield _stage_event("reranking")
             for candidate in candidates:
                 citation = candidate.citation
                 yield format_sse_event(
@@ -123,11 +168,14 @@ async def _gateway_stream(
                         "document_id": citation.document_id,
                         "chunk_id": citation.chunk_id,
                         "source_path": citation.source_path,
+                        "section_title": citation.section_title or "",
+                        "snippet": _citation_snippet(candidate.content),
                         "confidence": candidate.relevance_score,
                         "explanation": candidate.explanation or "",
                     },
                 )
             if candidates:
+                yield _stage_event("reasoning")
                 prompt_text = _build_grounded_prompt(message, candidates)
 
     request = GenerationRequest(
@@ -135,8 +183,11 @@ async def _gateway_stream(
         tenant_id=tenant_id,
         correlation_id=get_correlation_id(),
     )
+    yield _stage_event("generating")
     try:
-        for event in resources.model_gateway.stream(request):
+        async for event in iterate_in_threadpool(
+            resources.model_gateway.stream(request)
+        ):
             if event.event_type is StreamEventType.TOKEN:
                 yield format_sse_event("token", {"text": event.text})
             elif event.event_type is StreamEventType.ERROR:

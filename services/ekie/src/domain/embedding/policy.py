@@ -22,6 +22,7 @@ class EmbeddingSettingsLike(Protocol):
     cost_per_1k_tokens: float
     max_retries: int
     max_requests_per_minute: int
+    truncate_oversized_chunks: bool
 
 
 class EmbeddingPolicy(BaseModel):
@@ -39,6 +40,7 @@ class EmbeddingPolicy(BaseModel):
     cost_per_1k_tokens: float = Field(default=0.0, ge=0.0)
     max_retries: int = Field(default=3, ge=0)
     max_requests_per_minute: int = Field(default=0, ge=0)
+    truncate_oversized_chunks: bool = True
 
     @classmethod
     def from_settings(cls, settings: EmbeddingSettingsLike) -> EmbeddingPolicy:
@@ -54,4 +56,5 @@ class EmbeddingPolicy(BaseModel):
             cost_per_1k_tokens=settings.cost_per_1k_tokens,
             max_retries=settings.max_retries,
             max_requests_per_minute=settings.max_requests_per_minute,
+            truncate_oversized_chunks=settings.truncate_oversized_chunks,
         )

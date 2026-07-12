@@ -131,6 +131,14 @@ export function useChatStream(options: UseChatStreamOptions = {}): UseChatStream
             );
           } else if (event.type === "citation") {
             citationBuffer.push(event.citation);
+          } else if (event.type === "stage") {
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantId
+                  ? { ...message, stage: event.label }
+                  : message,
+              ),
+            );
           } else if (event.type === "done") {
             sessionIdRef.current = event.done.sessionId || sessionIdRef.current;
             setMessages((prev) =>
@@ -139,12 +147,13 @@ export function useChatStream(options: UseChatStreamOptions = {}): UseChatStream
                   ? {
                       ...message,
                       status: "complete",
+                      stage: undefined,
                       citations: [...citationBuffer],
                     }
                   : message,
               ),
             );
-          } else {
+          } else if (event.type === "error") {
             setError(event.message);
             finalizeAssistant(assistantId, "error");
           }
