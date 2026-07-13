@@ -482,7 +482,10 @@ def build_model_gateway(settings: EkcpSettings) -> LLMGateway:
     selector = ModelSelector(
         strategy=policy.routing_strategy, require_approved=policy.require_approved
     )
-    providers = provider_registry_from_settings(model.runtime)
+    providers = provider_registry_from_settings(
+        model.runtime,
+        callbacks=list(build_langfuse_callbacks(settings.observability)),
+    )
     return LLMGateway(
         registry=registry,
         selector=selector,

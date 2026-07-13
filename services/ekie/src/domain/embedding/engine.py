@@ -99,6 +99,14 @@ class EmbeddingEngine:
         self._rate_limiter = rate_limiter or RateLimiter(policy.max_requests_per_minute)
         self._progress = progress_reporter or NullProgressReporter()
 
+    def warm_up(self) -> None:
+        """Eagerly load the configured embedding provider model(s).
+
+        Called once at worker startup so the heavy model load happens before the
+        first job is claimed, rather than lazily on the first embedded chunk.
+        """
+        self._providers.warm_up_all()
+
     def embed(
         self,
         document_id: str,

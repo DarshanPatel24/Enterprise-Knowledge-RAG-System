@@ -62,7 +62,8 @@ module = [
   "langchain_core.vectorstores",
   "langchain_core.runnables",
   "langchain_core.retrievers",
-  "langfuse.callback",
+  "langfuse",
+  "langfuse.langchain",
   "langgraph.graph",
 ]
 ignore_missing_imports = true

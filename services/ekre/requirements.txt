@@ -13,6 +13,12 @@ langchain-ollama>=0.2.0
 langchain-qdrant>=0.1.0
 qdrant-client>=1.9.0
 
+# --- Observability (self-hosted Langfuse LLM tracing) ---
+# The LangChain CallbackHandler (langfuse.langchain) requires the langchain
+# meta-package in addition to langchain-core. langfuse v3 matches the v3 server.
+langfuse>=3.0,<4.0
+langchain>=1.0,<2.0
+
 # --- Query embedding + cross-encoder reranker (HuggingFace, GPU-capable) ---
 # NumPy is required by torch/transformers/sentence-transformers at runtime.
 # For NVIDIA GPU acceleration install a CUDA build of torch matching your driver

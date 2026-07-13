@@ -33,6 +33,35 @@ _DEFAULT_VLM_PROMPT = (
 _IMAGE_LINK_RE = re.compile(r"!\[[^\]]*\]\((?!https?://|data:)([^)]+)\)")
 
 
+def _build_langfuse_client():
+    """Return a Langfuse client for tracing, or None when disabled/unavailable.
+
+    Self-hosted and local-first: keys and host come from the EKDC environment.
+    Any failure degrades to no tracing so document conversion is never blocked.
+    """
+    if not _bool_env("EKDC_LANGFUSE_ENABLED", False):
+        return None
+    public_key = os.environ.get("EKDC_LANGFUSE_PUBLIC_KEY", "").strip()
+    secret_key = os.environ.get("EKDC_LANGFUSE_SECRET_KEY", "").strip()
+    host = os.environ.get("EKDC_LANGFUSE_URL", "http://localhost:3000").strip()
+    if not public_key or not secret_key:
+        logger.warning(
+            "EKDC_LANGFUSE_ENABLED is set but the public/secret key is missing; "
+            "image-description tracing is disabled"
+        )
+        return None
+    try:
+        from langfuse import Langfuse
+    except ImportError:
+        logger.warning("langfuse is not installed; image-description tracing disabled")
+        return None
+    try:
+        return Langfuse(public_key=public_key, secret_key=secret_key, host=host)
+    except Exception as exc:  # client init must never break conversion
+        logger.warning(f"Langfuse client init failed; tracing disabled: {exc}")
+        return None
+
+
 def _bool_env(name, default=False):
     val = os.environ.get(name)
     if val is None:
@@ -184,6 +213,9 @@ class ImageDescriber:
         self._max_new_tokens = _int_env("EKDC_VLM_MAX_NEW_TOKENS", 256)
         self._client = None
         self._cache = {}
+        # Self-hosted Langfuse tracing for the VLM describe call (opt-in; None
+        # when disabled). Tracing failures never block conversion.
+        self._langfuse = _build_langfuse_client()
         # Per-document cache when a path is supplied (mirrors the .md/artifacts
         # layout); falls back to a single global file for backward compatibility.
         self._cache_path = cache_path or os.path.join(
@@ -195,6 +227,38 @@ class ImageDescriber:
     def enabled():
         return _bool_env("EKDC_DESCRIBE_IMAGES", False)
 
+    def _start_span(self, image_path):
+        """Start a Langfuse span for one image description, or None if disabled."""
+        if self._langfuse is None:
+            return None
+        try:
+            return self._langfuse.start_span(
+                name="ekdc.describe_image",
+                input={
+                    "image": os.path.basename(image_path),
+                    "provider": self._provider,
+                    "model": self._model,
+                    "prompt": self._prompt,
+                },
+            )
+        except Exception:  # tracing must never break conversion
+            return None
+
+    def _end_span(self, span, *, output=None, error=None):
+        """Finalize a Langfuse span with output or an error, then flush."""
+        if span is None:
+            return
+        try:
+            if error is not None:
+                span.update(level="ERROR", status_message=str(error))
+            else:
+                text = output or ""
+                span.update(output={"description": text, "chars": len(text)})
+            span.end()
+            self._langfuse.flush()
+        except Exception:  # tracing must never break conversion
+            pass
+
     def describe(self, image_path):
         """Return a description string for ``image_path`` ('' on any failure)."""
         try:
@@ -203,21 +267,26 @@ class ImageDescriber:
             return ""
         if key in self._cache:
             return self._cache[key]
+        span = None
         try:
             if not self._model:
                 logger.warning("EKDC_VLM_MODEL is not set; skipping image description")
                 return ""
+            span = self._start_span(image_path)
             if self._provider == "ollama":
                 text = self._describe_ollama(image_path)
             elif self._provider == "huggingface":
                 text = self._describe_huggingface(image_path)
             else:
                 logger.warning(f"Unknown EKDC_VLM_PROVIDER {self._provider!r}; skipping")
+                self._end_span(span, error="unknown provider")
                 return ""
         except Exception as exc:
             logger.warning(f"Image description failed for {image_path}: {exc}")
+            self._end_span(span, error=exc)
             return ""
         text = (text or "").strip()
+        self._end_span(span, output=text)
         self._cache[key] = text
         self._save_cache()
         return text

@@ -19,7 +19,12 @@ from domain.integrations import (
     ChatModelLike,
     build_chat_model,
 )
-from domain.observability import get_logger
+from domain.observability import (
+    get_correlation_id,
+    get_logger,
+    get_session_id,
+    get_tenant_id,
+)
 
 _USER_REQUEST_MARKER = "User request:"
 
@@ -94,16 +99,49 @@ class DeterministicEchoProvider(ChatModelProvider):
 class LangChainChatProvider(ChatModelProvider):
     """Provider that invokes the configured chat model via LCEL (lazy imports)."""
 
+    def __init__(self, *, callbacks: list[Any] | None = None) -> None:
+        # Langfuse (or other LangChain) callbacks attached to every chain run so
+        # LLM generations are traced when observability is enabled. Empty/None
+        # keeps the offline path callback-free.
+        self._callbacks: list[Any] | None = list(callbacks) if callbacks else None
+
     @property
     def runtime(self) -> str:
         return "langchain"
+
+    def _invoke_config(self) -> dict[str, Any] | None:
+        """Return the LCEL run config carrying tracing callbacks, or None.
+
+        When callbacks are present the config also carries the request's
+        correlation, tenant, and session identifiers so the Langfuse trace is
+        attributable to the originating client (for example the web UI). The
+        ``langfuse_*`` metadata keys are read by the Langfuse callback handler.
+        """
+        if not self._callbacks:
+            return None
+        correlation_id = get_correlation_id()
+        tenant_id = get_tenant_id()
+        session_id = get_session_id() or correlation_id
+        metadata: dict[str, Any] = {}
+        if session_id:
+            metadata["langfuse_session_id"] = session_id
+        if tenant_id:
+            metadata["langfuse_user_id"] = tenant_id
+        if correlation_id:
+            metadata["correlation_id"] = correlation_id
+        config: dict[str, Any] = {"callbacks": self._callbacks}
+        if metadata:
+            config["metadata"] = metadata
+        return config
 
     def generate(
         self, descriptor: ModelDescriptor, prompt_text: str, constraints: ResponseConstraints
     ) -> str:
         chain = self._chain(descriptor)
         try:
-            output = chain.invoke(self._model_input(descriptor, prompt_text))
+            output = chain.invoke(
+                self._model_input(descriptor, prompt_text), config=self._invoke_config()
+            )
         except Exception as exc:  # noqa: BLE001 - isolate any provider failure
             raise ProviderInvocationError(str(exc)) from exc
         return str(output)
@@ -122,7 +160,7 @@ class LangChainChatProvider(ChatModelProvider):
         model_input = self._model_input(descriptor, prompt_text)
         streamed_any = False
         try:
-            for chunk in chain.stream(model_input):
+            for chunk in chain.stream(model_input, config=self._invoke_config()):
                 text = str(chunk)
                 if text:
                     streamed_any = True
@@ -304,7 +342,9 @@ class LangChainChatProvider(ChatModelProvider):
         """Yield the full generation as one fragment (non-streaming fallback)."""
         chain = self._chain(descriptor)
         try:
-            output = chain.invoke(self._model_input(descriptor, prompt_text))
+            output = chain.invoke(
+                self._model_input(descriptor, prompt_text), config=self._invoke_config()
+            )
         except Exception as exc:  # noqa: BLE001 - isolate any provider failure
             raise ProviderInvocationError(str(exc)) from exc
         text = str(output)
@@ -317,9 +357,15 @@ def default_provider_registry() -> dict[str, ChatModelProvider]:
     return {"deterministic": DeterministicEchoProvider()}
 
 
-def provider_registry_from_settings(runtime: str) -> dict[str, ChatModelProvider]:
-    """Return the provider registry, adding the LangChain provider when selected."""
+def provider_registry_from_settings(
+    runtime: str, *, callbacks: list[Any] | None = None
+) -> dict[str, ChatModelProvider]:
+    """Return the provider registry, adding the LangChain provider when selected.
+
+    ``callbacks`` are attached to the LangChain provider's chain runs so LLM
+    generations are traced (Langfuse) when observability is enabled.
+    """
     registry = default_provider_registry()
     if runtime == "langchain":
-        registry["langchain"] = LangChainChatProvider()
+        registry["langchain"] = LangChainChatProvider(callbacks=callbacks)
     return registry

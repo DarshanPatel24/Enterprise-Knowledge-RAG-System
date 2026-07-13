@@ -26,6 +26,16 @@ class EmbeddingProviderRegistry:
         """Register or override a provider plugin."""
         self._providers[provider.name] = provider
 
+    def warm_up_all(self) -> None:
+        """Eagerly load every registered provider's model.
+
+        Providers without a deferred model (the deterministic local provider,
+        remote Ollama) are a no-op; the configured HuggingFace provider loads its
+        weights now so the first ingested document does not pay the load cost.
+        """
+        for provider in self._providers.values():
+            provider.warm_up()
+
 
 class EmbeddingProviderSettingsLike(Protocol):
     """Structural type for the settings needed to build the provider registry."""

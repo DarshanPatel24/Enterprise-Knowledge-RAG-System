@@ -8,6 +8,8 @@ from domain.query.models import RetrievalEngineType
 from domain.ranking.scoring import (
     build_explanation,
     composite_score,
+    coverage_score,
+    distinctive_terms,
     factor_scores,
     is_eligible,
 )
@@ -46,3 +48,42 @@ def test_explanation_lists_factor_contributions() -> None:
     explanation = build_explanation(factors, weights, 0.66)
     assert "semantic=0.900*0.40" in explanation
     assert "composite=0.6600" in explanation
+
+
+def test_distinctive_terms_drops_function_words() -> None:
+    terms = distinctive_terms("what are the steps for integrity installation, cyber integrity")
+    assert "cyber" in terms
+    assert "integrity" in terms
+    assert "installation" in terms
+    assert "the" not in terms
+    assert "for" not in terms
+
+
+def test_coverage_penalizes_missing_distinctive_term() -> None:
+    terms = distinctive_terms("cyber integrity installation")
+    present = knowledge_object(
+        "cyber",
+        "c1",
+        [(RetrievalEngineType.VECTOR, 0.9, 0)],
+        fusion_score=0.1,
+        content="Cyber Integrity installation instructions",
+    )
+    missing = knowledge_object(
+        "plantstate",
+        "c1",
+        [(RetrievalEngineType.VECTOR, 0.9, 0)],
+        fusion_score=0.1,
+        content="PlantState Integrity installation instructions",
+    )
+    assert coverage_score(present, terms) == 1.0
+    assert coverage_score(missing, terms) < 1.0
+    assert coverage_score(present, terms) > coverage_score(missing, terms)
+
+
+def test_coverage_neutral_without_query_terms() -> None:
+    obj = knowledge_object(
+        "d1", "c1", [(RetrievalEngineType.VECTOR, 0.9, 0)], fusion_score=0.1
+    )
+    assert coverage_score(obj, frozenset()) == 1.0
+    factors = factor_scores(obj, max_fusion=0.1)
+    assert factors["coverage"] == 1.0

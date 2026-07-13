@@ -185,9 +185,12 @@ def build_query_intelligence_engine(settings: EkreSettings) -> QueryIntelligence
     planner = QueryPlanner(
         vector_timeout_ms=settings.execution.default_task_timeout_ms,
         total_timeout_ms=settings.retrieval.budget_total_ms,
+        force_hybrid=settings.query.force_hybrid,
     )
     interpreter = (
-        QueryLlmInterpreter(policy) if settings.query.enable_llm_interpreter else None
+        QueryLlmInterpreter(policy, callbacks=list(build_tracing_callbacks(settings)))
+        if settings.query.enable_llm_interpreter
+        else None
     )
     return QueryIntelligenceEngine(
         understanding,

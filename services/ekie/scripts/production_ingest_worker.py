@@ -79,6 +79,25 @@ def run_ingest_worker(worker_id: str) -> None:
     print(f" Max Attempts     : {settings.ingestion.max_attempts}")
     print("==================================================\n", flush=True)
 
+    # Eagerly load the embedding model now so the (multi-GB, often GPU) weights
+    # are resident before the first job is claimed. This surfaces any model-load
+    # failure at startup instead of intermittently mid-ingestion, and removes the
+    # first-document latency spike caused by lazy loading.
+    print(
+        f" Embedding provider : {settings.embedding.provider} "
+        f"({settings.embedding.default_model or 'default'})"
+    )
+    print(" Loading embedding model (eager warm-up)...", flush=True)
+    try:
+        orchestrator.warm_up()
+        print(" Embedding model loaded. Ready to process jobs.\n", flush=True)
+    except Exception as exc:  # noqa: BLE001 - report and continue; lazy load will retry
+        print(
+            f" [warn] Eager model warm-up failed ({exc}); the model will load "
+            "lazily on the first job.\n",
+            flush=True,
+        )
+
     try:
         worker.run_forever(worker_id)
     except KeyboardInterrupt:

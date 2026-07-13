@@ -19,6 +19,7 @@ from domain.ranking.reranker import IdentityReranker, Reranker
 from domain.ranking.scoring import (
     build_explanation,
     composite_score,
+    distinctive_terms,
     factor_scores,
     is_eligible,
 )
@@ -43,8 +44,9 @@ class RankingEngine:
         eligible = [obj for obj in fks.objects if is_eligible(obj)]
         considered = len(eligible)
         max_fusion = max((obj.fusion_score for obj in eligible), default=0.0)
+        query_terms = distinctive_terms(query)
 
-        scored = [self._score(obj, max_fusion) for obj in eligible]
+        scored = [self._score(obj, max_fusion, query_terms) for obj in eligible]
         scored = [s for s in scored if s.composite >= self._policy.min_composite_score]
         scored.sort(
             key=lambda s: (
@@ -72,8 +74,10 @@ class RankingEngine:
             warnings=fks.warnings,
         )
 
-    def _score(self, obj: KnowledgeObject, max_fusion: float) -> _Scored:
-        factors = factor_scores(obj, max_fusion=max_fusion)
+    def _score(
+        self, obj: KnowledgeObject, max_fusion: float, query_terms: frozenset[str]
+    ) -> _Scored:
+        factors = factor_scores(obj, max_fusion=max_fusion, query_terms=query_terms)
         composite = composite_score(factors, self._policy.weights)
         return _Scored(obj=obj, factors=factors, composite=composite)
 

@@ -268,7 +268,9 @@ class VectorPublishingEngine:
                 )
             points.append(
                 VectorPoint(
-                    vector_id=build_vector_id(spec.name, record.chunk_id, embedding_version),
+                    vector_id=build_vector_id(
+                        spec.name, document.id, record.chunk_id, embedding_version
+                    ),
                     values=record.values,
                     metadata=metadata,
                 )

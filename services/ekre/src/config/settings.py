@@ -220,6 +220,11 @@ class QueryIntelligenceSettings(BaseSettings):
 
     max_query_length: int = Field(default=2048, gt=0)
     default_language: str = "en"
+    # Always run keyword search alongside vector search (hybrid retrieval). This
+    # guarantees the exact-term lexical signal participates for every query, so a
+    # distinctive term (for example a specific product name) is never lost to
+    # semantic similarity that favors a generically similar document.
+    force_hybrid: bool = True
     # Candidate counts selected per retrieval profile (operational tunables).
     candidate_count_precision: int = Field(default=5, gt=0)
     candidate_count_recall: int = Field(default=50, gt=0)
@@ -315,10 +320,15 @@ class RankingSettings(BaseSettings):
 
     candidate_limit: int = Field(default=10, gt=0)
     min_composite_score: float = Field(default=0.0, ge=0.0)
-    semantic_weight: float = Field(default=0.4, ge=0.0)
-    lexical_weight: float = Field(default=0.2, ge=0.0)
-    metadata_weight: float = Field(default=0.1, ge=0.0)
-    fusion_weight: float = Field(default=0.3, ge=0.0)
+    semantic_weight: float = Field(default=0.35, ge=0.0)
+    lexical_weight: float = Field(default=0.20, ge=0.0)
+    metadata_weight: float = Field(default=0.10, ge=0.0)
+    fusion_weight: float = Field(default=0.10, ge=0.0)
+    # Distinctive-term coverage weight (handbook Chapter 25.7): rewards documents
+    # whose title/source/content contain the discriminating terms the user typed
+    # and penalizes similarly named documents that omit them. This is the primary
+    # lever that separates near-identical product/entity names in a query.
+    coverage_weight: float = Field(default=0.25, ge=0.0)
     policy_version: str = "v1"
     # Cross-encoder reranker (handbook Chapter 25.11): a purpose-built reranker
     # model (for example BAAI/bge-reranker-base) scores query/document
@@ -338,6 +348,7 @@ class RankingSettings(BaseSettings):
             "lexical": self.lexical_weight,
             "metadata": self.metadata_weight,
             "fusion": self.fusion_weight,
+            "coverage": self.coverage_weight,
         }
 
 

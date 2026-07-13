@@ -94,6 +94,8 @@ pyodbc>=5.1.0
 minio>=7.2.0
 
 # Observability (self-hosted Langfuse + OpenTelemetry)
-langfuse>=2.0.0
+# Pinned to v2: EKIE traces via the direct SDK ``Langfuse().trace()`` API, which
+# was removed in langfuse v3. Do not upgrade without migrating tracing.py.
+langfuse>=2.0,<3.0
 opentelemetry-api>=1.25.0
 opentelemetry-sdk>=1.25.0

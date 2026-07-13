@@ -80,6 +80,14 @@ class WorkflowOrchestrator:
             policy, tracer_callbacks=tracer_callbacks
         )
 
+    def warm_up(self) -> None:
+        """Eagerly load ingestion models so the first document is not delayed.
+
+        Currently warms the embedding provider (the heavy, often GPU-bound model);
+        called once at worker startup instead of lazily on the first chunk.
+        """
+        self._engines.embedding.warm_up()
+
     def run(
         self,
         document_id: str,

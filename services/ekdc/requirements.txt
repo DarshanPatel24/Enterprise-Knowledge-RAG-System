@@ -14,5 +14,8 @@ openai-whisper
 moviepy
 pytesseract
 Pillow
+# Observability: self-hosted Langfuse tracing for VLM image descriptions.
+# v3 matches the v3 server; the direct SDK is used (no langchain meta-package).
+langfuse>=3.0,<4.0
 python-magic-bin; sys_platform == 'win32'
 python-magic; sys_platform != 'win32'

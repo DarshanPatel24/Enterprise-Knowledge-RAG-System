@@ -64,6 +64,7 @@ module = [
   "langchain_core.output_parsers",
   "langgraph.graph",
   "langgraph.checkpoint.memory",
-  "langfuse.callback",
+  "langfuse",
+  "langfuse.langchain",
 ]
 ignore_missing_imports = true

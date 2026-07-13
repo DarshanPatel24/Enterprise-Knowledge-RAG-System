@@ -28,3 +28,12 @@ class EmbeddingProvider(ABC):
         Implementations must be deterministic for identical inputs so that
         embedding assets dedupe correctly across regeneration (ADR-022).
         """
+
+    def warm_up(self) -> None:
+        """Eagerly load any deferred model so the first embed is not delayed.
+
+        The default is a no-op; providers that lazily load a heavy (often GPU)
+        model override this to force the load at process startup, surfacing any
+        model-load failure immediately instead of on the first ingested chunk.
+        """
+        return None

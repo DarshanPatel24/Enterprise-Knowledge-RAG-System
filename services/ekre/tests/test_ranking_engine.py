@@ -35,10 +35,41 @@ def test_audit_fields_present() -> None:
         "d1", "c1", [(RetrievalEngineType.VECTOR, 0.9, 0)], fusion_score=0.1
     )
     ranked = _engine().rank(fused_set(obj)).objects[0]
-    assert set(ranked.factor_scores) == {"semantic", "lexical", "metadata", "fusion"}
-    assert ranked.factor_weights["semantic"] == 0.4
+    assert set(ranked.factor_scores) == {
+        "semantic",
+        "lexical",
+        "metadata",
+        "fusion",
+        "coverage",
+    }
+    assert ranked.factor_weights["semantic"] == 0.35
     assert "composite=" in ranked.explanation
     assert ranked.reranked is False
+
+
+def test_coverage_lifts_document_that_names_the_query_term() -> None:
+    # Two similarly named documents; only "cyber" distinguishes them. The vector
+    # signal slightly favors the generic installation guide, but the coverage
+    # factor must lift the document that actually names "cyber".
+    plantstate = knowledge_object(
+        "plantstate",
+        "c1",
+        [(RetrievalEngineType.VECTOR, 1.0, 0), (RetrievalEngineType.KEYWORD, 0.7, 1)],
+        fusion_score=0.2,
+        content="PlantState Integrity Installation Guide steps for integrity installation",
+    )
+    cyber = knowledge_object(
+        "cyber",
+        "c1",
+        [(RetrievalEngineType.VECTOR, 0.9, 1), (RetrievalEngineType.KEYWORD, 1.0, 0)],
+        fusion_score=0.19,
+        content="Cyber Integrity Installation Guide steps for integrity installation",
+    )
+    rks = _engine().rank(
+        fused_set(plantstate, cyber),
+        query="what are the steps for integrity installation, cyber integrity",
+    )
+    assert rks.objects[0].knowledge_object.citation.document_id == "cyber"
 
 
 def test_candidate_limit_applies() -> None:

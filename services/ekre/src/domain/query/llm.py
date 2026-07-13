@@ -79,8 +79,14 @@ def build_chat_model(config: LlmConfigLike) -> ChatModelLike:
 class QueryLlmInterpreter:
     """LangChain LCEL interpreter that enriches deterministic understanding."""
 
-    def __init__(self, config: LlmConfigLike) -> None:
+    def __init__(
+        self, config: LlmConfigLike, *, callbacks: list[object] | None = None
+    ) -> None:
         self._config = config
+        # Langfuse (or other LangChain) callbacks attached to the chain run so the
+        # interpreter's LLM call is traced when observability is enabled. Empty
+        # keeps the deterministic path callback-free.
+        self._callbacks: list[object] | None = list(callbacks) if callbacks else None
 
     @property
     def enabled(self) -> bool:
@@ -102,7 +108,8 @@ class QueryLlmInterpreter:
             llm = build_chat_model(self._config)
             chain = prompt | llm | parser  # type: ignore[operator]
             variables: Mapping[str, str] = {"query": truncate_query(raw_query)}
-            result = chain.invoke(variables)
+            config = {"callbacks": self._callbacks} if self._callbacks else None
+            result = chain.invoke(variables, config=config)
             return cast("LlmQueryInterpretation", result)
         except Exception as exc:  # noqa: BLE001 - degrade gracefully to deterministic
             _logger.warning(

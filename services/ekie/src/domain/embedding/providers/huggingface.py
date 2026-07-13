@@ -44,6 +44,21 @@ class HuggingFaceEmbeddingProvider(EmbeddingProvider):
                 raise EmbeddingProviderError(str(exc)) from exc
         return self._embeddings
 
+    def warm_up(self) -> None:
+        """Force the sentence-transformers model to load now, not on first embed.
+
+        Builds the model and runs a single throwaway embedding so the (multi-GB,
+        often GPU) weights are resident before the worker claims its first job.
+        """
+        try:
+            self._get_embeddings().embed_documents(["warm up"])
+        except EmbeddingProviderError:
+            raise
+        except Exception as exc:
+            raise EmbeddingProviderError(
+                f"HuggingFace model warm-up failed: {exc}"
+            ) from exc
+
     def embed(
         self, texts: list[str], *, dimension: int, normalize: bool
     ) -> list[list[float]]:

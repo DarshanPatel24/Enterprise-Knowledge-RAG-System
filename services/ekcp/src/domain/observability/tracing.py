@@ -25,19 +25,28 @@ class TracingSettingsLike(Protocol):
 def build_langfuse_callbacks(settings: TracingSettingsLike) -> list[Any]:
     """Return Langfuse callback handlers, or an empty list when disabled.
 
-    Imports are lazy so the offline path never requires ``langfuse``. Any import
+    Imports are lazy so the offline path never requires ``langfuse``. The Langfuse
+    client is initialized from settings (registering the process-global client the
+    handler reads), then a v3 LangChain ``CallbackHandler`` is returned. Any import
     or construction failure degrades gracefully to no tracing.
     """
     if not settings.langfuse_enabled:
         return []
+    if not settings.langfuse_public_key:
+        return []
     try:
-        from langfuse.callback import CallbackHandler
+        from langfuse import Langfuse
+        from langfuse.langchain import CallbackHandler
     except ImportError:
         return []
-    handler = CallbackHandler(
-        host=settings.langfuse_url,
-        public_key=settings.langfuse_public_key or None,
-        secret_key=settings.langfuse_secret_key or None,
-    )
+    try:
+        Langfuse(
+            public_key=settings.langfuse_public_key,
+            secret_key=settings.langfuse_secret_key or None,
+            host=settings.langfuse_url,
+        )
+        handler = CallbackHandler()
+    except Exception:  # noqa: BLE001 - tracing must never break the request path
+        return []
     callbacks: Sequence[Any] = [handler]
     return list(callbacks)

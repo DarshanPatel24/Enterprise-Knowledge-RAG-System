@@ -12,6 +12,12 @@ langchain-core>=0.2.0
 langchain-ollama>=0.2.0
 langgraph>=0.2.0
 
+# --- Observability (self-hosted Langfuse LLM tracing) ---
+# The LangChain CallbackHandler (langfuse.langchain) requires the langchain
+# meta-package in addition to langchain-core. langfuse v3 matches the v3 server.
+langfuse>=3.0,<4.0
+langchain>=1.0,<2.0
+
 # --- Control-plane and cache backends ---
 sqlalchemy>=2.0.0
 redis>=5.0.0

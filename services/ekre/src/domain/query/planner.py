@@ -30,9 +30,16 @@ _KEYWORD_INTENTS = frozenset(
 class QueryPlanner:
     """Deterministic Retrieval Execution Plan builder."""
 
-    def __init__(self, *, vector_timeout_ms: float, total_timeout_ms: float) -> None:
+    def __init__(
+        self,
+        *,
+        vector_timeout_ms: float,
+        total_timeout_ms: float,
+        force_hybrid: bool = False,
+    ) -> None:
         self._vector_timeout_ms = vector_timeout_ms
         self._total_timeout_ms = total_timeout_ms
+        self._force_hybrid = force_hybrid
 
     def plan(
         self,
@@ -74,7 +81,8 @@ class QueryPlanner:
     ) -> tuple[RetrievalEngineType, ...]:
         engines: list[RetrievalEngineType] = [RetrievalEngineType.VECTOR]
         wants_keyword = (
-            intent.intent in _KEYWORD_INTENTS
+            self._force_hybrid
+            or intent.intent in _KEYWORD_INTENTS
             or bool(understanding.entities)
             or bool(understanding.enterprise_terms)
         )
