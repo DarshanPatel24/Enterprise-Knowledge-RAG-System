@@ -90,10 +90,7 @@ services/*/storage/
 # ------------------------------
 # Local PPT Template
 # ------------------------------
-showcase/PPT/Template/
-showcase/PPT/ek-rag-architecture-deck.json
-showcase/PPT/EK-RAG-Enterprise-Architecture.pptx
-showcase/PPT/ek-rag-sample-deck.pptx
+showcase/
 .github/skills/octave-ppt/SKILL.md
 .github/skills/octave-ppt/scripts/list_layouts.py
 .github/skills/octave-ppt/scripts/build_deck.py
