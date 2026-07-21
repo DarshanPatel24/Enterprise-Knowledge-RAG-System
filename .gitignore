@@ -91,3 +91,6 @@ services/*/storage/
 # Local PPT Template
 # ------------------------------
 showcase/PPT/Template/
+showcase/PPT/ek-rag-architecture-deck.json
+showcase/PPT/EK-RAG-Enterprise-Architecture.pptx
+showcase/PPT/ek-rag-sample-deck.pptx
