@@ -278,6 +278,12 @@ class PublishingSettings(BaseSettings):
     max_vectors_per_minute: int = 0
     create_missing_collections: bool = True
     verify_after_publish: bool = True
+    # Tag each vector with a product/source group derived from the document's
+    # leading folder (e.g. "plantstate-integrity") so EKRE can scope retrieval by
+    # product. source_group_depth = number of leading folders to use.
+    derive_source_group_from_path: bool = True
+    source_group_depth: int = Field(default=1, ge=1)
+    default_source_group: str = ""
 
 
 class OrchestrationSettings(BaseSettings):

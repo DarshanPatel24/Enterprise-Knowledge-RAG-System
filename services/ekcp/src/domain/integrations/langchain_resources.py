@@ -66,6 +66,7 @@ def build_chat_model(
     top_p: float = 1.0,
     top_k: int = 0,
     max_new_tokens: int = 0,
+    num_ctx: int = 0,
     device: str = "",
     torch_dtype: str = "",
 ) -> ChatModelLike:
@@ -77,8 +78,10 @@ def build_chat_model(
     hardcoded. Imports are lazy so the offline path never loads LangChain.
 
     ``max_new_tokens`` caps generated length (0 leaves the pipeline default);
-    ``device`` and ``torch_dtype`` opt into GPU execution for the HuggingFace
-    provider (both empty keep the CPU default).
+    ``num_ctx`` sets the Ollama input context window (0 leaves the Ollama
+    default; ignored by the HuggingFace provider); ``device`` and ``torch_dtype``
+    opt into GPU execution for the HuggingFace provider (both empty keep the CPU
+    default).
     """
     if provider == "huggingface":
         try:
@@ -123,6 +126,13 @@ def build_chat_model(
             "base_url": base_url,
             "temperature": temperature,
         }
+        # num_predict caps generated length; num_ctx sets the input context
+        # window. Without num_ctx, Ollama silently truncates long prompts to its
+        # small default, dropping most retrieved evidence.
+        if max_new_tokens > 0:
+            ollama_kwargs["num_predict"] = max_new_tokens
+        if num_ctx > 0:
+            ollama_kwargs["num_ctx"] = num_ctx
         if 0.0 < top_p < 1.0:
             ollama_kwargs["top_p"] = top_p
         if top_k > 0:

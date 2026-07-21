@@ -25,6 +25,11 @@ _CAPITALIZED = re.compile(r"\b([A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+)*)\b")
 
 # Metadata operator aliases so `after:2024` reads as a range constraint.
 _OPERATOR_KEYS = {"after": "gte", "before": "lte", "since": "gte", "until": "lte"}
+# Metadata field aliases: `product:` targets the source_group tag EKIE derives
+# from the document folder, so users filter by product without knowing the field.
+_FIELD_ALIASES = {"product": "source_group"}
+# Fields whose values are case-insensitive slugs and are normalized to lowercase.
+_GROUP_FIELDS = frozenset({"source_group"})
 # Non-ASCII-heavy queries keep the configured default language; deterministic.
 _NON_ASCII = re.compile(r"[^\x00-\x7f]")
 
@@ -95,10 +100,31 @@ class QueryUnderstandingEngine:
 
     def _extract_metadata_filters(self, query: str) -> tuple[MetadataFilter, ...]:
         filters: list[MetadataFilter] = []
-        for field, value in _METADATA_FILTER.findall(query):
-            operator = _OPERATOR_KEYS.get(field.lower(), "eq")
-            filters.append(MetadataFilter(field=field.lower(), operator=operator, value=value))
+        seen_fields: set[str] = set()
+        for raw_field, value in _METADATA_FILTER.findall(query):
+            field = _FIELD_ALIASES.get(raw_field.lower(), raw_field.lower())
+            operator = _OPERATOR_KEYS.get(raw_field.lower(), "eq")
+            resolved = value.strip().lower() if field in _GROUP_FIELDS else value
+            filters.append(MetadataFilter(field=field, operator=operator, value=resolved))
+            seen_fields.add(field)
+        product_group = self._detect_product_group(query)
+        if product_group and "source_group" not in seen_fields:
+            filters.append(
+                MetadataFilter(field="source_group", operator="eq", value=product_group)
+            )
         return tuple(filters)
+
+    def _detect_product_group(self, query: str) -> str | None:
+        """Return the source_group for a known product phrase in the query, if any."""
+        products = self._vocabulary.products
+        if not products:
+            return None
+        lowered = query.lower()
+        # Longest phrase first for the most specific match; deterministic tie-break.
+        for phrase in sorted(products, key=lambda item: (-len(item), item)):
+            if phrase and phrase in lowered:
+                return products[phrase]
+        return None
 
     def _extract_entities(self, query: str) -> tuple[str, ...]:
         quoted = [match.strip() for match in _QUOTED.findall(query) if match.strip()]

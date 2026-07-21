@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
+import { ChatSessionsProvider } from "@/components/ChatSessionsProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,7 +16,9 @@ export default function RootLayout({
 }): React.JSX.Element {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen antialiased">{children}</body>
+      <body className="min-h-screen antialiased">
+        <ChatSessionsProvider>{children}</ChatSessionsProvider>
+      </body>
     </html>
   );
 }

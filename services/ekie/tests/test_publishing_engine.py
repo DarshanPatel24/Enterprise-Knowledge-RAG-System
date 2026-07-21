@@ -23,6 +23,8 @@ from domain.publishing import (
     VectorPublishingEngine,
     default_provider_registry,
 )
+from domain.publishing.providers import VectorProviderRegistry
+from domain.publishing.providers.local import InMemoryVectorProvider
 from domain.storage import InMemoryAssetStorage
 from domain.transformation import TransformationPipeline, TransformationPolicy
 
@@ -88,6 +90,28 @@ def _prepare(
     if embed:
         EmbeddingEngine(db, storage, EmbeddingPolicy()).embed(document_id, "tenant-a")
     return document_id, storage
+
+
+def test_publish_stamps_source_group_from_leading_folder(
+    control_plane_db: ControlPlaneDatabase,
+) -> None:
+    # The seeded document lives under "docs/maint.md", so its product/source
+    # group tag is derived from the leading folder.
+    document_id, storage = _prepare(control_plane_db)
+    provider = InMemoryVectorProvider()
+    registry = VectorProviderRegistry([provider])
+    engine = VectorPublishingEngine(
+        control_plane_db, storage, PublishingPolicy(), provider_registry=registry
+    )
+
+    result = engine.publish(document_id, "tenant-a")
+
+    stored = [
+        provider.fetch(result.collection, record.vector_id)
+        for record in result.published_vector_set.records
+    ]
+    assert stored
+    assert all(point is not None and point.metadata.source_group == "docs" for point in stored)
 
 
 def test_publish_creates_verified_vector_asset_with_lineage(

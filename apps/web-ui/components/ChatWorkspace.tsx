@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import Link from "next/link";
 import { AlertTriangle, Settings } from "lucide-react";
 
@@ -8,85 +8,51 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { ConversationList } from "@/components/ConversationList";
 import { Button } from "@/components/ui/button";
 import { useSettings } from "@/lib/hooks/useSettings";
+import { useChatSessionsContext } from "@/components/ChatSessionsProvider";
 import { isConfigured, missingRequiredFields } from "@/lib/settings";
-import {
-  createConversation,
-  deleteConversation,
-  listConversations,
-  loadMessages,
-  saveMessages,
-  type StoredConversation,
-} from "@/lib/conversations";
-import type { ChatMessage } from "@/lib/api/types";
 
 /**
- * Full chat workspace: conversation sidebar, configuration gate, and the keyed
- * streaming chat panel.
+ * Full chat workspace: conversation sidebar, configuration gate, and the chat
+ * panel.
  *
- * Conversations and their transcripts are persisted to `localStorage`; the panel
- * is remounted on conversation switch to seed the stored transcript. Chat is
- * disabled until the required settings (tenant, API key, user) are present.
+ * Streaming is owned by the app-wide `ChatSessionsProvider` (mounted in the root
+ * layout, above the router), so neither switching conversations NOR navigating
+ * to another route (Settings, etc.) aborts or discards an in-flight response: it
+ * keeps generating in the background and the transcript is preserved. This
+ * component is a controlled view of that store. Chat is disabled until the
+ * required settings (tenant, API key, user) are present.
  */
 export function ChatWorkspace(): React.JSX.Element {
   const settings = useSettings();
   const configured = isConfigured(settings);
   const missing = missingRequiredFields(settings);
 
-  const [mounted, setMounted] = useState(false);
-  const [conversations, setConversations] = useState<StoredConversation[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const {
+    conversations,
+    activeId,
+    mounted,
+    getRuntime,
+    sendMessage,
+    stop,
+    selectConversation,
+    newConversation,
+    removeConversation,
+  } = useChatSessionsContext();
 
-  useEffect(() => {
-    const existing = listConversations();
-    if (existing.length === 0) {
-      const created = createConversation();
-      setConversations([created]);
-      setActiveId(created.id);
-    } else {
-      setConversations(existing);
-      setActiveId(existing[0]?.id ?? null);
-    }
-    setMounted(true);
-  }, []);
-
-  const handleNew = useCallback((): void => {
-    const created = createConversation();
-    setConversations(listConversations());
-    setActiveId(created.id);
-  }, []);
-
-  const handleSelect = useCallback((id: string): void => {
-    setActiveId(id);
-  }, []);
-
-  const handleDelete = useCallback((id: string): void => {
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm("Delete this conversation? This cannot be undone.")
-    ) {
-      return;
-    }
-    const remaining = deleteConversation(id);
-    const next = remaining[0];
-    if (!next) {
-      const created = createConversation();
-      setConversations([created]);
-      setActiveId(created.id);
-      return;
-    }
-    setConversations(remaining);
-    setActiveId((current) => (current === id ? next.id : current));
-  }, []);
-
-  const handlePersist = useCallback(
-    (id: string, messages: ChatMessage[]): void => {
-      if (messages.length === 0) {
+  const handleDelete = useCallback(
+    (id: string): void => {
+      if (
+        typeof window !== "undefined" &&
+        !window.confirm("Delete this conversation? This cannot be undone.")
+      ) {
         return;
       }
-      setConversations(saveMessages(id, messages));
+      removeConversation(id);
     },
-    [],
+    [removeConversation],
   );
+
+  const runtime = activeId ? getRuntime(activeId) : null;
 
   return (
     <div className="flex h-screen">
@@ -99,8 +65,8 @@ export function ChatWorkspace(): React.JSX.Element {
         <ConversationList
           conversations={conversations}
           activeId={activeId}
-          onSelect={handleSelect}
-          onNew={handleNew}
+          onSelect={selectConversation}
+          onNew={newConversation}
           onDelete={handleDelete}
         />
         <div className="border-t p-2">
@@ -133,11 +99,13 @@ export function ChatWorkspace(): React.JSX.Element {
           </div>
         )}
 
-        {mounted && activeId ? (
+        {mounted && activeId && runtime ? (
           <ChatPanel
-            key={activeId}
-            initialMessages={loadMessages(activeId)}
-            onMessagesChange={(messages) => handlePersist(activeId, messages)}
+            messages={runtime.messages}
+            isStreaming={runtime.isStreaming}
+            error={runtime.error}
+            onSend={(text) => void sendMessage(activeId, text)}
+            onStop={() => stop(activeId)}
             disabled={!configured}
           />
         ) : (

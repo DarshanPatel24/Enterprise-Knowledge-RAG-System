@@ -1,0 +1,332 @@
+<svg width="3840" height="2160" viewBox="0 0 3840 2160" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">EK-RAG enterprise knowledge product infographic — Octave dark showcase brand</title>
+  <desc id="desc">Single-page architecture and workflow visualization for the Enterprise Knowledge RAG System, styled in the black-dominant Octave brand palette with neon accent highlights.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="3840" y2="2160" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#17171C"/>
+      <stop offset="0.42" stop-color="#1A1A1F"/>
+      <stop offset="0.78" stop-color="#1B1A21"/>
+      <stop offset="1" stop-color="#161519"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(760 240) rotate(24) scale(1240 780)">
+      <stop offset="0" stop-color="#00FFFF" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#00FFFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(3060 260) rotate(160) scale(1240 780)">
+      <stop offset="0" stop-color="#FF00C7" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#FF00C7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowC" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1940 1980) rotate(90) scale(820 1480)">
+      <stop offset="0" stop-color="#0000FF" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#0000FF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="heroStroke" x1="1000" y1="300" x2="2720" y2="660" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00FFFF"/>
+      <stop offset="0.52" stop-color="#0000FF"/>
+      <stop offset="1" stop-color="#FF00C7"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#00FFFF"/>
+      <stop offset="0.5" stop-color="#0000FF"/>
+      <stop offset="1" stop-color="#FF00C7"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="22" stdDeviation="26" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+    <filter id="tinyShadow" x="-20%" y="-20%" width="140%" height="160%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.34"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 16 16" refX="12" refY="8" markerWidth="13" markerHeight="13" orient="auto-start-reverse">
+      <path d="M2 2L12 8L2 14" stroke="#00FFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 16 16" refX="12" refY="8" markerWidth="12" markerHeight="12" orient="auto-start-reverse">
+      <path d="M3 3L11 8L3 13" stroke="#4C6BFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </marker>
+    <marker id="arrowGray" viewBox="0 0 16 16" refX="12" refY="8" markerWidth="12" markerHeight="12" orient="auto-start-reverse">
+      <path d="M3 3L11 8L3 13" stroke="#6F7480" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </marker>
+    <style>
+      text { font-family: 'Inter', 'Helvetica Neue', 'Segoe UI', Arial, sans-serif; fill: #FFFFFF; }
+      .eyebrow { font-size: 26px; letter-spacing: 0.34em; font-weight: 700; fill: #00FFFF; }
+      .title { font-size: 72px; font-weight: 800; letter-spacing: -0.03em; fill: #FFFFFF; }
+      .subtitle { font-size: 27px; font-weight: 500; fill: #B2B8C4; }
+      .card-title { font-size: 38px; font-weight: 800; fill: #FFFFFF; letter-spacing: -0.02em; }
+      .card-sub { font-size: 20px; font-weight: 700; fill: #6F7480; letter-spacing: 0.14em; }
+      .body { font-size: 23px; font-weight: 500; fill: #B2B8C4; }
+      .small { font-size: 20px; font-weight: 500; fill: #6F7480; }
+      .micro { font-size: 17px; font-weight: 700; fill: #6F7480; letter-spacing: 0.1em; }
+      .metric { font-size: 25px; font-weight: 700; fill: #FFFFFF; }
+      .nodesub { font-size: 19px; font-weight: 500; fill: #8A909C; }
+      .hero-line { font-size: 31px; font-weight: 500; fill: #CBD0D8; }
+      .hero-big { font-size: 66px; font-weight: 900; letter-spacing: -0.04em; fill: #FFFFFF; }
+      .cap { font-size: 22px; font-weight: 700; fill: #CBD0D8; }
+      .chip { font-size: 21px; font-weight: 700; fill: #CBD0D8; }
+      .benefit { font-size: 23px; font-weight: 600; fill: #CBD0D8; }
+      .pill-text { font-size: 19px; font-weight: 700; fill: #CBD0D8; }
+      .section-no { font-size: 25px; font-weight: 800; fill: #00FFFF; }
+      .tech-label { font-size: 20px; font-weight: 800; fill: #4FFF00; letter-spacing: 0.06em; }
+    </style>
+  </defs>
+
+  <rect width="3840" height="2160" fill="url(#bg)"/>
+  <rect width="3840" height="2160" fill="url(#glowA)"/>
+  <rect width="3840" height="2160" fill="url(#glowB)"/>
+  <rect width="3840" height="2160" fill="url(#glowC)"/>
+
+  <!-- ============ HEADER ============ -->
+  <text x="120" y="108" class="eyebrow">ENTERPRISE KNOWLEDGE RAG SYSTEM</text>
+  <text x="120" y="190" class="title">From scattered enterprise content to a <tspan fill="#00FFFF">cited AI assistant</tspan></text>
+  <text x="120" y="248" class="subtitle">A single-page architecture and workflow view of how EK-RAG converts private company knowledge into governed, conversational answers.</text>
+  <path d="M120 288H3720" stroke="#2A2A31" stroke-width="2"/>
+
+  <!-- ============ ROW 1 ============ -->
+  <!-- 01 PROBLEM (orange) -->
+  <g filter="url(#shadow)">
+    <rect x="120" y="320" width="840" height="320" rx="32" fill="#23232A" fill-opacity="0.85" stroke="#3E4047" stroke-width="2"/>
+    <text x="174" y="386" class="section-no" style="fill:#F46600">01</text>
+    <text x="174" y="436" class="card-title">Problem Statement</text>
+    <text x="174" y="488" class="body">Knowledge is trapped across repositories</text>
+    <text x="174" y="520" class="body">and formats. Search is slow and manual,</text>
+    <text x="174" y="552" class="body">and generic AI cannot cite or stay private.</text>
+    <g transform="translate(174 584)">
+      <rect x="0" y="0" width="176" height="32" rx="16" fill="#2C2C34"/>
+      <text x="20" y="22" class="pill-text">Slow discovery</text>
+      <rect x="192" y="0" width="176" height="32" rx="16" fill="#2C2C34"/>
+      <text x="212" y="22" class="pill-text">Hallucinations</text>
+      <rect x="384" y="0" width="188" height="32" rx="16" fill="#2C2C34"/>
+      <text x="404" y="22" class="pill-text">Compliance risk</text>
+    </g>
+    <g transform="translate(838 392)">
+      <circle cx="0" cy="0" r="52" fill="#1F1F25" stroke="#3E4047" stroke-width="2"/>
+      <path d="M-20 -10H14" stroke="#F46600" stroke-width="7" stroke-linecap="round"/>
+      <path d="M-20 10H2" stroke="#F46600" stroke-width="7" stroke-linecap="round"/>
+      <path d="M18 -14L32 0L18 14" stroke="#FF00C7" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </g>
+  </g>
+
+  <!-- 02 PRODUCT OVERVIEW hero (aqua) -->
+  <g filter="url(#shadow)">
+    <rect x="1000" y="320" width="1720" height="320" rx="34" fill="#1F1F26" fill-opacity="0.92" stroke="url(#heroStroke)" stroke-width="3"/>
+    <text x="1050" y="382" class="card-sub" style="fill:#00FFFF">02 · PRODUCT OVERVIEW</text>
+    <text x="1050" y="456" class="hero-big">EK-RAG</text>
+    <text x="1050" y="512" class="hero-line">A fully decoupled, local-first platform that turns</text>
+    <text x="1050" y="552" class="hero-line">enterprise documents into cited, conversational AI.</text>
+    <g transform="translate(1050 588)">
+      <rect x="0" y="0" width="238" height="38" rx="19" fill="#2C2C34"/>
+      <text x="24" y="26" class="chip">Convert any format</text>
+      <rect x="254" y="0" width="214" height="38" rx="19" fill="#2C2C34"/>
+      <text x="278" y="26" class="chip">Ingest &amp; embed</text>
+      <rect x="484" y="0" width="210" height="38" rx="19" fill="#2C2C34"/>
+      <text x="508" y="26" class="chip">Retrieve &amp; cite</text>
+      <rect x="710" y="0" width="204" height="38" rx="19" fill="#2C2C34"/>
+      <text x="734" y="26" class="chip">Governed chat</text>
+    </g>
+    <g transform="translate(2530 468)">
+      <circle cx="0" cy="0" r="104" fill="#191920" stroke="#3E4047" stroke-width="2"/>
+      <circle cx="0" cy="0" r="74" fill="#1F1F26" stroke="#33333B" stroke-width="2"/>
+      <path d="M0 -84V84" stroke="url(#accent)" stroke-width="9" stroke-linecap="round"/>
+      <path d="M-84 0H84" stroke="url(#accent)" stroke-width="9" stroke-linecap="round"/>
+      <circle cx="0" cy="0" r="24" fill="#1A1A1F" stroke="#00FFFF" stroke-width="5"/>
+      <circle cx="0" cy="-84" r="14" fill="#00FFFF"/>
+      <circle cx="84" cy="0" r="14" fill="#0000FF"/>
+      <circle cx="0" cy="84" r="14" fill="#FF00C7"/>
+      <circle cx="-84" cy="0" r="14" fill="#4FFF00"/>
+    </g>
+  </g>
+
+  <!-- 09 KEY BENEFITS (green) -->
+  <g filter="url(#shadow)">
+    <rect x="2760" y="320" width="960" height="320" rx="32" fill="#23232A" fill-opacity="0.85" stroke="#3E4047" stroke-width="2"/>
+    <text x="2814" y="386" class="section-no" style="fill:#4FFF00">09</text>
+    <text x="2814" y="436" class="card-title">Key Benefits</text>
+    <g transform="translate(2814 486)">
+      <g><circle cx="15" cy="15" r="15" fill="#22261C"/><path d="M8 15L13 20L23 9" stroke="#4FFF00" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><text x="40" y="22" class="benefit">Faster retrieval</text></g>
+      <g transform="translate(0 50)"><circle cx="15" cy="15" r="15" fill="#1C1E26"/><path d="M8 15L13 20L23 9" stroke="#00FFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><text x="40" y="22" class="benefit">Less manual work</text></g>
+      <g transform="translate(0 100)"><circle cx="15" cy="15" r="15" fill="#22261C"/><path d="M8 15L13 20L23 9" stroke="#4FFF00" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><text x="40" y="22" class="benefit">Accurate answers</text></g>
+      <g transform="translate(470 0)"><circle cx="15" cy="15" r="15" fill="#26202A"/><path d="M8 15L13 20L23 9" stroke="#FF00C7" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><text x="40" y="22" class="benefit">Better decisions</text></g>
+      <g transform="translate(470 50)"><circle cx="15" cy="15" r="15" fill="#1C1E26"/><path d="M8 15L13 20L23 9" stroke="#00FFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><text x="40" y="22" class="benefit">Secure &amp; private</text></g>
+      <g transform="translate(470 100)"><circle cx="15" cy="15" r="15" fill="#22261C"/><path d="M8 15L13 20L23 9" stroke="#4FFF00" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><text x="40" y="22" class="benefit">Scales to teams</text></g>
+    </g>
+  </g>
+
+  <line x1="1860" y1="656" x2="1860" y2="694" stroke="#00FFFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  <!-- ============ ROW 2 ============ -->
+  <!-- 03 INPUT SOURCES (aqua) -->
+  <g filter="url(#shadow)">
+    <rect x="120" y="720" width="840" height="560" rx="32" fill="#23232A" fill-opacity="0.85" stroke="#3E4047" stroke-width="2"/>
+    <text x="174" y="786" class="section-no">03</text>
+    <text x="174" y="836" class="card-title">Input Sources</text>
+    <text x="174" y="876" class="small">Any format, unified by the EKDC converter</text>
+    <g transform="translate(174 912)">
+      <g><rect x="0" y="0" width="228" height="60" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="26" y="38" class="cap">PDF</text></g>
+      <g transform="translate(244 0)"><rect x="0" y="0" width="228" height="60" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="26" y="38" class="cap">Word</text></g>
+      <g transform="translate(488 0)"><rect x="0" y="0" width="244" height="60" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="26" y="38" class="cap">PowerPoint</text></g>
+      <g transform="translate(0 76)"><rect x="0" y="0" width="228" height="60" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="26" y="38" class="cap">HTML</text></g>
+      <g transform="translate(244 76)"><rect x="0" y="0" width="228" height="60" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="26" y="38" class="cap">CSV</text></g>
+      <g transform="translate(488 76)"><rect x="0" y="0" width="244" height="60" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="26" y="38" class="cap">Images</text></g>
+      <g transform="translate(0 152)"><rect x="0" y="0" width="228" height="60" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="26" y="38" class="cap">Audio</text></g>
+      <g transform="translate(244 152)"><rect x="0" y="0" width="228" height="60" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="26" y="38" class="cap">Video</text></g>
+      <g transform="translate(488 152)"><rect x="0" y="0" width="244" height="60" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="26" y="38" class="cap">Local files</text></g>
+      <g transform="translate(0 228)"><rect x="0" y="0" width="228" height="60" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="26" y="38" class="cap">SharePoint</text></g>
+      <g transform="translate(244 228)"><rect x="0" y="0" width="228" height="60" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="26" y="38" class="cap">Confluence</text></g>
+      <g transform="translate(488 228)"><rect x="0" y="0" width="244" height="60" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="26" y="38" class="cap">Web pages</text></g>
+    </g>
+    <g transform="translate(174 1216)">
+      <rect x="0" y="0" width="612" height="40" rx="14" fill="#1C1E26" stroke="#2C3550"/>
+      <text x="24" y="27" class="small" style="fill:#8FB6FF">EKDC · OCR, transcription, layout-aware conversion</text>
+    </g>
+  </g>
+
+  <!-- 04 DATA PROCESSING PIPELINE (blue) -->
+  <g filter="url(#shadow)">
+    <rect x="1000" y="720" width="1720" height="560" rx="34" fill="#23232A" fill-opacity="0.85" stroke="#3E4047" stroke-width="2"/>
+    <text x="1050" y="786" class="section-no" style="fill:#4C6BFF">04</text>
+    <text x="1050" y="836" class="card-title">Data Processing Pipeline</text>
+    <text x="1050" y="876" class="small">EKDC standardizes to Markdown; EKIE embeds and publishes governed vectors.</text>
+
+    <!-- Row A: EKDC -->
+    <g transform="translate(1050 904)">
+      <g filter="url(#tinyShadow)"><rect x="0" y="0" width="270" height="150" rx="22" fill="#2C2C34" stroke="#3E4047"/><text x="26" y="48" class="micro" style="fill:#00FFFF">EKDC</text><text x="26" y="90" class="metric">Ingestion</text><text x="26" y="126" class="nodesub">Watch files</text></g>
+      <path d="M282 75H329" stroke="#4C6BFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrowBlue)"/>
+      <g filter="url(#tinyShadow)"><rect x="337" y="0" width="270" height="150" rx="22" fill="#2C2C34" stroke="#3E4047"/><text x="363" y="48" class="micro" style="fill:#00FFFF">EKDC</text><text x="363" y="90" class="metric">Parsing</text><text x="363" y="126" class="nodesub">Docling engine</text></g>
+      <path d="M619 75H666" stroke="#4C6BFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrowBlue)"/>
+      <g filter="url(#tinyShadow)"><rect x="674" y="0" width="270" height="150" rx="22" fill="#2C2C34" stroke="#3E4047"/><text x="700" y="48" class="micro" style="fill:#00FFFF">EKDC</text><text x="700" y="90" class="metric">Cleaning</text><text x="700" y="126" class="nodesub">Normalize</text></g>
+      <path d="M956 75H1003" stroke="#4C6BFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrowBlue)"/>
+      <g filter="url(#tinyShadow)"><rect x="1011" y="0" width="270" height="150" rx="22" fill="#2C2C34" stroke="#3E4047"/><text x="1037" y="48" class="micro" style="fill:#00FFFF">EKDC</text><text x="1037" y="90" class="metric">OCR</text><text x="1037" y="126" class="nodesub">If needed</text></g>
+      <path d="M1293 75H1340" stroke="#4C6BFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrowBlue)"/>
+      <g filter="url(#tinyShadow)"><rect x="1348" y="0" width="270" height="150" rx="22" fill="#2C2C34" stroke="#3E4047"/><text x="1374" y="48" class="micro" style="fill:#00FFFF">EKDC</text><text x="1374" y="90" class="metric">Markdown</text><text x="1374" y="126" class="nodesub">Conversion</text></g>
+    </g>
+
+    <!-- Serpentine connector A -> B -->
+    <path d="M2533 1054V1074H1185V1090" stroke="#4C6BFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none" marker-end="url(#arrowBlue)"/>
+
+    <!-- Row B: EKIE -->
+    <g transform="translate(1050 1090)">
+      <g filter="url(#tinyShadow)"><rect x="0" y="0" width="270" height="150" rx="22" fill="#25252E" stroke="#3E4047"/><text x="26" y="48" class="micro" style="fill:#FF00C7">EKIE</text><text x="26" y="90" class="metric">Metadata</text><text x="26" y="126" class="nodesub">Extraction</text></g>
+      <path d="M282 75H329" stroke="#4C6BFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrowBlue)"/>
+      <g filter="url(#tinyShadow)"><rect x="337" y="0" width="270" height="150" rx="22" fill="#25252E" stroke="#3E4047"/><text x="363" y="48" class="micro" style="fill:#FF00C7">EKIE</text><text x="363" y="90" class="metric">Chunking</text><text x="363" y="126" class="nodesub">Semantic</text></g>
+      <path d="M619 75H666" stroke="#4C6BFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrowBlue)"/>
+      <g filter="url(#tinyShadow)"><rect x="674" y="0" width="270" height="150" rx="22" fill="#25252E" stroke="#3E4047"/><text x="700" y="48" class="micro" style="fill:#FF00C7">EKIE</text><text x="700" y="90" class="metric">Embedding</text><text x="700" y="126" class="nodesub">bge vectors</text></g>
+      <path d="M956 75H1003" stroke="#4C6BFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrowBlue)"/>
+      <g filter="url(#tinyShadow)"><rect x="1011" y="0" width="270" height="150" rx="22" fill="#25252E" stroke="#3E4047"/><text x="1037" y="48" class="micro" style="fill:#00FFFF">STORE</text><text x="1037" y="90" class="metric">Vector DB</text><text x="1037" y="126" class="nodesub">Qdrant</text></g>
+      <path d="M1293 75H1340" stroke="#4C6BFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrowBlue)"/>
+      <g filter="url(#tinyShadow)"><rect x="1348" y="0" width="270" height="150" rx="22" fill="#25252E" stroke="#3E4047"/><text x="1374" y="48" class="micro" style="fill:#6F7480">GOVERN</text><text x="1374" y="90" class="metric">MSSQL</text><text x="1374" y="126" class="nodesub">Lineage · MinIO</text></g>
+    </g>
+  </g>
+
+  <!-- 05 AI ENGINE (pink) -->
+  <g filter="url(#shadow)">
+    <rect x="2760" y="720" width="960" height="560" rx="32" fill="#23232A" fill-opacity="0.85" stroke="#3E4047" stroke-width="2"/>
+    <text x="2814" y="786" class="section-no" style="fill:#FF00C7">05</text>
+    <text x="2814" y="836" class="card-title">AI Engine</text>
+    <text x="2814" y="876" class="small">Retrieval, orchestration &amp; reasoning</text>
+    <g transform="translate(2814 912)">
+      <g><rect x="0" y="0" width="278" height="66" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">LLM</text></g>
+      <g transform="translate(294 0)"><rect x="0" y="0" width="278" height="66" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">RAG</text></g>
+      <g transform="translate(588 0)"><rect x="0" y="0" width="264" height="66" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">Semantic</text></g>
+      <g transform="translate(0 82)"><rect x="0" y="0" width="278" height="66" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">Retrieval</text></g>
+      <g transform="translate(294 82)"><rect x="0" y="0" width="278" height="66" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">Prompting</text></g>
+      <g transform="translate(588 82)"><rect x="0" y="0" width="264" height="66" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">AI agents</text></g>
+      <g transform="translate(0 164)"><rect x="0" y="0" width="278" height="66" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">Tool calling</text></g>
+      <g transform="translate(294 164)"><rect x="0" y="0" width="278" height="66" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">Memory</text></g>
+      <g transform="translate(588 164)"><rect x="0" y="0" width="264" height="66" rx="18" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">Reasoning</text></g>
+    </g>
+    <g transform="translate(2814 1132)">
+      <rect x="0" y="0" width="852" height="112" rx="20" fill="#261F28" stroke="#4A2E48"/>
+      <text x="24" y="44" class="small" style="fill:#FF7BE0">EKRE retrieves &amp; ranks · EKCP orchestrates,</text>
+      <text x="24" y="80" class="small" style="fill:#FF7BE0">grounds the model, and governs every answer.</text>
+    </g>
+  </g>
+
+  <path d="M960 900H998" stroke="#00FFFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M2720 900H2758" stroke="#00FFFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <line x1="1860" y1="1296" x2="1860" y2="1334" stroke="#00FFFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  <!-- ============ ROW 3 ============ -->
+  <!-- 06 USER EXPERIENCE (aqua) -->
+  <g filter="url(#shadow)">
+    <rect x="120" y="1360" width="1140" height="520" rx="32" fill="#23232A" fill-opacity="0.85" stroke="#3E4047" stroke-width="2"/>
+    <text x="174" y="1426" class="section-no">06</text>
+    <text x="174" y="1476" class="card-title">User Experience</text>
+    <text x="174" y="1516" class="small">From question to cited answer, streamed live</text>
+    <g transform="translate(174 1556)">
+      <g><circle cx="24" cy="24" r="24" fill="#1C1E26" stroke="#3E4047"/><text x="16" y="33" class="metric" style="fill:#00FFFF">1</text><text x="66" y="33" class="body">User asks a question</text></g>
+      <path d="M24 50V80" stroke="#3E4047" stroke-width="3" stroke-linecap="round" stroke-dasharray="4 9"/>
+      <g transform="translate(0 96)"><circle cx="24" cy="24" r="24" fill="#1C1E26" stroke="#3E4047"/><text x="16" y="33" class="metric" style="fill:#00FFFF">2</text><text x="66" y="33" class="body">Intent understood</text></g>
+      <path d="M24 146V176" stroke="#3E4047" stroke-width="3" stroke-linecap="round" stroke-dasharray="4 9"/>
+      <g transform="translate(0 192)"><circle cx="24" cy="24" r="24" fill="#1C1E26" stroke="#3E4047"/><text x="16" y="33" class="metric" style="fill:#00FFFF">3</text><text x="66" y="33" class="body">Knowledge retrieved</text></g>
+      <g transform="translate(546 0)"><circle cx="24" cy="24" r="24" fill="#1C1E26" stroke="#3E4047"/><text x="16" y="33" class="metric" style="fill:#00FFFF">4</text><text x="66" y="33" class="body">Grounded answer built</text></g>
+      <path d="M570 50V80" stroke="#3E4047" stroke-width="3" stroke-linecap="round" stroke-dasharray="4 9"/>
+      <g transform="translate(546 96)"><circle cx="24" cy="24" r="24" fill="#1C1E26" stroke="#3E4047"/><text x="16" y="33" class="metric" style="fill:#00FFFF">5</text><text x="66" y="33" class="body">Citations shown</text></g>
+      <path d="M570 146V176" stroke="#3E4047" stroke-width="3" stroke-linecap="round" stroke-dasharray="4 9"/>
+      <g transform="translate(546 192)"><circle cx="24" cy="24" r="24" fill="#1C1E26" stroke="#3E4047"/><text x="16" y="33" class="metric" style="fill:#00FFFF">6</text><text x="66" y="33" class="body">Conversation continues</text></g>
+    </g>
+    <g transform="translate(174 1810)">
+      <rect x="0" y="0" width="1032" height="48" rx="14" fill="#1C1E26" stroke="#22333A"/>
+      <text x="24" y="31" class="small" style="fill:#7EEBEB">Live-streamed stages · clearance-aware · tenant-isolated · fully cited</text>
+    </g>
+  </g>
+
+  <!-- 07 ENTERPRISE FEATURES (yellow) -->
+  <g filter="url(#shadow)">
+    <rect x="1300" y="1360" width="1240" height="520" rx="32" fill="#23232A" fill-opacity="0.85" stroke="#3E4047" stroke-width="2"/>
+    <text x="1354" y="1426" class="section-no" style="fill:#FFF500">07</text>
+    <text x="1354" y="1476" class="card-title">Enterprise Features</text>
+    <text x="1354" y="1516" class="small">Governance and operating controls built in</text>
+    <g transform="translate(1354 1556)">
+      <g><rect x="0" y="0" width="360" height="66" rx="16" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">Security</text></g>
+      <g transform="translate(384 0)"><rect x="0" y="0" width="360" height="66" rx="16" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">RBAC access</text></g>
+      <g transform="translate(768 0)"><rect x="0" y="0" width="362" height="66" rx="16" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">Authentication</text></g>
+      <g transform="translate(0 82)"><rect x="0" y="0" width="360" height="66" rx="16" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">Version control</text></g>
+      <g transform="translate(384 82)"><rect x="0" y="0" width="360" height="66" rx="16" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">Doc updates</text></g>
+      <g transform="translate(768 82)"><rect x="0" y="0" width="362" height="66" rx="16" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">Incremental index</text></g>
+      <g transform="translate(0 164)"><rect x="0" y="0" width="360" height="66" rx="16" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">Audit logs</text></g>
+      <g transform="translate(384 164)"><rect x="0" y="0" width="360" height="66" rx="16" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">PII masking</text></g>
+      <g transform="translate(768 164)"><rect x="0" y="0" width="362" height="66" rx="16" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">DSAR purge</text></g>
+      <g transform="translate(0 246)"><rect x="0" y="0" width="360" height="66" rx="16" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">Privacy</text></g>
+      <g transform="translate(384 246)"><rect x="0" y="0" width="360" height="66" rx="16" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">Local deploy</text></g>
+      <g transform="translate(768 246)"><rect x="0" y="0" width="362" height="66" rx="16" fill="#2C2C34" stroke="#3E4047"/><text x="24" y="42" class="cap">Cloud deploy</text></g>
+    </g>
+  </g>
+
+  <!-- 08 TECHNOLOGY STACK (green) -->
+  <g filter="url(#shadow)">
+    <rect x="2580" y="1360" width="1140" height="520" rx="32" fill="#23232A" fill-opacity="0.85" stroke="#3E4047" stroke-width="2"/>
+    <text x="2634" y="1426" class="section-no" style="fill:#4FFF00">08</text>
+    <text x="2634" y="1476" class="card-title">Technology Stack</text>
+    <text x="2634" y="1516" class="small">Grouped by platform layer</text>
+    <g transform="translate(2634 1566)">
+      <g><text x="0" y="0" class="tech-label">FRONTEND</text><text x="0" y="34" class="body">Next.js, React, TypeScript, Tailwind</text></g>
+      <g transform="translate(0 82)"><text x="0" y="0" class="tech-label">BACKEND</text><text x="0" y="34" class="body">Python, FastAPI, Pydantic v2</text></g>
+      <g transform="translate(0 164)"><text x="0" y="0" class="tech-label">DATA</text><text x="0" y="34" class="body">SQL Server, Redis, MinIO</text></g>
+      <g transform="translate(0 246)"><text x="0" y="0" class="tech-label">VECTOR DB</text><text x="0" y="34" class="body">Qdrant</text></g>
+      <g transform="translate(536 0)"><text x="0" y="0" class="tech-label">AI MODELS</text><text x="0" y="34" class="body">Ollama, HuggingFace, bge</text></g>
+      <g transform="translate(536 82)"><text x="0" y="0" class="tech-label">INFRA</text><text x="0" y="34" class="body">Local-first, Docker, K8s</text></g>
+      <g transform="translate(536 164)"><text x="0" y="0" class="tech-label">APIS</text><text x="0" y="34" class="body">REST, SSE, shared contracts</text></g>
+      <g transform="translate(536 246)"><text x="0" y="0" class="tech-label">MONITORING</text><text x="0" y="34" class="body">Langfuse, OpenTelemetry</text></g>
+    </g>
+  </g>
+
+  <line x1="1860" y1="1896" x2="1860" y2="1934" stroke="#00FFFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  <!-- ============ ROW 4: END RESULT ============ -->
+  <g filter="url(#shadow)">
+    <rect x="120" y="1948" width="3600" height="176" rx="34" fill="#1F1F26" fill-opacity="0.94" stroke="url(#heroStroke)" stroke-width="3"/>
+    <text x="174" y="2002" class="card-sub" style="fill:#00FFFF">10 · END RESULT</text>
+    <text x="174" y="2058" class="hero-big" style="font-size:52px">Turn enterprise knowledge into an <tspan fill="#00FFFF">intelligent AI assistant</tspan>.</text>
+    <text x="174" y="2100" class="small">Ask in plain language — get instant, cited, governed answers your teams can trust.</text>
+
+    <g transform="translate(2560 1972)">
+      <rect x="0" y="0" width="1100" height="128" rx="24" fill="#2C2C34" stroke="#3E4047"/>
+      <circle cx="64" cy="64" r="30" fill="#1C1E26"/>
+      <circle cx="64" cy="52" r="11" fill="#00FFFF"/>
+      <path d="M42 90C47 71 57 62 74 62C91 62 101 71 106 90" stroke="#00FFFF" stroke-width="5" stroke-linecap="round" fill="none"/>
+      <rect x="128" y="28" width="600" height="32" rx="16" fill="#23232A"/>
+      <text x="150" y="50" class="pill-text">What is our remote-work policy?</text>
+      <rect x="128" y="70" width="700" height="32" rx="16" fill="#23232A"/>
+      <text x="150" y="92" class="pill-text">Answered with citations in seconds</text>
+      <g transform="translate(1000 32)"><rect x="0" y="0" width="72" height="30" rx="15" fill="#1C1E26"/><text x="18" y="21" class="pill-text" style="fill:#00FFFF">AI</text></g>
+    </g>
+  </g>
+</svg>

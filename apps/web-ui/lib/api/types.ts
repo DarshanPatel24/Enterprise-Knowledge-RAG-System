@@ -30,11 +30,18 @@ export type ConnectivityStatus =
   | { state: "ok"; service: string; status: string }
   | { state: "error"; message: string };
 
+/** A prior conversation turn sent to EKCP so follow-up questions have context. */
+export type ChatHistoryTurn = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 /** Request body for the EKCP `POST /chat/stream` endpoint. */
 export type ChatStreamRequest = {
   message: string;
   security_context: SecurityContext;
   session_id?: string;
+  history?: ChatHistoryTurn[];
 };
 
 /** Terminal `done` payload carried on a successful chat stream completion. */

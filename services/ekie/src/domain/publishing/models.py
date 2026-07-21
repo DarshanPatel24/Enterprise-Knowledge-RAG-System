@@ -57,6 +57,10 @@ class VectorMetadata(BaseModel):
     # opaque id. Sourced from the control-plane Document; empty for legacy
     # vectors published before this field existed.
     source_path: str = ""
+    # Product/source group derived from the leading folder of ``source_path`` (e.g.
+    # "plantstate-integrity") so retrieval can be scoped or filtered by product.
+    # Empty for root-level documents or vectors published before this field existed.
+    source_group: str = ""
     section_id: str | None = None
     section_title: str | None = None
     language: str = ""

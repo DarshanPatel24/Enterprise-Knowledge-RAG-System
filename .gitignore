@@ -85,3 +85,9 @@ logs/
 tmp/
 temp/
 services/*/storage/
+
+
+# ------------------------------
+# Local PPT Template
+# ------------------------------
+showcase/PPT/Template/

@@ -1,7 +1,11 @@
 """Unit tests for the required-field validation gate (EKIE-S6-4)."""
 
 from domain.embedding import DistanceMetric
-from domain.publishing import VectorMetadata, missing_required_fields
+from domain.publishing import (
+    VectorMetadata,
+    derive_source_group,
+    missing_required_fields,
+)
 
 
 def _metadata(**overrides: object) -> VectorMetadata:
@@ -42,3 +46,31 @@ def test_non_positive_dimension_is_detected() -> None:
 def test_non_positive_embedding_version_is_detected() -> None:
     missing = missing_required_fields(_metadata(embedding_version=0))
     assert "embedding_version" in missing
+
+
+def test_source_group_is_optional_not_mandatory() -> None:
+    assert missing_required_fields(_metadata(source_group="")) == []
+
+
+def test_derive_source_group_uses_leading_folder() -> None:
+    assert (
+        derive_source_group("PlantState-Integrity/guide.md")
+        == "plantstate-integrity"
+    )
+
+
+def test_derive_source_group_slugifies_spaces() -> None:
+    assert derive_source_group("Cyber Integrity/install/steps.md") == "cyber-integrity"
+
+
+def test_derive_source_group_depth_joins_segments() -> None:
+    assert (
+        derive_source_group("Cyber Integrity/install/steps.md", depth=2)
+        == "cyber-integrity/install"
+    )
+
+
+def test_derive_source_group_root_document_returns_default() -> None:
+    assert derive_source_group("readme.md") == ""
+    assert derive_source_group("readme.md", default="general") == "general"
+

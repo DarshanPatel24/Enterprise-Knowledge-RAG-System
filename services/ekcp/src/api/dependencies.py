@@ -16,6 +16,7 @@ from composition import (
     build_conversation_engine,
     build_conversation_manager,
     build_conversation_store,
+    build_dialog_engine,
     build_event_bus,
     build_event_sink,
     build_governance_guard,
@@ -39,6 +40,7 @@ from domain.agents import (
 )
 from domain.context import ContextAssembler, ContextStore
 from domain.conversation import ConversationEngine, ConversationManager
+from domain.dialog import DialogContextEngine
 from domain.gateway import LLMGateway
 from domain.governance import (
     GovernanceError,
@@ -79,6 +81,7 @@ class AppResources:
     conversation_manager: ConversationManager
     session_manager: SessionManager
     engine: ConversationEngine
+    dialog_engine: DialogContextEngine
     context_assembler: ContextAssembler
     context_store: ContextStore
     prompt_orchestrator: PromptOrchestrator
@@ -113,6 +116,7 @@ def build_resources(settings: EkcpSettings) -> AppResources:
         engine=build_conversation_engine(
             settings, conversation_store, event_sink=event_sink
         ),
+        dialog_engine=build_dialog_engine(settings),
         context_assembler=build_context_assembler(settings),
         context_store=build_context_store(settings),
         prompt_orchestrator=build_prompt_orchestrator(settings),

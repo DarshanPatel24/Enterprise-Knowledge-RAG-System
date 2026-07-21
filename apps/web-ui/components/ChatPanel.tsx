@@ -4,30 +4,32 @@ import { AlertCircle } from "lucide-react";
 
 import { ChatInput } from "@/components/ChatInput";
 import { MessageList } from "@/components/MessageList";
-import { useChatStream } from "@/lib/hooks/useChatStream";
 import type { ChatMessage } from "@/lib/api/types";
 
 /**
  * Core streaming chat experience: transcript, composer, and error banner.
  *
- * Streaming state lives entirely in the `useChatStream` hook; this component
- * renders it, forwards user actions, and persists settled turns via
- * `onMessagesChange`. Remount it (via a `key`) to switch conversations.
+ * This is a controlled view. Streaming state is owned by the workspace-level
+ * chat store (`useChatSessions`) so a response keeps generating even when the
+ * user switches to another conversation; this component only renders the active
+ * conversation's runtime and forwards user actions. It must NOT be remounted on
+ * conversation switch (no `key`) — the store keeps the underlying stream alive.
  */
 export function ChatPanel({
-  initialMessages,
-  onMessagesChange,
+  messages,
+  isStreaming,
+  error,
+  onSend,
+  onStop,
   disabled = false,
 }: {
-  initialMessages: ChatMessage[];
-  onMessagesChange: (messages: ChatMessage[]) => void;
+  messages: ChatMessage[];
+  isStreaming: boolean;
+  error: string | null;
+  onSend: (text: string) => void;
+  onStop: () => void;
   disabled?: boolean;
 }): React.JSX.Element {
-  const { messages, isStreaming, error, sendMessage, stop } = useChatStream({
-    initialMessages,
-    onMessagesChange,
-  });
-
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       {error && (
@@ -41,8 +43,8 @@ export function ChatPanel({
       )}
       <MessageList messages={messages} />
       <ChatInput
-        onSend={(text) => void sendMessage(text)}
-        onStop={stop}
+        onSend={onSend}
+        onStop={onStop}
         isStreaming={isStreaming}
         disabled={disabled}
       />

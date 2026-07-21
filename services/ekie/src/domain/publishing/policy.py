@@ -18,6 +18,9 @@ class PublishingSettingsLike(Protocol):
     create_missing_collections: bool
     verify_after_publish: bool
     max_vectors_per_minute: int
+    derive_source_group_from_path: bool
+    source_group_depth: int
+    default_source_group: str
 
 
 class PublishingPolicy(BaseModel):
@@ -37,6 +40,12 @@ class PublishingPolicy(BaseModel):
     create_missing_collections: bool = True
     verify_after_publish: bool = True
     max_vectors_per_minute: int = Field(default=0, ge=0)
+    # Derive a product/source group tag from each document's leading folder so
+    # retrieval can be scoped by product. Depth is how many leading folders form
+    # the tag; default applies to root-level documents.
+    derive_source_group_from_path: bool = True
+    source_group_depth: int = Field(default=1, ge=1)
+    default_source_group: str = ""
 
     @classmethod
     def from_settings(cls, settings: PublishingSettingsLike) -> PublishingPolicy:
@@ -50,4 +59,7 @@ class PublishingPolicy(BaseModel):
             create_missing_collections=settings.create_missing_collections,
             verify_after_publish=settings.verify_after_publish,
             max_vectors_per_minute=settings.max_vectors_per_minute,
+            derive_source_group_from_path=settings.derive_source_group_from_path,
+            source_group_depth=settings.source_group_depth,
+            default_source_group=settings.default_source_group,
         )

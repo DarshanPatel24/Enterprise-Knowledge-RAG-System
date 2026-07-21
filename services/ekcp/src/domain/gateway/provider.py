@@ -9,6 +9,7 @@ HuggingFace or Ollama chat model via LCEL and is imported lazily.
 
 from __future__ import annotations
 
+import threading
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from typing import Any, cast
@@ -37,6 +38,14 @@ _CHAIN_CACHE: dict[tuple[str, str, str, float, int, str, str, float, int], ChatM
 # streaming needs the underlying transformers pipeline, which the LCEL chain hides;
 # both caches reference the same built model so weights load exactly once.
 _RAW_MODEL_CACHE: dict[tuple[str, str, str, float, int, str, str, float, int], Any] = {}
+# Serializes local HuggingFace generation. A single cached model instance on one
+# GPU cannot run two ``generate()`` calls concurrently without corrupting each
+# other's decoding state (especially with accelerate CPU offloading), which would
+# abort an in-flight response the moment a second chat starts generating. Holding
+# this lock for the duration of each stream makes concurrent requests QUEUE
+# instead of cancelling one another. Remote providers (Ollama) manage their own
+# concurrency and are not gated by this lock.
+_HF_GENERATION_LOCK = threading.Lock()
 _logger = get_logger("ekcp.gateway.provider")
 
 
@@ -226,6 +235,7 @@ class LangChainChatProvider(ChatModelProvider):
                 top_p=descriptor.top_p,
                 top_k=descriptor.top_k,
                 max_new_tokens=descriptor.max_output_tokens,
+                num_ctx=descriptor.context_window,
                 device=descriptor.device,
                 torch_dtype=descriptor.torch_dtype,
             )
@@ -276,9 +286,11 @@ class LangChainChatProvider(ChatModelProvider):
             yield from self._generate_fragment(descriptor, prompt_text)
             return
         try:
-            import threading
-
-            from transformers import TextIteratorStreamer
+            from transformers import (
+                StoppingCriteria,
+                StoppingCriteriaList,
+                TextIteratorStreamer,
+            )
         except ImportError as exc:
             raise ProviderInvocationError(str(exc)) from exc
 
@@ -312,6 +324,21 @@ class LangChainChatProvider(ChatModelProvider):
                 generation_kwargs["top_p"] = descriptor.top_p
             if descriptor.top_k > 0:
                 generation_kwargs["top_k"] = descriptor.top_k
+
+        # Cooperative cancellation: when the consumer stops iterating (the client
+        # pressed Stop or disconnected), the generator is closed and the finally
+        # block below sets this event. The stopping criterion then halts
+        # generate() at the next token so the GPU and the generation lock are
+        # released promptly instead of running to max_new_tokens.
+        cancel_event = threading.Event()
+
+        class _CancelOnEvent(StoppingCriteria):
+            def __call__(
+                self, input_ids: object, scores: object, **kwargs: object
+            ) -> bool:
+                return cancel_event.is_set()
+
+        generation_kwargs["stopping_criteria"] = StoppingCriteriaList([_CancelOnEvent()])
         errors: list[Exception] = []
 
         def _generate() -> None:
@@ -326,13 +353,21 @@ class LangChainChatProvider(ChatModelProvider):
                 streamer.end()
 
         thread = threading.Thread(target=_generate, daemon=True)
-        thread.start()
-        try:
-            for text in streamer:
-                if text:
-                    yield text
-        finally:
-            thread.join()
+        # Serialize generation: hold the lock for the whole stream so a second
+        # concurrent chat queues behind this one instead of running a second
+        # generate() on the shared model and cancelling this response.
+        with _HF_GENERATION_LOCK:
+            thread.start()
+            try:
+                for text in streamer:
+                    if text:
+                        yield text
+            finally:
+                # If the consumer stopped early (client pressed Stop), signal the
+                # generation thread to halt at the next token before joining, so
+                # we release the lock without waiting for the full response.
+                cancel_event.set()
+                thread.join()
         if errors:
             raise ProviderInvocationError(str(errors[0])) from errors[0]
 

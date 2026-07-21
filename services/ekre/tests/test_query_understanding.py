@@ -20,6 +20,13 @@ def _engine(*, max_length: int = 2048) -> QueryUnderstandingEngine:
     return QueryUnderstandingEngine(policy, vocabulary=default_vocabulary())
 
 
+def _engine_with_products(products: dict[str, str]) -> QueryUnderstandingEngine:
+    settings = QueryIntelligenceSettings(_env_file=None)
+    policy = QueryPolicy.from_settings(settings)
+    vocabulary = default_vocabulary().model_copy(update={"products": products})
+    return QueryUnderstandingEngine(policy, vocabulary=vocabulary)
+
+
 def test_normalizes_whitespace_and_quotes() -> None:
     result = _engine().run("  the   \u201cTravel Policy\u201d  ", query_id="q1")
     assert result.normalized_query == 'the "Travel Policy"'
@@ -43,6 +50,51 @@ def test_extracts_metadata_filter_with_operator() -> None:
 def test_resolves_enterprise_acronym() -> None:
     result = _engine().run("VPN setup guide", query_id="q1")
     assert "virtual private network" in result.enterprise_terms
+
+
+def _source_group_filters(result: object) -> list[str]:
+    return [
+        f.value
+        for f in result.metadata_filters  # type: ignore[attr-defined]
+        if f.field == "source_group"
+    ]
+
+
+def test_product_alias_maps_to_source_group_and_lowercases() -> None:
+    result = _engine().run("priority mapping product:Cyber-Integrity", query_id="q1")
+    assert _source_group_filters(result) == ["cyber-integrity"]
+    assert "product:" not in result.normalized_query
+
+
+def test_product_phrase_auto_scopes_to_source_group() -> None:
+    engine = _engine_with_products({"cyber integrity": "cyber-integrity"})
+    result = engine.run("cyber integrity installation steps", query_id="q1")
+    assert _source_group_filters(result) == ["cyber-integrity"]
+
+
+def test_explicit_product_filter_suppresses_auto_scope() -> None:
+    engine = _engine_with_products({"cyber integrity": "cyber-integrity"})
+    result = engine.run(
+        "cyber integrity notes product:plantstate-integrity", query_id="q1"
+    )
+    assert _source_group_filters(result) == ["plantstate-integrity"]
+
+
+def test_no_products_configured_adds_no_source_group_filter() -> None:
+    result = _engine().run("cyber integrity installation steps", query_id="q1")
+    assert _source_group_filters(result) == []
+
+
+def test_parsed_product_groups_parses_pairs() -> None:
+    settings = QueryIntelligenceSettings(
+        _env_file=None,
+        product_groups="Cyber Integrity=cyber-integrity; PlantState Integrity=plantstate-integrity",
+    )
+    assert settings.parsed_product_groups() == {
+        "cyber integrity": "cyber-integrity",
+        "plantstate integrity": "plantstate-integrity",
+    }
+
 
 
 def test_empty_query_raises() -> None:

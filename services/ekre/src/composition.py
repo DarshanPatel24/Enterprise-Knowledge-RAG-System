@@ -179,6 +179,9 @@ def build_query_intelligence_engine(settings: EkreSettings) -> QueryIntelligence
     """
     policy = QueryPolicy.from_settings(settings.query)  # type: ignore[arg-type]
     vocabulary = default_vocabulary()
+    products = settings.query.parsed_product_groups()
+    if products:
+        vocabulary = vocabulary.model_copy(update={"products": products})
     understanding = QueryUnderstandingEngine(policy, vocabulary=vocabulary)
     intent = IntentClassificationEngine(policy)
     enrichment = QueryEnrichmentEngine(vocabulary=vocabulary)

@@ -37,6 +37,9 @@ class EnterpriseVocabulary(BaseModel):
 
     acronyms: dict[str, str] = Field(default_factory=dict)
     synonyms: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+    # Maps a product phrase (lowercased) found in a query to the source_group tag
+    # EKIE stamped from the document folder, enabling automatic product scoping.
+    products: dict[str, str] = Field(default_factory=dict)
 
 
 class QueryPolicy(BaseModel):

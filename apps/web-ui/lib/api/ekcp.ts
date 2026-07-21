@@ -14,6 +14,7 @@ import { CHAT_STREAM_PATH, HEALTH_LIVE_PATH } from "@/lib/config";
 import { getSettingsSnapshot } from "@/lib/settings";
 import { generateUuid } from "@/lib/utils";
 import type {
+  ChatHistoryTurn,
   ChatStreamRequest,
   Citation,
   ClassificationClearance,
@@ -113,12 +114,19 @@ export function buildSecurityContext(): SecurityContext {
  */
 export async function chatStream(
   message: string,
-  options: { sessionId?: string; signal?: AbortSignal } = {},
+  options: {
+    sessionId?: string;
+    signal?: AbortSignal;
+    history?: ChatHistoryTurn[];
+  } = {},
 ): Promise<Response> {
   const body: ChatStreamRequest = {
     message,
     security_context: buildSecurityContext(),
     ...(options.sessionId ? { session_id: options.sessionId } : {}),
+    ...(options.history && options.history.length > 0
+      ? { history: options.history }
+      : {}),
   };
   return ekcpFetch(CHAT_STREAM_PATH, {
     method: "POST",

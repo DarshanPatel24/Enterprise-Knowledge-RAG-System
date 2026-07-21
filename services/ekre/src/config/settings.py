@@ -220,6 +220,11 @@ class QueryIntelligenceSettings(BaseSettings):
 
     max_query_length: int = Field(default=2048, gt=0)
     default_language: str = "en"
+    # Optional product auto-scoping: maps a product phrase found in the query to
+    # the source_group tag EKIE stamped from the document folder. Format:
+    # "phrase=slug;phrase2=slug2" (e.g. "cyber integrity=cyber-integrity"). Empty
+    # disables auto-scoping; users can always filter explicitly with product:slug.
+    product_groups: str = ""
     # Always run keyword search alongside vector search (hybrid retrieval). This
     # guarantees the exact-term lexical signal participates for every query, so a
     # distinctive term (for example a specific product name) is never lost to
@@ -248,6 +253,20 @@ class QueryIntelligenceSettings(BaseSettings):
             "compliance": self.candidate_count_compliance,
             "performance": self.candidate_count_performance,
         }
+
+    def parsed_product_groups(self) -> dict[str, str]:
+        """Return the parsed product-phrase -> source_group slug mapping."""
+        mapping: dict[str, str] = {}
+        for pair in self.product_groups.split(";"):
+            token = pair.strip()
+            if not token or "=" not in token:
+                continue
+            phrase, slug = token.split("=", 1)
+            phrase = phrase.strip().lower()
+            slug = slug.strip().lower()
+            if phrase and slug:
+                mapping[phrase] = slug
+        return mapping
 
 
 class ExecutionSettings(BaseSettings):

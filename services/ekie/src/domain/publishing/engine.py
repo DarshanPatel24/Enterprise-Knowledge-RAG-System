@@ -27,7 +27,7 @@ from domain.publishing.collections import CollectionResolver, CollectionSpec
 from domain.publishing.errors import PublishError, PublishErrorType
 from domain.publishing.events import PublishEvent, PublishEventType
 from domain.publishing.identity import build_vector_id
-from domain.publishing.metadata import missing_required_fields
+from domain.publishing.metadata import derive_source_group, missing_required_fields
 from domain.publishing.models import (
     PublishedVectorSet,
     SyncState,
@@ -239,6 +239,15 @@ class VectorPublishingEngine:
         spec: CollectionSpec,
         chunk_facts: dict[str, _ChunkFacts],
     ) -> list[VectorPoint]:
+        source_group = (
+            derive_source_group(
+                document.source_path,
+                depth=self._policy.source_group_depth,
+                default=self._policy.default_source_group,
+            )
+            if self._policy.derive_source_group_from_path
+            else self._policy.default_source_group
+        )
         points: list[VectorPoint] = []
         for record in embedding_document.records:
             facts = chunk_facts.get(record.chunk_id)
@@ -254,6 +263,7 @@ class VectorPublishingEngine:
                 dimension=embedding_document.dimension,
                 repository_id=document.repository_id,
                 source_path=document.source_path,
+                source_group=source_group,
                 section_id=facts.section_id if facts else None,
                 section_title=facts.section_title if facts else None,
                 language=facts.language if facts else "",

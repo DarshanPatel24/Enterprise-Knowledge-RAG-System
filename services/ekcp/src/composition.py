@@ -33,6 +33,12 @@ from domain.conversation import (
     InMemoryEventSink,
     LoggingEventSink,
 )
+from domain.dialog import (
+    DialogContextEngine,
+    DialogPolicy,
+    QuestionCondenser,
+    TurnClassifier,
+)
 from domain.gateway import (
     CostProfile,
     GatewayPolicy,
@@ -124,6 +130,7 @@ __all__ = [
     "build_conversation_manager",
     "build_conversation_store",
     "build_deployment_readiness",
+    "build_dialog_engine",
     "build_event_bus",
     "build_event_sink",
     "build_governance_guard",
@@ -212,6 +219,21 @@ def build_intent_gate(settings: EkcpSettings) -> IntentGate:
     """Build the intent-before-execution gate from settings."""
     policy = IntentPolicy.from_settings(settings.intent)
     return IntentGate(IntentClassifier(policy))
+
+
+def build_dialog_engine(settings: EkcpSettings) -> DialogContextEngine:
+    """Build the multi-turn dialog context engine for the streaming chat path."""
+    policy = DialogPolicy.from_settings(settings.dialog)
+    intent_classifier = IntentClassifier(IntentPolicy.from_settings(settings.intent))
+    classifier = TurnClassifier(policy, intent_classifier)
+    condenser = QuestionCondenser(
+        enabled=settings.dialog.enable_llm_condense,
+        provider=settings.dialog.condense_provider,
+        model=settings.dialog.condense_model,
+        base_url=settings.dialog.condense_base_url,
+        temperature=settings.dialog.condense_temperature,
+    )
+    return DialogContextEngine(policy, classifier, condenser=condenser)
 
 
 def build_conversation_engine(

@@ -15,6 +15,7 @@ from domain.publishing.events import PublishEvent, PublishEventType
 from domain.publishing.identity import build_vector_id
 from domain.publishing.metadata import (
     MANDATORY_METADATA_FIELDS,
+    derive_source_group,
     missing_required_fields,
 )
 from domain.publishing.models import (
@@ -77,6 +78,7 @@ __all__ = [
     "build_vector_id",
     "default_provider_registry",
     "cleanup_provider_registry",
+    "derive_source_group",
     "missing_required_fields",
     "provider_registry_from_settings",
 ]

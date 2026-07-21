@@ -67,6 +67,23 @@ services:
       timeout: 5s
       retries: 5
 
+  minio-setup:
+    # One-shot bucket provisioning. Langfuse v3 writes every trace event to this
+    # S3 bucket before ingestion, so a missing bucket makes trace ingestion fail
+    # with HTTP 500 (NoSuchBucket) and the UI stays on "Waiting for first trace".
+    # Runs after each `up` and is idempotent, so tracing survives a `down -v`.
+    image: minio/mc:latest
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin} &&
+      mc mb --ignore-existing local/${LANGFUSE_S3_EVENT_UPLOAD_BUCKET:-langfuse-events} &&
+      echo 'minio bucket ready: ${LANGFUSE_S3_EVENT_UPLOAD_BUCKET:-langfuse-events}'
+      "
+
   # mssql: REMOVED — EKIE connects to the Windows-native SQL Server instance
   # (localhost\MSSQLSERVER2022 via Windows Authentication, not a Docker container).
   # To use a containerised SQL Server instead, add a service with:
@@ -117,6 +134,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
     ports:
       - "${LANGFUSE_PORT:-3000}:3000"
     environment: &langfuse-common-env
@@ -157,6 +176,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     environment: *langfuse-common-env
