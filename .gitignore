@@ -94,3 +94,10 @@ showcase/PPT/Template/
 showcase/PPT/ek-rag-architecture-deck.json
 showcase/PPT/EK-RAG-Enterprise-Architecture.pptx
 showcase/PPT/ek-rag-sample-deck.pptx
+.github/skills/octave-ppt/SKILL.md
+.github/skills/octave-ppt/scripts/list_layouts.py
+.github/skills/octave-ppt/scripts/build_deck.py
+.github/skills/octave-ppt/references/layout-catalog.md
+.github/skills/octave-ppt/references/deck-spec.md
+.github/skills/octave-ppt/references/brand.md
+.github/skills/octave-ppt/assets/example-deck.json
